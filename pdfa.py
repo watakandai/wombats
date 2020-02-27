@@ -204,7 +204,7 @@ class PDFA(nx.MultiDiGraph):
 
         # adding the final-state sequence end transition to the distribution
         edgeProbs.append(currFinalStateProb)
-        edgeDests.append(edgeDests)
+        edgeDests.append(currState)
         edgeSymbols.append(self.lambdaTransitionSymbol)
 
         nextSymbolDist = stats.rv_discrete(name='custm',
@@ -254,31 +254,41 @@ class PDFA(nx.MultiDiGraph):
 
             labelDict[nodeIdentifier] = newLabelProperty
 
-        nx.set_edge_attributes(self, labelDict)
+        nx.set_edge_attributes(graph, labelDict)
 
-    def chooseNextState(self, currState):
+    def chooseNextState(self, currState, random_state=None):
         """
         Chooses the next state based on currState's transition distribution
 
-        :param      currState:   The current state label
-        :type       currState:   string
+        :param      currState:     The current state label
+        :type       currState:     string
+        :param      random_state:  The np.random.RandomState() seed parameter
+                                   for sampling from the state transition
+                                   distribution. Defaulting to None causes the
+                                   seed to reset. (default None)
+        :type       random_state:  {None, int, array_like}
 
         :returns:   The next state's label and the symbol emitted by changing
                     states
         :rtype:     tuple(string, numeric)
 
-        :raises     ValueError:  if more than one non-zero probability
-                                 transition from currState under a given symbol
-                                 exists
+        :raises     ValueError:    if more than one non-zero probability
+                                   transition from currState under a given
+                                   symbol exists
         """
 
         transDist = self.nodes[currState]['transDistribution']
 
-        nextSymbol = transDist.rvs(size=1)
-        nextSymbol = nextSymbol[0]
+        # critical step for use with parallelized libraries. This must be reset
+        # before sampling, as otherwise each of the threads is using the same
+        # seed, and we get lots of duplicated strings
+        transDist.random_state = np.random.RandomState(random_state)
+
+        # sampling an action (symbol )from the state-action distribution at
+        # currState
+        nextSymbol = transDist.rvs(size=1)[0]
 
         if nextSymbol == self.lambdaTransitionSymbol:
-
             return currState, self.lambdaTransitionSymbol
 
         else:
@@ -292,12 +302,20 @@ class PDFA(nx.MultiDiGraph):
             else:
                 return (nextState[0], nextSymbol)
 
-    def generateTrace(self, startState):
+    def generateTrace(self, startState, N, random_state=None):
         """
         Generates a trace from the pdfa starting from startState
 
-        :type       startState:  the state label to start sampling traces from
-        :param      startState:  string
+        :param      startState:    the state label to start sampling traces
+                                   from
+        :type       startState:    string
+        :param      N:             maximum length of trace
+        :type       N:             scalar integer
+        :param      random_state:  The np.random.RandomState() seed parameter
+                                   for sampling from the state transition
+                                   distribution. Defaulting to None causes the
+                                   seed to reset. (default None)
+        :type       random_state:  {None, int, array_like}
 
         :returns:   the sequence of symbols emitted and the length of the trace
         :rtype:     tuple(list of strings, integer)
@@ -305,12 +323,13 @@ class PDFA(nx.MultiDiGraph):
 
         currState = startState
         lengthOfTrace = 1
-        nextState, nextSymbol = self.chooseNextState(currState)
+        nextState, nextSymbol = self.chooseNextState(currState, random_state)
         sampledTrace = str(nextSymbol)
 
-        while nextSymbol != self.lambdaTransitionSymbol:
+        while nextSymbol != self.lambdaTransitionSymbol and lengthOfTrace <= N:
 
-            nextState, nextSymbol = self.chooseNextState(currState)
+            nextState, nextSymbol = self.chooseNextState(currState,
+                                                         random_state)
 
             if nextSymbol == self.lambdaTransitionSymbol:
                 break
