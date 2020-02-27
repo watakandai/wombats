@@ -1,13 +1,15 @@
 import networkx as nx
+import numpy as np
 from scipy import stats
-from networkx.drawing.nx_pydot import to_pydot
+from networkx.drawing.nx_pydot import to_pydot, read_dot
 import graphviz as gv
 import yaml
 from IPython.display import display
 import multiprocessing
 from joblib import Parallel, delayed
+import os
 
-num_cores = multiprocessing.cpu_count()
+NUM_CORES = multiprocessing.cpu_count()
 
 
 class PDFA(nx.MultiDiGraph):
@@ -31,66 +33,86 @@ class PDFA(nx.MultiDiGraph):
                        given the starting node
     """
 
-    def __init__(self, configFileName):
+    def __init__(self, graphDataFile):
         """
         Constructs a new instance of a PDFA object.
 
-        :param      configFileName:  The configuration file name
-        :type       configFileName:  string
+        :param      graphDataFile:  The graph configuration file name
+        :type       graphDataFile:  filename path string
         """
 
         # need to start with a fully initialized networkx digraph
         super().__init__()
 
-        if configFileName is not None:
-
-            configData = self.loadConfigData(configFileName)
-
-            # states and edges must be in the format needed by:
-            #   - networkx.add_nodes_from()
-            #   - networkx.add_edges_from()
-            states, \
-                edges = self.formatDataFromManualConfig(configData['nodes'],
-                                                        configData['edges'])
-
-            self.beta = configData['beta']
-            """the final state probability needed for a state to accept"""
-
-            self.alphabetSize = configData['alphabetSize']
-            """number of symbols in pdfa alphabet"""
-
-            self.numStates = configData['numStates']
-            """number of states in pdfa state space"""
-
-            self.lambdaTransitionSymbol = configData['lambdaTransitionSymbol']
-            """representation of the empty string / symbol (a.k.a. lambda)"""
-
-            self.startState = configData['startState']
-            """unique start state string label of pdfa"""
-
-        else:
+        if graphDataFile is None:
             raise TypeError('must have a config file name')
+
+        _, file_extension = os.path.splitext(graphDataFile)
+
+        if file_extension == '.yaml':
+            configData = self.loadYAMLConfigData(graphDataFile)
+        elif file_extension == '.dot':
+            configData = self.loadDOTConfigData(graphDataFile)
+        else:
+            raise ValueError('%s is not a .yaml or .dot file' % graphDataFile)
+
+        # states and edges must be in the format needed by:
+        #   - networkx.add_nodes_from()
+        #   - networkx.add_edges_from()
+        states, \
+            edges = self.formatDataFromConfig(configData['nodes'],
+                                              configData['edges'])
+
+        self.beta = configData['beta']
+        """the final state probability needed for a state to accept"""
+
+        self.alphabetSize = configData['alphabetSize']
+        """number of symbols in pdfa alphabet"""
+
+        self.numStates = configData['numStates']
+        """number of states in pdfa state space"""
+
+        self.lambdaTransitionSymbol = configData['lambdaTransitionSymbol']
+        """representation of the empty string / symbol (a.k.a. lambda)"""
+
+        self.startState = configData['startState']
+        """unique start state string label of pdfa"""
 
         # when given pdfa definition in structured form
         if states and edges:
-
             self.add_nodes_from(states)
             self.add_edges_from(edges)
-
-            self.nodeProperties = set([k for n in self.nodes
-                                       for k in self.nodes[n].keys()])
-            """ a set of all of the node propety keys in each nodes' dict """
-
-            # do batch computations at initialization, as these shouldn't
-            # frequently change
-            self.computeNodeProperties()
-            self.setNodeLabels()
-            self.setEdgeLabels()
-
         else:
             raise ValueError('need non-empty states and edges lists')
 
-    def formatDataFromManualConfig(self, nodes, adjList):
+        self.nodeProperties = set([k for n in self.nodes
+                                   for k in self.nodes[n].keys()])
+        """ a set of all of the node propety keys in each nodes' dict """
+
+        # do batch computations at initialization, as these shouldn't
+        # frequently change
+        self.computeNodeProperties()
+        self.setNodeLabels()
+        self.setEdgeLabels()
+
+    def loadDOTConfigData(self, graphDataFile):
+        """
+        reads in graph configuration data from a dot file
+
+        :param      graphDataFile:  The .dot graph data configuration file name
+        :type       graphDataFile:  filename path string
+
+        :returns:   instantiated nx.MultiDiGraph,
+                    configuration data dictionary for the pdfa
+        :rtype:     dictionary of class settings
+        """
+
+        graph = read_dot(graphDataFile)
+
+        self.dispEdges(graph)
+
+
+    def formatDataFromConfig(self, nodes, adjList):
         """
         Converts node and adjList data from a manually specified YAML config
         file to the format needed by:
@@ -212,14 +234,21 @@ class PDFA(nx.MultiDiGraph):
 
         return nextSymbolDist
 
-    def setNodeLabels(self):
+    def setNodeLabels(self, graph=None):
         """
         Sets each node's label property for use in graphviz output
+
+        :param      graph:  The graph to access. Default = None => use instance
+                            (default None)
+        :type       graph:  {None, PDFA, nx.MultiDiGraph}
         """
+
+        if graph is None:
+            graph = self
 
         labelDict = {}
 
-        for nodeName, nodeData in self.nodes.data():
+        for nodeName, nodeData in graph.nodes.data():
 
             finalProbString = str(nodeData['final_probability'])
             nodeDotLabelString = nodeName + ': ' + finalProbString
@@ -233,18 +262,25 @@ class PDFA(nx.MultiDiGraph):
 
             labelDict[nodeName] = graphvizNodeLabel
 
-        nx.set_node_attributes(self, labelDict)
+        nx.set_node_attributes(graph, labelDict)
 
-    def setEdgeLabels(self):
+    def setEdgeLabels(self, graph=None):
         """
         Sets each edge's label property for use in graphviz output
+
+        :param      graph:  The graph to access. Default = None => use instance
+                            (default None)
+        :type       graph:  {None, PDFA, nx.MultiDiGraph}
         """
+
+        if graph is None:
+            graph = self
 
         # this needs to be a mapping from edges (node label tuples) to a
         # dictionary of attributes
         labelDict = {}
 
-        for u, v, key, data in self.edges(data=True, keys=True):
+        for u, v, key, data in graph.edges(data=True, keys=True):
 
             edgeLabelString = str(data['symbol']) + ': ' + \
                 str(data['probability'])
@@ -349,7 +385,7 @@ class PDFA(nx.MultiDiGraph):
         dotString = to_pydot(self).to_string()
         display(gv.Source(dotString))
 
-    def getNodeData(self, nodeLabel, dataKey):
+    def getNodeData(self, nodeLabel, dataKey, graph=None):
         """
         Gets the node's dataKey data from the graph
 
@@ -357,16 +393,22 @@ class PDFA(nx.MultiDiGraph):
         :type       nodeLabel:  string
         :param      dataKey:    The desired node data's key name
         :type       dataKey:    string
-
+        :param      graph:      The graph to access. Default = None => use
+                                instance (default None)
+        :type       graph:      {None, PDFA, nx.MultiDiGraph}
+        
         :returns:   The node data associated with the nodeLabel and dataKey
         :rtype:     type of self.nodes.data()[nodeLabel][dataKey]
         """
 
-        nodeData = self.nodes.data()
+        if graph is None:
+            graph = self
+
+        nodeData = graph.nodes.data()
 
         return nodeData[nodeLabel][dataKey]
 
-    def setNodeData(self, nodeLabel, dataKey, data):
+    def setNodeData(self, nodeLabel, dataKey, data, graph=None):
         """
         Sets the node's dataKey data from the graph
 
@@ -376,29 +418,34 @@ class PDFA(nx.MultiDiGraph):
         :type       dataKey:    string
         :param      data:       The data to associate with dataKey
         :type       data:       whatever u want bro
+        :param      graph:      The graph to access. Default = None => use
+                                instance (default None)
+        :type       graph:      {None, PDFA, nx.MultiDiGraph}
         """
 
-        nodeData = self.nodes.data()
+        if graph is None:
+            graph = self
+
+        nodeData = graph.nodes.data()
         nodeData[nodeLabel][dataKey] = data
 
-    @staticmethod
-    def loadConfigData(configFileName):
+    def loadYAMLConfigData(self, graphDataFile):
         """
         reads in the simulation parameters from a YAML config file
 
-        :param      configFileName:  The YAML configuration file name
-        :type       configFileName:  filename string
+        :param      graphDataFile:  The YAML graph data configuration file name
+        :type       graphDataFile:  filename path string
 
-        :returns:   configuration data dictionary for the simulation
+        :returns:   configuration data dictionary for the pdfa
         :rtype:     dictionary of class settings
         """
 
-        with open(configFileName, 'r') as stream:
+        with open(graphDataFile, 'r') as stream:
             configData = yaml.load(stream, Loader=yaml.Loader)
 
         return configData
 
-    def generateTraces(self, numSamples):
+    def generateTraces(self, numSamples, N):
         """
         generates numSamples random traces from the pdfa
 
@@ -417,31 +464,42 @@ class PDFA(nx.MultiDiGraph):
         numSamples = int(numSamples)
 
         iters = range(0, numSamples)
-        results = Parallel(n_jobs=num_cores)(
-            delayed(self.generateTrace)(startState) for i in iters)
+        results = Parallel(n_jobs=NUM_CORES, verbose=1)(
+            delayed(self.generateTrace)(startState, N) for i in iters)
 
         samples, traceLengths = zip(*results)
 
         return samples, traceLengths
 
-    def dispEdges(self):
+    def dispEdges(self, graph=None):
         """
         Prints each edge in the graph in an edge-list tuple format
+
+        :param      graph:  The graph to access. Default = None => use instance
+        :type       graph:  PDFA, nx.MultiDiGraph, or None
         """
 
-        for n, nbrs in self.adj.items():
-            for nbr, eattr in nbrs.items():
+        if graph is None:
+            graph = self
 
-                symbol = str(eattr['symbol'])
-                prob = str(eattr['probability'])
-                print('(%s, %s, %d:%0.3g)' % (str(n), str(nbr), symbol, prob))
+        for node, neighbors in graph.adj.items():
+            for neighbor, edges in neighbors.items():
+                for edge_number, edge_data in edges.items():
 
-    def dispNodes(self):
+                    print(node, neighbor, edge_data)
+
+    def dispNodes(self, graph=None):
         """
         Prints each node's data view
+
+        :param      graph:  The graph to access. Default = None => use instance
+        :type       graph:  PDFA, nx.MultiDiGraph, or None
         """
 
-        for node in self.nodes(data=True):
+        if graph is None:
+            graph = self
+
+        for node in graph.nodes(data=True):
             print(node)
 
     def writeTracesToFile(self, fName, traces, numSamples, traceLengths):
