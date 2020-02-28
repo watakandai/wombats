@@ -60,8 +60,8 @@ class PDFA(nx.MultiDiGraph):
         #   - networkx.add_nodes_from()
         #   - networkx.add_edges_from()
         states, \
-            edges = self.formatDataFromConfig(configData['nodes'],
-                                              configData['edges'])
+            edges = self.getStatesAndEdges(configData['nodes'],
+                                           configData['edges'])
 
         self.beta = configData['beta']
         """the final state probability needed for a state to accept"""
@@ -112,7 +112,7 @@ class PDFA(nx.MultiDiGraph):
         self.dispEdges(graph)
 
 
-    def formatDataFromConfig(self, nodes, adjList):
+    def getStatesAndEdges(self, nodes, adjList):
         """
         Converts node and adjList data from a manually specified YAML config
         file to the format needed by:
