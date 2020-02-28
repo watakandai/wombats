@@ -33,12 +33,17 @@ class PDFA(nx.MultiDiGraph):
                        given the starting node
     """
 
-    def __init__(self, graphDataFile):
+    def __init__(self, graphDataFile, graphDataFileFormat='native'):
         """
         Constructs a new instance of a PDFA object.
 
-        :param      graphDataFile:  The graph configuration file name
-        :type       graphDataFile:  filename path string
+        :param      graphDataFile:        The graph configuration file name
+        :type       graphDataFile:        filename path string
+        :param      graphDataFileFormat:  The graph data file format. Supports:
+                                          - 'native'
+                                          - 'flexfringe'
+                                          (Defualt 'native')
+        :type       graphDataFileFormat:  string
         """
 
         # need to start with a fully initialized networkx digraph
@@ -49,12 +54,15 @@ class PDFA(nx.MultiDiGraph):
 
         _, file_extension = os.path.splitext(graphDataFile)
 
-        if file_extension == '.yaml':
+        if file_extension == '.yaml' and graphDataFileFormat == 'native':
             configData = self.loadYAMLConfigData(graphDataFile)
-        elif file_extension == '.dot':
-            configData = self.loadDOTConfigData(graphDataFile)
+        elif file_extension == '.dot' and graphDataFileFormat == 'flexfringe':
+            configData = self.loadFlexFringeConfigData(graphDataFile)
         else:
-            raise ValueError('%s is not a .yaml or .dot file' % graphDataFile)
+            raise ValueError('graphDataFile (%s) is not a .yaml or .dot ' +
+                             'file with the proper' +
+                             ' graphDataFileFormat (%s)' % graphDataFile,
+                             graphDataFileFormat)
 
         # states and edges must be in the format needed by:
         #   - networkx.add_nodes_from()
@@ -62,6 +70,18 @@ class PDFA(nx.MultiDiGraph):
         states, \
             edges = self.getStatesAndEdges(configData['nodes'],
                                            configData['edges'])
+        if states and edges:
+            self.add_nodes_from(states)
+            self.add_edges_from(edges)
+        else:
+            raise ValueError('need non-empty states and edges lists')
+
+        self._nodeProperties = set([k for n in self.nodes
+                                    for k in self.nodes[n].keys()])
+        """ a set of all of the node propety keys in each nodes' dict """
+
+        self._DEFAULT_BETA = 0.95
+        """used to set beta when it is not given in graphDataFile"""
 
         self.beta = configData['beta']
         """the final state probability needed for a state to accept"""
@@ -72,22 +92,15 @@ class PDFA(nx.MultiDiGraph):
         self.numStates = configData['numStates']
         """number of states in pdfa state space"""
 
+        self._DEFAULT_LAMBDA_TRANSITION_SYMBOL = -1
+        """used to set the empty string symbol when it is not given in
+           graphDataFile"""
+
         self.lambdaTransitionSymbol = configData['lambdaTransitionSymbol']
         """representation of the empty string / symbol (a.k.a. lambda)"""
 
         self.startState = configData['startState']
         """unique start state string label of pdfa"""
-
-        # when given pdfa definition in structured form
-        if states and edges:
-            self.add_nodes_from(states)
-            self.add_edges_from(edges)
-        else:
-            raise ValueError('need non-empty states and edges lists')
-
-        self.nodeProperties = set([k for n in self.nodes
-                                   for k in self.nodes[n].keys()])
-        """ a set of all of the node propety keys in each nodes' dict """
 
         # do batch computations at initialization, as these shouldn't
         # frequently change
@@ -95,22 +108,28 @@ class PDFA(nx.MultiDiGraph):
         self.setNodeLabels()
         self.setEdgeLabels()
 
-    def loadDOTConfigData(self, graphDataFile):
+    def loadFlexFringeConfigData(self, graphDataFile):
         """
-        reads in graph configuration data from a dot file
+        reads in graph configuration data from a flexfringe dot file
 
         :param      graphDataFile:  The .dot graph data configuration file name
         :type       graphDataFile:  filename path string
 
-        :returns:   instantiated nx.MultiDiGraph,
-                    configuration data dictionary for the pdfa
-        :rtype:     dictionary of class settings
+        :returns:   configuration data dictionary for the pdfa
+        :rtype:     dictionary of pdfa data and settings
         """
 
         graph = read_dot(graphDataFile)
 
         self.dispEdges(graph)
 
+    def convert_FlexFringeNodesToPDFANodes(self, fdfaNodes):
+        """
+        converts a node list 
+    
+        :param      fdfaNodes:  The fdfa nodes
+        :type       fdfaNodes:  { type_description }
+        """
 
     def getStatesAndEdges(self, nodes, adjList):
         """
@@ -437,7 +456,7 @@ class PDFA(nx.MultiDiGraph):
         :type       graphDataFile:  filename path string
 
         :returns:   configuration data dictionary for the pdfa
-        :rtype:     dictionary of class settings
+        :rtype:     dictionary of pdfa data and settings
         """
 
         with open(graphDataFile, 'r') as stream:
@@ -502,19 +521,19 @@ class PDFA(nx.MultiDiGraph):
         for node in graph.nodes(data=True):
             print(node)
 
-    def writeTracesToFile(self, fName, traces, numSamples, traceLengths):
+    def writeTracesToFile(self, traces, numSamples, traceLengths, fName):
         """
         Writes trace samples to a file in the abbadingo format for use in
         flexfringe
 
-        :param      fName:          The file name to write to
-        :type       fName:          filename string
-        :param      traces:         The traces to write to a file
-        :type       traces:         list of strings
-        :param      numSamples:     The number sampled traces
-        :type       numSamples:     integer
-        :param      traceLengths:   list of sampled trace lengths
-        :type       traceLengths:   list of integers
+        :param      traces:        The traces to write to a file
+        :type       traces:        list of strings
+        :param      numSamples:    The number sampled traces
+        :type       numSamples:    integer
+        :param      traceLengths:  list of sampled trace lengths
+        :type       traceLengths:  list of integers
+        :param      fName:         The file name to write to
+        :type       fName:         filename string
         """
 
         # make sure the numSamples is an int, so you don't have to wrap shit in
