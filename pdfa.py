@@ -8,6 +8,7 @@ from IPython.display import display
 import multiprocessing
 from joblib import Parallel, delayed
 import os
+import re
 
 NUM_CORES = multiprocessing.cpu_count()
 
@@ -39,7 +40,8 @@ class PDFA(nx.MultiDiGraph):
 
         :param      graphDataFile:        The graph configuration file name
         :type       graphDataFile:        filename path string
-        :param      graphDataFileFormat:  The graph data file format. Supports:
+        :param      graphDataFileFormat:  The graph data file format.
+                                          Supported formats:
                                           - 'native'
                                           - 'flexfringe'
                                           (Defualt 'native')
@@ -59,11 +61,11 @@ class PDFA(nx.MultiDiGraph):
         elif file_extension == '.dot' and graphDataFileFormat == 'flexfringe':
             configData = self.loadFlexFringeConfigData(graphDataFile)
         else:
-            raise ValueError('graphDataFile (%s) is not a .yaml or .dot ' +
-                             'file with the proper' +
-                             ' graphDataFileFormat (%s)' % graphDataFile,
-                             graphDataFileFormat)
-
+            errStr = 'graphDataFile ({}) is not a .yaml or .dot ' + \
+                     'file matching the supported filetype(s) for the ' +\
+                     'selected graphDataFileFormat ({})'
+            raise ValueError(errStr.format(graphDataFile, graphDataFileFormat))
+        print(configData['edges'])
         # states and edges must be in the format needed by:
         #   - networkx.add_nodes_from()
         #   - networkx.add_edges_from()
@@ -120,16 +122,50 @@ class PDFA(nx.MultiDiGraph):
         """
 
         graph = read_dot(graphDataFile)
+        nodes = self.convert_FlexFringeNodesToPDFANodes(graph.nodes(data=True))
+        edges = self.convert_FlexFringeNodesToPDFANodes(graph.edges(data=True))
 
-        self.dispEdges(graph)
+    def convert_FlexFringeNodesToPDFANodes(self, flexfringeNodes):
+        """
+        converts a node list from a flexfringe dot file into the internal node
+        format needed by getStatesAndEdges
 
-    def convert_FlexFringeNodesToPDFANodes(self, fdfaNodes):
+        :param      flexfringeNodes:  The flexfringe node list mapping node
+                                      labels to node attributes
+        :type       flexfringeNodes:  dict of dicts
+
+        :returns:   a dict mapping state labels to a dict of node attributes
+        :rtype:     dict of dicts
+
+        :raises     ValueError:       can't read in "blue" flexfringe nodes, as
+                                      they are theoretically undefined for this
+                                      class right now
         """
-        converts a node list 
-    
-        :param      fdfaNodes:  The fdfa nodes
-        :type       fdfaNodes:  { type_description }
-        """
+
+        nodes = {}
+
+        for _, nodeData in flexfringeNodes:
+
+            if 'label' not in nodeData:
+                continue
+
+            stateLabel = re.findall(r'\d+', nodeData['label'])
+
+            # we can't add blue nodes to our graph
+            if 'style' in nodeData:
+                if 'dotted' in nodeData['style']:
+                    err = ('node = {} from flexfringe is blue,' +
+                           ' reading in blue states is not' +
+                           ' currently supported').format(nodeData)
+                    raise ValueError(err)
+
+            newNodeLabel = 'q' + stateLabel[0]
+            newNodeData = {'final_probability': 0.0,
+                           'transDistribution': None,
+                           'isAccepting': None}
+            nodes[newNodeLabel] = newNodeData
+
+        return nodes
 
     def getStatesAndEdges(self, nodes, adjList):
         """
@@ -137,20 +173,17 @@ class PDFA(nx.MultiDiGraph):
         file to the format needed by:
             - networkx.add_nodes_from()
             - networkx.add_edges_from()
-
+        
         :param      nodes:    dict of node objects to be converted
         :type       nodes:    dict of node label to node propeties
         :param      adjList:  dictionary adj. list to be converted
         :type       adjList:  dict of src node label to dict of dest label to
                               edge properties
-
+        
         :returns:   properly formated node and edge list containers
-        :rtype:     tuple:
-                    (
-                     nodes - list of tuples: (node label, node attribute dict),
-                     edges - list of tuples: (src node label, dest node label,
-                                              edge attribute dict)
-                    )
+        :rtype:     tuple: ( nodes - list of tuples: (node label, node
+                    attribute dict), edges - list of tuples: (src node label,
+                    dest node label, edge attribute dict) )
         """
 
         # need to convert the configuration adjacency list given in the config
@@ -415,7 +448,7 @@ class PDFA(nx.MultiDiGraph):
         :param      graph:      The graph to access. Default = None => use
                                 instance (default None)
         :type       graph:      {None, PDFA, nx.MultiDiGraph}
-        
+
         :returns:   The node data associated with the nodeLabel and dataKey
         :rtype:     type of self.nodes.data()[nodeLabel][dataKey]
         """
