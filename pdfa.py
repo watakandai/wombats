@@ -123,7 +123,8 @@ class PDFA(nx.MultiDiGraph):
 
         graph = read_dot(graphDataFile)
         nodes = self.convert_FlexFringeNodesToPDFANodes(graph.nodes(data=True))
-        edges = self.convert_FlexFringeNodesToPDFANodes(graph.edges(data=True))
+        edges = self.convert_FlexFringeEdgesToPDFAEdges(graph.edges(data=True))
+        # need to set final state probs in nodes
 
     def convert_FlexFringeNodesToPDFANodes(self, flexfringeNodes):
         """
@@ -134,8 +135,10 @@ class PDFA(nx.MultiDiGraph):
                                       labels to node attributes
         :type       flexfringeNodes:  dict of dicts
 
-        :returns:   a dict mapping state labels to a dict of node attributes
-        :rtype:     dict of dicts
+        :returns:   a dict mapping state labels to a dict of node attributes,
+                    a dict mapping state labels to flexfringe node IDs,
+        :rtype:     dict of dicts,
+                    dict
 
         :raises     ValueError:       can't read in "blue" flexfringe nodes, as
                                       they are theoretically undefined for this
@@ -143,8 +146,9 @@ class PDFA(nx.MultiDiGraph):
         """
 
         nodes = {}
+        nodeLabelToNodeIDMap = {}
 
-        for _, nodeData in flexfringeNodes:
+        for nodeID, nodeData in flexfringeNodes:
 
             if 'label' not in nodeData:
                 continue
@@ -164,8 +168,35 @@ class PDFA(nx.MultiDiGraph):
                            'transDistribution': None,
                            'isAccepting': None}
             nodes[newNodeLabel] = newNodeData
+            nodeLabelToNodeIDMap[newNodeLabel] = nodeID
 
-        return nodes
+        return nodes, nodeLabelToNodeIDMap
+
+    def convert_FlexFringeEdgesToPDFAEdges(self, flexfringeEdges):
+        """
+        converts edges read in from flexfringe (FF) dot files into the internal
+        edge format needed by getStatesAndEdges
+        
+        :param      flexfringeEdges:  The flexfringe edge list mapping edges
+                                      labels to edge attributes
+        :type       flexfringeEdges:  list of tuples of: (srcFFNodeID,
+                                      srcFFNodeID, edgeData)
+        
+        :returns:   { description_of_the_return_value }
+        :rtype:     { return_type_description }
+        """
+
+        edges = {}
+
+        for srcFFNodeID, destFFNodeID, edgeData in flexfringeEdges:
+
+            if 'label' not in edgeData:
+                continue
+            print(srcFFNodeID, destFFNodeID, edgeData)
+            transitionData = re.findall(r'(\d+):(\d+)', edgeData['label'])
+            print(transitionData)
+
+        return None
 
     def getStatesAndEdges(self, nodes, adjList):
         """
