@@ -5,23 +5,27 @@ from wombats.factory.object_factory import ObjectFactory
 class AutomatonCollection(ObjectFactory):
     """
     registering the builders for the different types of automaton objects
-    with a more readable interface to our generic factory class
+    with a more readable interface to our generic factory class.
     """
 
-    def get(self, automaton_type, **kwargs):
+    def get(self, automaton_type, **config_data):
         """
-        allows for more readble creation / access to a concrete
-        wombats.automaton objects
+        return an instance of an automaton given the automaton_type and the
+        config_data.
+
+        If the automaton has already been intialized with the same
+        configuration data, it will return the already-initialized instance of
+        it
 
         :param      automaton_type:  The automaton type
         :type       automaton_type:  string
-        :param      kwargs:          The keywords arguments to pass to the
-                                     specific automaton constructor
-        :type       kwargs:          dictionary
+        :param      config_data:     The keywords arguments to pass to the
+                                     specific automaton builder class
+        :type       config_data:     dictionary
 
         :returns:   an intialized / active reference to the desired type of
                     automaton object
-        :rtype:     { return_type_description }
+        :rtype:     specific instance of an automaton object
         """
 
-        return self.create(automaton_type, **kwargs)
+        return self.create(automaton_type, **config_data)
