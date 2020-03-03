@@ -2,42 +2,47 @@
 import yaml
 
 
-##
-# @brief      Implements an abstract generic builder class to use with factory
-#
 class Builder:
+    """
+    Implements an abstract generic builder class to use with ObjectFactory
 
-    ##
-    # @brief      Builder constructor. Just sets the internal instance
-    #             reference to None
-    #
+    implementation based on https://realpython.com/factory-method-python/
+    """
+
     def __init__(self):
+        """
+        Builder constructor. Just sets the internal instance references to None
+        """
 
         self._instance = None
-        self._configName = None
+        self._config_name = None
 
-    ##
-    # @brief      Abstract implementation of the constructor for the object to
-    #             be built.
-    #
-    # @param      kwargs  The keywords arguments for the object to be built's
-    #                     constructor
-    #
-    # @return     a concrete implentation of the object to be built
-    #
     def __call__(self, **kwargs):
+        """
+        Abstract implementation of the constructor for the object to be
+        built.
+
+        :param      kwargs:  The keywords arguments for the object to be
+                             built's constructor
+        :type       kwargs:  dictionary
+
+        :returns:   a concrete instance of the object to be built
+        :rtype:     { return_type_description }
+        """
 
         return NotImplementedError
 
-    ##
-    # @brief      reads in the simulation parameters from a YAML config file
-    #
-    # @param      config_file_name  The YAML configuration file name
-    #
-    # @return     configuration data dictionary for the simulation
-    #
     @staticmethod
     def load_YAML_config_data(config_file_name):
+        """
+        reads in the object configuration parameters from a YAML config file
+
+        :param      config_file_name:  The YAML configuration file name
+        :type       config_file_name:  (filepath) string
+
+        :returns:   configuration data dictionary for the simulation
+        :rtype:     dict
+        """
 
         with open(config_file_name, 'r') as stream:
             config_data = yaml.load(stream, Loader=yaml.Loader)

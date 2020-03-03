@@ -1,44 +1,53 @@
 
 
-##
-# @brief      Generic object factory leveraging the generic Builder interface
-#             see: https://realpython.com/factory-method-python/
-#
 class ObjectFactory:
+    """
+    Generic object factory leveraging the generic Builder interface
+    see: https://realpython.com/factory-method-python/
+    """
 
-    ##
-    # @brief      Constructs a new instance of the ObjectFactory
-    #
     def __init__(self):
+        """
+        Constructs a new instance of the ObjectFactory
+        """
 
         self._builders = {}
 
-    ##
-    # @brief      adds the builder object to the internal builder dictionary
-    #
-    # @param      key      The string key reffering to the builder
-    # @param      builder  The builder object
-    #                      This can be any function, class or object
-    #                      implementing the .__call__() method
-    #
-    # @return     the _builders dictionary has the key-builder pair appended
-    #
     def register_builder(self, key, builder):
+        """!
+        ! adds the builder object to the internal builder dictionary
+
+        effects: the _builders dictionary has the key-builder pair appended
+
+        :param      key:      The _builders dict key reffering to the builder
+        :type       key:      string
+        :param      builder:  The Builder object
+                              This can be any function,
+                              class or object implementing the .__call__()
+                              method
+        :type       builder:  Builder
+        """
 
         self._builders[key] = builder
 
-    ##
-    # @brief      Returns a concrete object using the object builder specified
-    #             by key and the concrete constructor arguements needed as
-    #             kwargs
-    #
-    # @param      key       The string key specifying the builder to use
-    # @param      **kwargs  The keywords arguments needed by the builder
-    #                       specified by key
-    #
-    # @return     A concrete object built by the builder specified with key
-    #
     def create(self, key, **kwargs):
+        """
+        Returns an instance object built with the keyed builder key and the
+        constructor arguments in kwargs
+
+        :param      key:         The _builders dict key reffering to the
+                                 builder
+        :type       key:         string
+        :param      kwargs:      The keywords arguments needed by the builder
+                                 specified by key
+        :type       kwargs:      dictionary
+
+        :returns:   A concrete object built by the builder specified with key
+        :rtype:     who knows lol
+
+        :raises     ValueError:  given key must match an existing builder in
+                                 _builders
+        """
 
         builder = self._builders.get(key)
 
