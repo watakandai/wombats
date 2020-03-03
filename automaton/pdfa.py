@@ -26,15 +26,15 @@ class PDFA(nx.MultiDiGraph):
     -----------------
         - final_probability: final state probability for the node
         - trans_distribution: a sampled-able function to select the next state
-                             and emitted symbol
+          and emitted symbol
         - is_accepting: a boolean flag determining whether the pdfa considers
-                       the node accepting
+          the node accepting
 
     Edge Properties
     -----------------
         - symbol: the numeric symbol value emitted when the edge is traversed
         - probability: the probability of selecting this edge for traversal,
-                       given the starting node
+          given the starting node
     """
 
     def __init__(self, nodes, edge_list, alphabet_size, num_states,
@@ -179,9 +179,9 @@ class PDFA(nx.MultiDiGraph):
 
         :param      curr_state:  The current state's node label
         :type       curr_state:  string
-        :param      beta:       The cut point final state probability
-                                acceptance parameter for the PDFA
-        :type       beta:       float
+        :param      beta:        The cut point final state probability
+                                 acceptance parameter for the PDFA
+        :type       beta:        float
         """
 
         curr_final_prob = self._get_node_data(curr_state, 'final_probability')
@@ -199,8 +199,8 @@ class PDFA(nx.MultiDiGraph):
 
         :param      curr_state:  The current state label
         :type       curr_state:  string
-        :param      edges:      The networkx edge list
-        :type       edges:      list
+        :param      edges:       The networkx edge list
+        :type       edges:       list
 
         :returns:   a function to sample the discrete state transition
                     distribution
@@ -290,8 +290,8 @@ class PDFA(nx.MultiDiGraph):
         """
         Chooses the next state based on curr_state's transition distribution
 
-        :param      curr_state:     The current state label
-        :type       curr_state:     string
+        :param      curr_state:    The current state label
+        :type       curr_state:    string
         :param      random_state:  The np.random.RandomState() seed parameter
                                    for sampling from the state transition
                                    distribution. Defaulting to None causes the
@@ -336,9 +336,9 @@ class PDFA(nx.MultiDiGraph):
         """
         Generates a trace from the pdfa starting from start_state
 
-        :param      start_state:    the state label to start sampling traces
+        :param      start_state:   the state label to start sampling traces
                                    from
-        :type       start_state:    string
+        :type       start_state:   string
         :param      N:             maximum length of trace
         :type       N:             scalar integer
         :param      random_state:  The np.random.RandomState() seed parameter
@@ -389,9 +389,9 @@ class PDFA(nx.MultiDiGraph):
         :type       node_label:  string
         :param      data_key:    The desired node data's key name
         :type       data_key:    string
-        :param      graph:      The graph to access. Default = None => use
-                                instance (default None)
-        :type       graph:      {None, PDFA, nx.MultiDiGraph}
+        :param      graph:       The graph to access. Default = None => use
+                                 instance (default None)
+        :type       graph:       {None, PDFA, nx.MultiDiGraph}
 
         :returns:   The node data associated with the node_label and data_key
         :rtype:     type of self.nodes.data()[node_label][data_key]
@@ -412,11 +412,11 @@ class PDFA(nx.MultiDiGraph):
         :type       node_label:  string
         :param      data_key:    The desired node data's key name
         :type       data_key:    string
-        :param      data:       The data to associate with data_key
-        :type       data:       whatever u want bro
-        :param      graph:      The graph to access. Default = None => use
-                                instance (default None)
-        :type       graph:      {None, PDFA, nx.MultiDiGraph}
+        :param      data:        The data to associate with data_key
+        :type       data:        whatever u want bro
+        :param      graph:       The graph to access. Default = None => use
+                                 instance (default None)
+        :type       graph:       {None, PDFA, nx.MultiDiGraph}
         """
 
         if graph is None:
@@ -431,6 +431,8 @@ class PDFA(nx.MultiDiGraph):
 
         :param      num_samples:  The number of trace samples to generate
         :type       num_samples:  scalar int
+        :param      N:            maximum length of trace
+        :type       N:            scalar integer
 
         :returns:   the list of sampled trace strings and a list of the
                     associated trace lengths
@@ -482,26 +484,26 @@ class PDFA(nx.MultiDiGraph):
         for node in graph.nodes(data=True):
             print(node)
 
-    def write_traces_to_file(self, traces, num_samples, trace_lengths, fName):
+    def write_traces_to_file(self, traces, num_samples, trace_lengths, f_name):
         """
         Writes trace samples to a file in the abbadingo format for use in
         flexfringe
 
-        :param      traces:        The traces to write to a file
-        :type       traces:        list of strings
+        :param      traces:         The traces to write to a file
+        :type       traces:         list of strings
         :param      num_samples:    The number sampled traces
         :type       num_samples:    integer
         :param      trace_lengths:  list of sampled trace lengths
         :type       trace_lengths:  list of integers
-        :param      fName:         The file name to write to
-        :type       fName:         filename string
+        :param      f_name:          The file name to write to
+        :type       f_name:          filename string
         """
 
         # make sure the num_samples is an int, so you don't have to wrap shit
         # in an 'int()' every time...
         num_samples = int(num_samples)
 
-        with open(fName, 'w+') as f:
+        with open(f_name, 'w+') as f:
 
             # need the header to be:
             # number_of_training_samples size_of_alphabet
@@ -516,13 +518,12 @@ class PDFA(nx.MultiDiGraph):
         Returns the Abbadingo (sigh) formatted string given a trace string and
         the label for the trace
 
-        :param      trace:              The trace string to represent in
-                                        Abbadingo
-        :type       trace:              string
-        :param      trace_length:        The trace length
-        :type       trace_length:        integer
+        :param      trace:           The trace string to represent in Abbadingo
+        :type       trace:           string
+        :param      trace_length:    The trace length
+        :type       trace_length:    integer
         :param      is_pos_example:  Indicates if the trace is a positive
-                                        example of the pdfa
+                                     example of the pdfa
         :type       is_pos_example:  boolean
 
         :returns:   The abbadingo formatted string for the given trace
@@ -554,20 +555,21 @@ class PDFABuilder(Builder):
     def __call__(self, graph_data_file, graph_data_file_format='native'):
         """
         Implements the smart constructor for PDFA
-
+        
         Only reads the config data once, otherwise just returns the built
         object
-
-        :param      graph_data_file:        The graph configuration file name
-        :type       graph_data_file:        filename path string
+        
+        :param      graph_data_file:         The graph configuration file name
+        :type       graph_data_file:         filename path string
         :param      graph_data_file_format:  The graph data file format.
-                                          Supported formats:
-                                          - 'native'
-                                          (Defualt 'native')
+                                             Supported formats:
         :type       graph_data_file_format:  string
-
+                                          - 'native' (Defualt 'native')
+        
         :returns:   instance of an initialized PDFA object
         :rtype:     PDFA
+        
+        :raises     ValueError:              { exception_description }
         """
 
         _, file_extension = os.path.splitext(graph_data_file)
