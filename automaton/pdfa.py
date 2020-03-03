@@ -4,7 +4,6 @@ import numpy as np
 from scipy import stats
 from networkx.drawing.nx_pydot import to_pydot
 import graphviz as gv
-import yaml
 from IPython.display import display
 import multiprocessing
 from joblib import Parallel, delayed
@@ -26,9 +25,9 @@ class PDFA(nx.MultiDiGraph):
     Node Attributes
     -----------------
         - final_probability: final state probability for the node
-        - transDistribution: a sampled-able function to select the next state
+        - trans_distribution: a sampled-able function to select the next state
                              and emitted symbol
-        - isAccepting: a boolean flag determining whether the pdfa considers
+        - is_accepting: a boolean flag determining whether the pdfa considers
                        the node accepting
 
     Edge Properties
@@ -38,44 +37,45 @@ class PDFA(nx.MultiDiGraph):
                        given the starting node
     """
 
-    def __init__(self, nodes, edgeList, beta, alphabetSize, numStates,
-                 lambdaTransitionSymbol, startState):
+    def __init__(self, nodes, edge_list, alphabet_size, num_states,
+                 start_state, beta=0.95, lambda_transition_sym=-1):
         """
         Constructs a new instance of a PDFA object.
 
-        :param      nodes:                   dict of node objects to be
-                                             converted
-        :type       nodes:                   dict of node label to node
-                                             propeties
-        :param      edgeList:                dictionary adj. list representing
-                                             the edgeList
-        :type       edgeList:                dict of src node label to dict of
-                                             dest label to edge properties
-        :param      beta:                    the final state probability needed
-                                             for a state to accept
-        :type       beta:                    Float
-        :param      alphabetSize:            number of symbols in pdfa alphabet
-        :type       alphabetSize:            Int
-        :param      numStates:               number of states in automaton
-                                             state space
-        :type       numStates:               Int
-        :param      lambdaTransitionSymbol:  representation of the empty string
-                                             / symbol (a.k.a. lambda)
-        :type       lambdaTransitionSymbol:  same type as PDFA.edges symbol
-                                             property
-        :param      startState:              unique start state string label of
-                                             pdfa
-        :type       startState:              same type as PDFA.nodes node
-                                             object
+        :param      nodes:                  dict of node objects to be
+                                            converted
+        :type       nodes:                  dict of node label to node
+                                            propeties
+        :param      edge_list:              dictionary adj. list representing
+                                            the edge_list
+        :type       edge_list:              dict of src node label to dict of
+                                            dest label to edge properties
+        :param      alphabet_size:          number of symbols in pdfa alphabet
+        :type       alphabet_size:          Int
+        :param      num_states:             number of states in automaton state
+                                            space
+        :type       num_states:             Int
+        :param      start_state:            unique start state string label of
+                                            pdfa
+        :type       start_state:            same type as PDFA.nodes node object
+        :param      beta:                   the final state probability needed
+                                            for a state to accept (default
+                                            0.95)
+        :type       beta:                   Float
+        :param      lambda_transition_sym:  representation of the empty string
+                                            / symbol (a.k.a. lambda) (defualt
+                                            -1)
+        :type       lambda_transition_sym:  same type as PDFA.edges symbol
+                                            property
         """
 
         # need to start with a fully initialized networkx digraph
         super().__init__()
 
-        # nodes and edgeList must be in the format needed by:
+        # nodes and edge_list must be in the format needed by:
         #   - networkx.add_nodes_from()
         #   - networkx.add_edges_from()
-        states, edges = self.getStatesAndEdges(nodes, edgeList)
+        states, edges = self._get_states_edges(nodes, edge_list)
 
         if states and edges:
             self.add_nodes_from(states)
@@ -83,39 +83,32 @@ class PDFA(nx.MultiDiGraph):
         else:
             raise ValueError('need non-empty states and edges lists')
 
-        self._nodeProperties = set([k for n in self.nodes
+        self._node_properties = set([k for n in self.nodes
                                     for k in self.nodes[n].keys()])
         """ a set of all of the node propety keys in each nodes' dict """
 
-        self._DEFAULT_BETA = 0.95
-        """used to set beta when it is not given in graphDataFile"""
-
-        self.beta = beta
+        self._beta = beta
         """the final state probability needed for a state to accept"""
 
-        self.alphabetSize = alphabetSize
+        self._alphabet_size = alphabet_size
         """number of symbols in pdfa alphabet"""
 
-        self.numStates = numStates
+        self._num_states = num_states
         """number of states in pdfa state space"""
 
-        self._DEFAULT_LAMBDA_TRANSITION_SYMBOL = -1
-        """used to set the empty string symbol when it is not given in
-           graphDataFile"""
-
-        self.lambdaTransitionSymbol = lambdaTransitionSymbol
+        self._lambda_transition_sym = lambda_transition_sym
         """representation of the empty string / symbol (a.k.a. lambda)"""
 
-        self.startState = startState
+        self._start_state = start_state
         """unique start state string label of pdfa"""
 
         # do batch computations at initialization, as these shouldn't
         # frequently change
-        self.computeNodeProperties()
-        self.setNodeLabels()
-        self.setEdgeLabels()
+        self._compute_node_properties()
+        self._set_node_labels()
+        self._set_edge_labels()
 
-    def getStatesAndEdges(self, nodes, edges):
+    def _get_states_edges(self, nodes, edges):
         """
         Converts node and edges data from a manually specified YAML config file
         to the format needed by:
@@ -136,76 +129,76 @@ class PDFA(nx.MultiDiGraph):
 
         # need to convert the configuration adjacency list given in the config
         # to an edge list given as a 3-tuple of (source, dest, edgeAttrDict)
-        edgeList = []
-        for sourceNode, destEdgesData in edges.items():
+        edge_list = []
+        for source_node, dest_edges_data in edges.items():
 
             # don't need to add any edges if there is no edge data
-            if destEdgesData is None:
+            if dest_edges_data is None:
                 continue
 
-            for destNode in destEdgesData:
+            for dest_node in dest_edges_data:
 
-                symbols = destEdgesData[destNode]['symbols']
-                probabilities = destEdgesData[destNode]['probabilities']
+                symbols = dest_edges_data[dest_node]['symbols']
+                probabilities = dest_edges_data[dest_node]['probabilities']
 
                 for symbol, probability in zip(symbols, probabilities):
 
-                    edgeData = {'symbol': symbol, 'probability': probability}
-                    newEdge = (sourceNode, destNode, edgeData)
-                    edgeList.append(newEdge)
+                    edge_data = {'symbol': symbol, 'probability': probability}
+                    newEdge = (source_node, dest_node, edge_data)
+                    edge_list.append(newEdge)
 
         # best convention is to convert dict_items to a list, even though both
         # are iterable
-        convertedNodes = list(nodes.items())
+        converted_nodes = list(nodes.items())
 
-        return convertedNodes, edgeList
+        return converted_nodes, edge_list
 
-    def computeNodeProperties(self):
+    def _compute_node_properties(self):
         """
         Calculates the properties for each node.
 
         currently calculated properties:
-            - 'isAccepting'
-            - 'transDistribution'
+            - 'is_accepting'
+            - 'trans_distribution'
         """
 
         for node in self.nodes:
 
             # beta-acceptance property shouldn't change after load in
-            self.setStateAcceptance(node, self.beta)
+            self._set_state_acceptance(node, self._beta)
 
             # if we compute this once, we can sample from each distribution
-            self.nodes[node]['transDistribution'] = \
-                self.setStateTransDistribution(node, self.edges)
+            self.nodes[node]['trans_distribution'] = \
+                self._set_state_trans_distribution(node, self.edges)
 
-    def setStateAcceptance(self, currState, beta):
+    def _set_state_acceptance(self, curr_state, beta):
         """
         Sets the state acceptance property for the given state.
 
-        If currState's final_probability >= beta, then the state accepts
+        If curr_state's final_probability >= beta, then the state accepts
 
-        :param      currState:  The current state's node label
-        :type       currState:  string
+        :param      curr_state:  The current state's node label
+        :type       curr_state:  string
         :param      beta:       The cut point final state probability
                                 acceptance parameter for the PDFA
         :type       beta:       float
         """
 
-        currFinalProb = self.getNodeData(currState, 'final_probability')
+        curr_final_prob = self._get_node_data(curr_state, 'final_probability')
 
-        if currFinalProb >= self.beta:
-            stateAccepts = True
+        if curr_final_prob >= self._beta:
+            state_accepts = True
         else:
-            stateAccepts = False
+            state_accepts = False
 
-        self.setNodeData(currState, 'isAccepting', stateAccepts)
+        self._set_node_data(curr_state, 'is_accepting', state_accepts)
 
-    def setStateTransDistribution(self, currState, edges):
+    def _set_state_trans_distribution(self, curr_state, edges):
         """
         Computes a static state transition distribution for given state
 
-        :param      currState:  The current state label
-        :type       currState:  string
+        :param      curr_state:  The current state label
+        :type       curr_state:  string
         :param      edges:      The networkx edge list
         :type       edges:      list
 
@@ -214,27 +207,28 @@ class PDFA(nx.MultiDiGraph):
         :rtype:     stats.rv_discrete object
         """
 
-        edgeData = edges([currState], data=True)
+        edge_data = edges([curr_state], data=True)
 
-        edgeDests = [edge[1] for edge in edgeData]
-        edgeSymbols = [edge[2]['symbol'] for edge in edgeData]
+        edge_dests = [edge[1] for edge in edge_data]
+        edge_symbols = [edge[2]['symbol'] for edge in edge_data]
 
         # need to add final state probability to dicrete rv dist
-        edgeProbs = [edge[2]['probability'] for edge in edgeData]
+        edge_probs = [edge[2]['probability'] for edge in edge_data]
 
-        currFinalStateProb = self.getNodeData(currState, 'final_probability')
+        curr_final_state_prob = self._get_node_data(curr_state,
+                                                    'final_probability')
 
         # adding the final-state sequence end transition to the distribution
-        edgeProbs.append(currFinalStateProb)
-        edgeDests.append(currState)
-        edgeSymbols.append(self.lambdaTransitionSymbol)
+        edge_probs.append(curr_final_state_prob)
+        edge_dests.append(curr_state)
+        edge_symbols.append(self._lambda_transition_sym)
 
-        nextSymbolDist = stats.rv_discrete(name='custm',
-                                           values=(edgeSymbols, edgeProbs))
+        next_symbol_dist = stats.rv_discrete(name='custm',
+                                             values=(edge_symbols, edge_probs))
 
-        return nextSymbolDist
+        return next_symbol_dist
 
-    def setNodeLabels(self, graph=None):
+    def _set_node_labels(self, graph=None):
         """
         Sets each node's label property for use in graphviz output
 
@@ -246,25 +240,25 @@ class PDFA(nx.MultiDiGraph):
         if graph is None:
             graph = self
 
-        labelDict = {}
+        label_dict = {}
 
-        for nodeName, nodeData in graph.nodes.data():
+        for node_name, node_data in graph.nodes.data():
 
-            finalProbString = str(nodeData['final_probability'])
-            nodeDotLabelString = nodeName + ': ' + finalProbString
-            graphvizNodeLabel = {'label': nodeDotLabelString}
+            final_prob_string = str(node_data['final_probability'])
+            node_dot_label_string = node_name + ': ' + final_prob_string
+            graphviz_node_label = {'label': node_dot_label_string}
 
-            isAccepting = nodeData['isAccepting']
-            if isAccepting:
-                graphvizNodeLabel.update({'shape': 'doublecircle'})
+            is_accepting = node_data['is_accepting']
+            if is_accepting:
+                graphviz_node_label.update({'shape': 'doublecircle'})
             else:
-                graphvizNodeLabel.update({'shape': 'circle'})
+                graphviz_node_label.update({'shape': 'circle'})
 
-            labelDict[nodeName] = graphvizNodeLabel
+            label_dict[node_name] = graphviz_node_label
 
-        nx.set_node_attributes(graph, labelDict)
+        nx.set_node_attributes(graph, label_dict)
 
-    def setEdgeLabels(self, graph=None):
+    def _set_edge_labels(self, graph=None):
         """
         Sets each edge's label property for use in graphviz output
 
@@ -278,26 +272,26 @@ class PDFA(nx.MultiDiGraph):
 
         # this needs to be a mapping from edges (node label tuples) to a
         # dictionary of attributes
-        labelDict = {}
+        label_dict = {}
 
         for u, v, key, data in graph.edges(data=True, keys=True):
 
-            edgeLabelString = str(data['symbol']) + ': ' + \
+            edge_label_string = str(data['symbol']) + ': ' + \
                 str(data['probability'])
 
-            newLabelProperty = {'label': edgeLabelString}
-            nodeIdentifier = (u, v, key)
+            new_label_property = {'label': edge_label_string}
+            node_identifier = (u, v, key)
 
-            labelDict[nodeIdentifier] = newLabelProperty
+            label_dict[node_identifier] = new_label_property
 
-        nx.set_edge_attributes(graph, labelDict)
+        nx.set_edge_attributes(graph, label_dict)
 
-    def chooseNextState(self, currState, random_state=None):
+    def _choose_next_state(self, curr_state, random_state=None):
         """
-        Chooses the next state based on currState's transition distribution
+        Chooses the next state based on curr_state's transition distribution
 
-        :param      currState:     The current state label
-        :type       currState:     string
+        :param      curr_state:     The current state label
+        :type       curr_state:     string
         :param      random_state:  The np.random.RandomState() seed parameter
                                    for sampling from the state transition
                                    distribution. Defaulting to None causes the
@@ -309,42 +303,42 @@ class PDFA(nx.MultiDiGraph):
         :rtype:     tuple(string, numeric)
 
         :raises     ValueError:    if more than one non-zero probability
-                                   transition from currState under a given
+                                   transition from curr_state under a given
                                    symbol exists
         """
 
-        transDist = self.nodes[currState]['transDistribution']
+        trans_dist = self.nodes[curr_state]['trans_distribution']
 
         # critical step for use with parallelized libraries. This must be reset
         # before sampling, as otherwise each of the threads is using the same
         # seed, and we get lots of duplicated strings
-        transDist.random_state = np.random.RandomState(random_state)
+        trans_dist.random_state = np.random.RandomState(random_state)
 
         # sampling an action (symbol )from the state-action distribution at
-        # currState
-        nextSymbol = transDist.rvs(size=1)[0]
+        # curr_state
+        next_symbol = trans_dist.rvs(size=1)[0]
 
-        if nextSymbol == self.lambdaTransitionSymbol:
-            return currState, self.lambdaTransitionSymbol
+        if next_symbol == self._lambda_transition_sym:
+            return curr_state, self._lambda_transition_sym
 
         else:
-            edgeData = self.edges([currState], data=True)
-            nextState = [qNext for qCurr, qNext, data in edgeData
-                         if data['symbol'] == nextSymbol]
+            edge_data = self.edges([curr_state], data=True)
+            next_state = [qNext for qCurr, qNext, data in edge_data
+                          if data['symbol'] == next_symbol]
 
-            if len(nextState) > 1:
-                raise ValueError('1 < transitions: ' + str(nextState) +
-                                 'from' + currState + ' - not deterministic')
+            if len(next_state) > 1:
+                raise ValueError('1 < transitions: ' + str(next_state) +
+                                 'from' + curr_state + ' - not deterministic')
             else:
-                return (nextState[0], nextSymbol)
+                return (next_state[0], next_symbol)
 
-    def generateTrace(self, startState, N, random_state=None):
+    def _generate_trace(self, start_state, N, random_state=None):
         """
-        Generates a trace from the pdfa starting from startState
+        Generates a trace from the pdfa starting from start_state
 
-        :param      startState:    the state label to start sampling traces
+        :param      start_state:    the state label to start sampling traces
                                    from
-        :type       startState:    string
+        :type       start_state:    string
         :param      N:             maximum length of trace
         :type       N:             scalar integer
         :param      random_state:  The np.random.RandomState() seed parameter
@@ -357,66 +351,68 @@ class PDFA(nx.MultiDiGraph):
         :rtype:     tuple(list of strings, integer)
         """
 
-        currState = startState
-        lengthOfTrace = 1
-        nextState, nextSymbol = self.chooseNextState(currState, random_state)
-        sampledTrace = str(nextSymbol)
+        curr_state = start_state
+        length_of_trace = 1
+        next_state, next_symbol = self._choose_next_state(curr_state,
+                                                          random_state)
+        sampled_trace = str(next_symbol)
 
-        while nextSymbol != self.lambdaTransitionSymbol and lengthOfTrace <= N:
+        while (next_symbol != self._lambda_transition_sym and
+               length_of_trace <= N):
 
-            nextState, nextSymbol = self.chooseNextState(currState,
-                                                         random_state)
+            next_state, next_symbol = self._choose_next_state(curr_state,
+                                                              random_state)
 
-            if nextSymbol == self.lambdaTransitionSymbol:
+            if next_symbol == self._lambda_transition_sym:
                 break
 
-            sampledTrace += ' ' + str(nextSymbol)
-            lengthOfTrace += 1
-            currState = nextState
+            sampled_trace += ' ' + str(next_symbol)
+            length_of_trace += 1
+            curr_state = next_state
 
-        return sampledTrace, lengthOfTrace
+        return sampled_trace, length_of_trace
 
-    def drawIPython(self):
+    def draw_IPython(self):
         """
         Draws the pdfa structure in a way compatible with a jupyter / IPython
         notebook
         """
 
-        dotString = to_pydot(self).to_string()
-        display(gv.Source(dotString))
+        dot_string = to_pydot(self).to_string()
+        display(gv.Source(dot_string))
 
-    def getNodeData(self, nodeLabel, dataKey, graph=None):
+    def _get_node_data(self, node_label, data_key, graph=None):
         """
-        Gets the node's dataKey data from the graph
+        Gets the node's data_key data from the graph
 
-        :param      nodeLabel:  The node label
-        :type       nodeLabel:  string
-        :param      dataKey:    The desired node data's key name
-        :type       dataKey:    string
+        :param      node_label:  The node label
+        :type       node_label:  string
+        :param      data_key:    The desired node data's key name
+        :type       data_key:    string
         :param      graph:      The graph to access. Default = None => use
                                 instance (default None)
         :type       graph:      {None, PDFA, nx.MultiDiGraph}
 
-        :returns:   The node data associated with the nodeLabel and dataKey
-        :rtype:     type of self.nodes.data()[nodeLabel][dataKey]
+        :returns:   The node data associated with the node_label and data_key
+        :rtype:     type of self.nodes.data()[node_label][data_key]
         """
 
         if graph is None:
             graph = self
 
-        nodeData = graph.nodes.data()
+        node_data = graph.nodes.data()
 
-        return nodeData[nodeLabel][dataKey]
+        return node_data[node_label][data_key]
 
-    def setNodeData(self, nodeLabel, dataKey, data, graph=None):
+    def _set_node_data(self, node_label, data_key, data, graph=None):
         """
-        Sets the node's dataKey data from the graph
+        Sets the node's data_key data from the graph
 
-        :param      nodeLabel:  The node label
-        :type       nodeLabel:  string
-        :param      dataKey:    The desired node data's key name
-        :type       dataKey:    string
-        :param      data:       The data to associate with dataKey
+        :param      node_label:  The node label
+        :type       node_label:  string
+        :param      data_key:    The desired node data's key name
+        :type       data_key:    string
+        :param      data:       The data to associate with data_key
         :type       data:       whatever u want bro
         :param      graph:      The graph to access. Default = None => use
                                 instance (default None)
@@ -426,53 +422,36 @@ class PDFA(nx.MultiDiGraph):
         if graph is None:
             graph = self
 
-        nodeData = graph.nodes.data()
-        nodeData[nodeLabel][dataKey] = data
+        node_data = graph.nodes.data()
+        node_data[node_label][data_key] = data
 
-    @staticmethod
-    def loadYAMLConfigData(graphDataFile):
+    def generate_traces(self, num_samples, N):
         """
-        reads in the simulation parameters from a YAML config file
+        generates num_samples random traces from the pdfa
 
-        :param      graphDataFile:  The YAML graph data configuration file name
-        :type       graphDataFile:  filename path string
-
-        :returns:   configuration data dictionary for the pdfa
-        :rtype:     dictionary of pdfa data and settings
-        """
-
-        with open(graphDataFile, 'r') as stream:
-            configData = yaml.load(stream, Loader=yaml.Loader)
-
-        return configData
-
-    def generateTraces(self, numSamples, N):
-        """
-        generates numSamples random traces from the pdfa
-
-        :param      numSamples:  The number of trace samples to generate
-        :type       numSamples:  scalar int
+        :param      num_samples:  The number of trace samples to generate
+        :type       num_samples:  scalar int
 
         :returns:   the list of sampled trace strings and a list of the
                     associated trace lengths
         :rtype:     tuple(list(strings), list(integers))
         """
 
-        startState = self.startState
+        start_state = self._start_state
 
-        # make sure the numSamples is an int, so you don't have to wrap shit in
-        # an 'int()' every time...
-        numSamples = int(numSamples)
+        # make sure the num_samples is an int, so you don't have to wrap shit
+        # in an 'int()' every time...
+        num_samples = int(num_samples)
 
-        iters = range(0, numSamples)
+        iters = range(0, num_samples)
         results = Parallel(n_jobs=NUM_CORES, verbose=1)(
-            delayed(self.generateTrace)(startState, N) for i in iters)
+            delayed(self._generate_trace)(start_state, N) for i in iters)
 
-        samples, traceLengths = zip(*results)
+        samples, trace_lengths = zip(*results)
 
-        return samples, traceLengths
+        return samples, trace_lengths
 
-    def dispEdges(self, graph=None):
+    def disp_edges(self, graph=None):
         """
         Prints each edge in the graph in an edge-list tuple format
 
@@ -489,7 +468,7 @@ class PDFA(nx.MultiDiGraph):
 
                     print(node, neighbor, edge_data)
 
-    def dispNodes(self, graph=None):
+    def disp_nodes(self, graph=None):
         """
         Prints each node's data view
 
@@ -503,36 +482,36 @@ class PDFA(nx.MultiDiGraph):
         for node in graph.nodes(data=True):
             print(node)
 
-    def writeTracesToFile(self, traces, numSamples, traceLengths, fName):
+    def write_traces_to_file(self, traces, num_samples, trace_lengths, fName):
         """
         Writes trace samples to a file in the abbadingo format for use in
         flexfringe
 
         :param      traces:        The traces to write to a file
         :type       traces:        list of strings
-        :param      numSamples:    The number sampled traces
-        :type       numSamples:    integer
-        :param      traceLengths:  list of sampled trace lengths
-        :type       traceLengths:  list of integers
+        :param      num_samples:    The number sampled traces
+        :type       num_samples:    integer
+        :param      trace_lengths:  list of sampled trace lengths
+        :type       trace_lengths:  list of integers
         :param      fName:         The file name to write to
         :type       fName:         filename string
         """
 
-        # make sure the numSamples is an int, so you don't have to wrap shit in
-        # an 'int()' every time...
-        numSamples = int(numSamples)
+        # make sure the num_samples is an int, so you don't have to wrap shit
+        # in an 'int()' every time...
+        num_samples = int(num_samples)
 
         with open(fName, 'w+') as f:
 
             # need the header to be:
             # number_of_training_samples size_of_alphabet
-            f.write(str(numSamples) + ' ' + str(self.alphabetSize) + '\n')
+            f.write(str(num_samples) + ' ' + str(self._alphabet_size) + '\n')
 
-            for trace, traceLength in zip(traces, traceLengths):
-                f.write(self.getAbbadingoString(trace, traceLength,
-                                                isPositiveExample=True))
+            for trace, trace_length in zip(traces, trace_lengths):
+                f.write(self._get_abbadingo_string(trace, trace_length,
+                                                   is_pos_example=True))
 
-    def getAbbadingoString(self, trace, traceLength, isPositiveExample):
+    def _get_abbadingo_string(self, trace, trace_length, is_pos_example):
         """
         Returns the Abbadingo (sigh) formatted string given a trace string and
         the label for the trace
@@ -540,18 +519,18 @@ class PDFA(nx.MultiDiGraph):
         :param      trace:              The trace string to represent in
                                         Abbadingo
         :type       trace:              string
-        :param      traceLength:        The trace length
-        :type       traceLength:        integer
-        :param      isPositiveExample:  Indicates if the trace is a positive
+        :param      trace_length:        The trace length
+        :type       trace_length:        integer
+        :param      is_pos_example:  Indicates if the trace is a positive
                                         example of the pdfa
-        :type       isPositiveExample:  boolean
+        :type       is_pos_example:  boolean
 
         :returns:   The abbadingo formatted string for the given trace
         :rtype:     string
         """
 
-        traceLabel = {False: '0', True: '1'}[isPositiveExample]
-        return traceLabel + ' ' + str(traceLength) + ' ' + str(trace) + '\n'
+        trace_label = {False: '0', True: '1'}[is_pos_example]
+        return trace_label + ' ' + str(trace_length) + ' ' + str(trace) + '\n'
 
 
 class PDFABuilder(Builder):
@@ -572,48 +551,49 @@ class PDFABuilder(Builder):
         self.nodes = None
         self.edges = None
 
-    def __call__(self, graphDataFile, graphDataFileFormat='native'):
+    def __call__(self, graph_data_file, graph_data_file_format='native'):
         """
         Implements the smart constructor for PDFA
 
         Only reads the config data once, otherwise just returns the built
         object
 
-        :param      graphDataFile:        The graph configuration file name
-        :type       graphDataFile:        filename path string
-        :param      graphDataFileFormat:  The graph data file format.
+        :param      graph_data_file:        The graph configuration file name
+        :type       graph_data_file:        filename path string
+        :param      graph_data_file_format:  The graph data file format.
                                           Supported formats:
                                           - 'native'
                                           (Defualt 'native')
-        :type       graphDataFileFormat:  string
+        :type       graph_data_file_format:  string
 
         :returns:   instance of an initialized PDFA object
         :rtype:     PDFA
         """
 
-        _, file_extension = os.path.splitext(graphDataFile)
+        _, file_extension = os.path.splitext(graph_data_file)
 
-        if file_extension == '.yaml' and graphDataFileFormat == 'native':
-            configData = PDFA.loadYAMLConfigData(graphDataFile)
+        if file_extension == '.yaml' and graph_data_file_format == 'native':
+            config_data = self.load_YAML_config_data(graph_data_file)
         else:
-            errStr = 'graphDataFile ({}) is not a .yaml ' + \
+            errStr = 'graph_data_file ({}) is not a .yaml ' + \
                      'file matching the supported filetype(s) for the ' +\
-                     'selected graphDataFileFormat ({})'
-            raise ValueError(errStr.format(graphDataFile, graphDataFileFormat))
+                     'selected graph_data_file_format ({})'
+            raise ValueError(errStr.format(graph_data_file,
+                                           graph_data_file_format))
 
-        nodesHaveChanged = (self.nodes != configData['nodes'])
-        edgesHaveChanged = (self.edges != configData['edges'])
-        noInstanceLoadedYet = (self._instance is None)
+        nodes_have_changed = (self.nodes != config_data['nodes'])
+        edges_have_changed = (self.edges != config_data['edges'])
+        no_instance_loaded_yet = (self._instance is None)
 
-        if noInstanceLoadedYet or nodesHaveChanged or edgesHaveChanged:
+        if no_instance_loaded_yet or nodes_have_changed or edges_have_changed:
 
             self._instance = PDFA(
-                nodes=configData['nodes'],
-                edgeList=configData['edges'],
-                beta=configData['beta'],
-                alphabetSize=configData['alphabetSize'],
-                numStates=configData['numStates'],
-                lambdaTransitionSymbol=configData['lambdaTransitionSymbol'],
-                startState=configData['startState'])
+                nodes=config_data['nodes'],
+                edge_list=config_data['edges'],
+                beta=config_data['beta'],
+                alphabet_size=config_data['alphabet_size'],
+                num_states=config_data['num_states'],
+                lambda_transition_sym=config_data['lambda_transition_sym'],
+                start_state=config_data['start_state'])
 
         return self._instance

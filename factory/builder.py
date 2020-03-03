@@ -32,14 +32,14 @@ class Builder:
     ##
     # @brief      reads in the simulation parameters from a YAML config file
     #
-    # @param      configFileName  The YAML configuration file name
+    # @param      config_file_name  The YAML configuration file name
     #
     # @return     configuration data dictionary for the simulation
     #
     @staticmethod
-    def loadConfigData(configFileName):
+    def load_YAML_config_data(config_file_name):
 
-        with open(configFileName, 'r') as stream:
-            configData = yaml.load(stream, Loader=yaml.Loader)
+        with open(config_file_name, 'r') as stream:
+            config_data = yaml.load(stream, Loader=yaml.Loader)
 
-        return configData
+        return config_data
