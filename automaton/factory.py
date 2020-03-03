@@ -1,7 +1,5 @@
 # local packages
 from wombats.factory.object_factory import ObjectFactory
-from wombats.automaton.pdfa import PDFABuilder
-from wombats.automaton.fdfa import FDFABuilder
 
 
 class AutomatonCollection(ObjectFactory):
@@ -27,8 +25,3 @@ class AutomatonCollection(ObjectFactory):
         """
 
         return self.create(automaton_type, **kwargs)
-
-
-activeAutomaton = AutomatonCollection()
-activeAutomaton.register_builder('PDFA', PDFABuilder())
-activeAutomaton.register_builder('FDFA', FDFABuilder())
