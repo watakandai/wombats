@@ -1,14 +1,18 @@
+# 3rd-party packages
 import networkx as nx
 import numpy as np
 from scipy import stats
-from networkx.drawing.nx_pydot import to_pydot, read_dot
+from networkx.drawing.nx_pydot import to_pydot
 import graphviz as gv
 import yaml
 from IPython.display import display
 import multiprocessing
 from joblib import Parallel, delayed
 import os
-import re
+
+# local packages
+from wombats.factory.builder import Builder
+
 
 NUM_CORES = multiprocessing.cpu_count()
 
@@ -34,44 +38,45 @@ class PDFA(nx.MultiDiGraph):
                        given the starting node
     """
 
-    def __init__(self, graphDataFile, graphDataFileFormat='native'):
+    def __init__(self, nodes, edgeList, beta, alphabetSize, numStates,
+                 lambdaTransitionSymbol, startState):
         """
         Constructs a new instance of a PDFA object.
 
-        :param      graphDataFile:        The graph configuration file name
-        :type       graphDataFile:        filename path string
-        :param      graphDataFileFormat:  The graph data file format.
-                                          Supported formats:
-                                          - 'native'
-                                          - 'flexfringe'
-                                          (Defualt 'native')
-        :type       graphDataFileFormat:  string
+        :param      nodes:                   dict of node objects to be
+                                             converted
+        :type       nodes:                   dict of node label to node
+                                             propeties
+        :param      edgeList:                dictionary adj. list representing
+                                             the edgeList
+        :type       edgeList:                dict of src node label to dict of
+                                             dest label to edge properties
+        :param      beta:                    the final state probability needed
+                                             for a state to accept
+        :type       beta:                    Float
+        :param      alphabetSize:            number of symbols in pdfa alphabet
+        :type       alphabetSize:            Int
+        :param      numStates:               number of states in automaton
+                                             state space
+        :type       numStates:               Int
+        :param      lambdaTransitionSymbol:  representation of the empty string
+                                             / symbol (a.k.a. lambda)
+        :type       lambdaTransitionSymbol:  same type as PDFA.edges symbol
+                                             property
+        :param      startState:              unique start state string label of
+                                             pdfa
+        :type       startState:              same type as PDFA.nodes node
+                                             object
         """
 
         # need to start with a fully initialized networkx digraph
         super().__init__()
 
-        if graphDataFile is None:
-            raise TypeError('must have a config file name')
-
-        _, file_extension = os.path.splitext(graphDataFile)
-
-        if file_extension == '.yaml' and graphDataFileFormat == 'native':
-            configData = self.loadYAMLConfigData(graphDataFile)
-        elif file_extension == '.dot' and graphDataFileFormat == 'flexfringe':
-            configData = self.loadFlexFringeConfigData(graphDataFile)
-        else:
-            errStr = 'graphDataFile ({}) is not a .yaml or .dot ' + \
-                     'file matching the supported filetype(s) for the ' +\
-                     'selected graphDataFileFormat ({})'
-            raise ValueError(errStr.format(graphDataFile, graphDataFileFormat))
-        print(configData['edges'])
-        # states and edges must be in the format needed by:
+        # nodes and edgeList must be in the format needed by:
         #   - networkx.add_nodes_from()
         #   - networkx.add_edges_from()
-        states, \
-            edges = self.getStatesAndEdges(configData['nodes'],
-                                           configData['edges'])
+        states, edges = self.getStatesAndEdges(nodes, edgeList)
+
         if states and edges:
             self.add_nodes_from(states)
             self.add_edges_from(edges)
@@ -85,23 +90,23 @@ class PDFA(nx.MultiDiGraph):
         self._DEFAULT_BETA = 0.95
         """used to set beta when it is not given in graphDataFile"""
 
-        self.beta = configData['beta']
+        self.beta = beta
         """the final state probability needed for a state to accept"""
 
-        self.alphabetSize = configData['alphabetSize']
+        self.alphabetSize = alphabetSize
         """number of symbols in pdfa alphabet"""
 
-        self.numStates = configData['numStates']
+        self.numStates = numStates
         """number of states in pdfa state space"""
 
         self._DEFAULT_LAMBDA_TRANSITION_SYMBOL = -1
         """used to set the empty string symbol when it is not given in
            graphDataFile"""
 
-        self.lambdaTransitionSymbol = configData['lambdaTransitionSymbol']
+        self.lambdaTransitionSymbol = lambdaTransitionSymbol
         """representation of the empty string / symbol (a.k.a. lambda)"""
 
-        self.startState = configData['startState']
+        self.startState = startState
         """unique start state string label of pdfa"""
 
         # do batch computations at initialization, as these shouldn't
@@ -110,107 +115,19 @@ class PDFA(nx.MultiDiGraph):
         self.setNodeLabels()
         self.setEdgeLabels()
 
-    def loadFlexFringeConfigData(self, graphDataFile):
+    def getStatesAndEdges(self, nodes, edges):
         """
-        reads in graph configuration data from a flexfringe dot file
-
-        :param      graphDataFile:  The .dot graph data configuration file name
-        :type       graphDataFile:  filename path string
-
-        :returns:   configuration data dictionary for the pdfa
-        :rtype:     dictionary of pdfa data and settings
-        """
-
-        graph = read_dot(graphDataFile)
-        nodes = self.convert_FlexFringeNodesToPDFANodes(graph.nodes(data=True))
-        edges = self.convert_FlexFringeEdgesToPDFAEdges(graph.edges(data=True))
-        # need to set final state probs in nodes
-
-    def convert_FlexFringeNodesToPDFANodes(self, flexfringeNodes):
-        """
-        converts a node list from a flexfringe dot file into the internal node
-        format needed by getStatesAndEdges
-
-        :param      flexfringeNodes:  The flexfringe node list mapping node
-                                      labels to node attributes
-        :type       flexfringeNodes:  dict of dicts
-
-        :returns:   a dict mapping state labels to a dict of node attributes,
-                    a dict mapping state labels to flexfringe node IDs,
-        :rtype:     dict of dicts,
-                    dict
-
-        :raises     ValueError:       can't read in "blue" flexfringe nodes, as
-                                      they are theoretically undefined for this
-                                      class right now
-        """
-
-        nodes = {}
-        nodeLabelToNodeIDMap = {}
-
-        for nodeID, nodeData in flexfringeNodes:
-
-            if 'label' not in nodeData:
-                continue
-
-            stateLabel = re.findall(r'\d+', nodeData['label'])
-
-            # we can't add blue nodes to our graph
-            if 'style' in nodeData:
-                if 'dotted' in nodeData['style']:
-                    err = ('node = {} from flexfringe is blue,' +
-                           ' reading in blue states is not' +
-                           ' currently supported').format(nodeData)
-                    raise ValueError(err)
-
-            newNodeLabel = 'q' + stateLabel[0]
-            newNodeData = {'final_probability': 0.0,
-                           'transDistribution': None,
-                           'isAccepting': None}
-            nodes[newNodeLabel] = newNodeData
-            nodeLabelToNodeIDMap[newNodeLabel] = nodeID
-
-        return nodes, nodeLabelToNodeIDMap
-
-    def convert_FlexFringeEdgesToPDFAEdges(self, flexfringeEdges):
-        """
-        converts edges read in from flexfringe (FF) dot files into the internal
-        edge format needed by getStatesAndEdges
-        
-        :param      flexfringeEdges:  The flexfringe edge list mapping edges
-                                      labels to edge attributes
-        :type       flexfringeEdges:  list of tuples of: (srcFFNodeID,
-                                      srcFFNodeID, edgeData)
-        
-        :returns:   { description_of_the_return_value }
-        :rtype:     { return_type_description }
-        """
-
-        edges = {}
-
-        for srcFFNodeID, destFFNodeID, edgeData in flexfringeEdges:
-
-            if 'label' not in edgeData:
-                continue
-            print(srcFFNodeID, destFFNodeID, edgeData)
-            transitionData = re.findall(r'(\d+):(\d+)', edgeData['label'])
-            print(transitionData)
-
-        return None
-
-    def getStatesAndEdges(self, nodes, adjList):
-        """
-        Converts node and adjList data from a manually specified YAML config
-        file to the format needed by:
+        Converts node and edges data from a manually specified YAML config file
+        to the format needed by:
             - networkx.add_nodes_from()
             - networkx.add_edges_from()
-        
-        :param      nodes:    dict of node objects to be converted
-        :type       nodes:    dict of node label to node propeties
-        :param      adjList:  dictionary adj. list to be converted
-        :type       adjList:  dict of src node label to dict of dest label to
-                              edge properties
-        
+
+        :param      nodes:  dict of node objects to be converted
+        :type       nodes:  dict of node label to node propeties
+        :param      edges:  dictionary adj. list to be converted
+        :type       edges:  dict of src node label to dict of dest label to
+                            edge properties
+
         :returns:   properly formated node and edge list containers
         :rtype:     tuple: ( nodes - list of tuples: (node label, node
                     attribute dict), edges - list of tuples: (src node label,
@@ -220,7 +137,7 @@ class PDFA(nx.MultiDiGraph):
         # need to convert the configuration adjacency list given in the config
         # to an edge list given as a 3-tuple of (source, dest, edgeAttrDict)
         edgeList = []
-        for sourceNode, destEdgesData in adjList.items():
+        for sourceNode, destEdgesData in edges.items():
 
             # don't need to add any edges if there is no edge data
             if destEdgesData is None:
@@ -512,7 +429,8 @@ class PDFA(nx.MultiDiGraph):
         nodeData = graph.nodes.data()
         nodeData[nodeLabel][dataKey] = data
 
-    def loadYAMLConfigData(self, graphDataFile):
+    @staticmethod
+    def loadYAMLConfigData(graphDataFile):
         """
         reads in the simulation parameters from a YAML config file
 
@@ -634,3 +552,68 @@ class PDFA(nx.MultiDiGraph):
 
         traceLabel = {False: '0', True: '1'}[isPositiveExample]
         return traceLabel + ' ' + str(traceLength) + ' ' + str(trace) + '\n'
+
+
+class PDFABuilder(Builder):
+    """
+    Implements the generic automaton builder class for PDFA objects
+    """
+
+    def __init__(self):
+        """
+        Constructs a new instance of the PDFABuilder
+        """
+
+        # need to call the super class constructor to gain its properties
+        Builder.__init__(self)
+
+        # keep these properties so we don't re-initailize unless underlying
+        # data changes
+        self.nodes = None
+        self.edges = None
+
+    def __call__(self, graphDataFile, graphDataFileFormat='native'):
+        """
+        Implements the smart constructor for PDFA
+
+        Only reads the config data once, otherwise just returns the built
+        object
+
+        :param      graphDataFile:        The graph configuration file name
+        :type       graphDataFile:        filename path string
+        :param      graphDataFileFormat:  The graph data file format.
+                                          Supported formats:
+                                          - 'native'
+                                          (Defualt 'native')
+        :type       graphDataFileFormat:  string
+
+        :returns:   instance of an initialized PDFA object
+        :rtype:     PDFA
+        """
+
+        _, file_extension = os.path.splitext(graphDataFile)
+
+        if file_extension == '.yaml' and graphDataFileFormat == 'native':
+            configData = PDFA.loadYAMLConfigData(graphDataFile)
+        else:
+            errStr = 'graphDataFile ({}) is not a .yaml ' + \
+                     'file matching the supported filetype(s) for the ' +\
+                     'selected graphDataFileFormat ({})'
+            raise ValueError(errStr.format(graphDataFile, graphDataFileFormat))
+
+        nodesHaveChanged = (self.nodes != configData['nodes'])
+        edgesHaveChanged = (self.edges != configData['edges'])
+        noInstanceLoadedYet = (self._instance is None)
+
+        if noInstanceLoadedYet or nodesHaveChanged or edgesHaveChanged:
+
+            self._instance = PDFA(
+                nodes=configData['nodes'],
+                edgeList=configData['edges'],
+                beta=configData['beta'],
+                alphabetSize=configData['alphabetSize'],
+                numStates=configData['numStates'],
+                lambdaTransitionSymbol=configData['lambdaTransitionSymbol'],
+                startState=configData['startState'])
+
+        return self._instance
