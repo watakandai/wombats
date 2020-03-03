@@ -555,21 +555,24 @@ class PDFABuilder(Builder):
     def __call__(self, graph_data_file, graph_data_file_format='native'):
         """
         Implements the smart constructor for PDFA
-        
+
         Only reads the config data once, otherwise just returns the built
         object
-        
+
         :param      graph_data_file:         The graph configuration file name
         :type       graph_data_file:         filename path string
         :param      graph_data_file_format:  The graph data file format.
+                                             (Defualt 'native')
                                              Supported formats:
+                                             - 'native'
         :type       graph_data_file_format:  string
-                                          - 'native' (Defualt 'native')
-        
+
         :returns:   instance of an initialized PDFA object
         :rtype:     PDFA
-        
-        :raises     ValueError:              { exception_description }
+
+        :raises     ValueError:              checks if graph_data_file's ext
+                                             and graph_data_file_format have
+                                             a compatible data loader
         """
 
         _, file_extension = os.path.splitext(graph_data_file)
