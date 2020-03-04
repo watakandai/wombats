@@ -1,145 +1,273 @@
 # 3rd-party packages
-import networkx as nx
 import os
 from networkx.drawing.nx_pydot import read_dot
 import re
 
 # local packages
 from wombats.factory.builder import Builder
+from wombats.automaton.stochastic_automaton import StochasticAutomaton
 
 
-class FDFA(nx.MultiDiGraph):
+class FDFA(StochasticAutomaton):
     """
-    This class describes a probabilistic deterministic finite automaton (pdfa).
+    This class describes a frequency deterministic finite automaton (fdfa).
 
     built on networkx, so inherits node and edge data structure definitions
 
     Node Attributes
     -----------------
-        - final_probability: final state probability for the node
-        - transDistribution: a sampled-able function to select the next state
-                             and emitted symbol
-        - isAccepting: a boolean flag determining whether the pdfa considers
-                       the node accepting
+        - final_frequency: final state frequency for the node
+        - trans_distribution: None, just there for consistency with PDFA
+        - is_accepting: None, just there for consistency with PDFA
 
     Edge Properties
     -----------------
-        - symbol: the numeric symbol value emitted when the edge is traversed
-        - probability: the probability of selecting this edge for traversal,
-                       given the starting node
+        - symbol: the symbol value emitted when the edge is traversed
+        - frequency: the number of times the edge was traversed
     """
 
-    def __init__(self, graphDataFile, graphDataFileFormat='flexfringe'):
+    def __init__(self, nodes, edges, alphabet_size, num_states,
+                 start_state, beta=None, final_transition_sym=-1):
         """
         Constructs a new instance of a FDFA object.
 
-        :param      graphDataFile:        The graph configuration file name
-        :type       graphDataFile:        filename path string
-        :param      graphDataFileFormat:  The graph data file format.
-                                          Supported formats:
-                                          - 'native'
-                                          - 'flexfringe'
-                                          (Defualt 'native')
-        :type       graphDataFileFormat:  string
+        :param      nodes:                 node list as expected by
+                                           networkx.add_nodes_from()
+        :type       nodes:                 list of tuples: (node label, node,
+                                           attribute dict)
+        :param      edges:                 edge list as expected by
+                                           networkx.add_edges_from()
+        :type       edges:                 list of tuples: (src node label,
+                                           dest node label, edge attribute
+                                           dict)
+        :param      alphabet_size:         number of symbols in fdfa alphabet
+        :type       alphabet_size:         Int
+        :param      num_states:            number of states in automaton state
+                                           space
+        :type       num_states:            Int
+        :param      start_state:           unique start state string label of
+                                           fdfa
+        :type       start_state:           same type as FDFA.nodes node object
+        :param      beta:                  the final state probability needed
+                                           for a state to accept. Not used for
+                                           FDFA (default None)
+        :type       beta:                  Float
+        :param      final_transition_sym:  representation of the empty string /
+                                           symbol (a.k.a. lambda) (default -1)
+        :type       final_transition_sym:  same type as FDFA.edges symbol
+                                           property
         """
 
-        # need to start with a fully initialized networkx digraph
-        super().__init__()
+        # need to start with a fully initialized automaton
+        super().__init__(nodes, edges, alphabet_size, num_states,
+                         start_state, beta=0.95, final_transition_sym=-1)
 
-    @staticmethod
-    def loadFlexFringeConfigData(graphDataFile):
+        self._initialize_node_edge_properties(
+            final_weight_key='final_frequency',
+            can_have_accepting_nodes=False,
+            edge_weight_key='frequency')
+
+    def _compute_node_data_properties(self):
+        """
+        Initializes the node and edge data properties correctly for a fdfa.
+        """
+
+        self._set_final_state_frequencies()
+
+    def _set_final_state_frequencies(self):
+        """
+        Sets the final state frequencies for each node in an initialized FDFA
+
+        requires self.nodes and self.edges to be properly loaded into nx data
+        structures
+
+        computes the final state as the difference between the sum of all
+        incoming edges' frequency property and the sum of all outgoing edges'
+        frequency property
+
+        :raises     ValueError:  checks if the final frequency is less than 0,
+                                 indicating something wrong with the edge
+                                 frequency data
+        """
+
+        nodes = self.nodes
+
+        for curr_node in nodes:
+
+            # counting current curr_node transition inflow
+            number_trans_in = 0
+            for node_pre in self.predecessors(curr_node):
+
+                curr_edges_in = self.get_edge_data(node_pre, curr_node)
+
+                for _, curr_in_edge_data in curr_edges_in.items():
+                    frequency = curr_in_edge_data['frequency']
+                    number_trans_in += frequency
+
+            # counting curr_node transition outflow
+            number_trans_out = 0
+            for node_post in self.successors(curr_node):
+
+                curr_edges_out = self.get_edge_data(curr_node, node_post)
+
+                for _, curr_out_edge_data in curr_edges_out.items():
+                    frequency = curr_out_edge_data['frequency']
+                    number_trans_out += frequency
+
+            # the final frequency is simply the number of times that you
+            # transitioned into a state and then did not leave it
+            curr_node_final_freq = number_trans_in - number_trans_out
+
+            # all flow comes from the root node, so it is the only node allowed
+            # to "create" transitions
+            is_root_node = (curr_node == self._start_state)
+            if curr_node_final_freq < 0 and not is_root_node:
+                err = 'current node ({}) final frequency ({}) should ' + \
+                      'not be less than 0. This means there were more ' +\
+                      'outgoing transitions ({}) than incoming ' +\
+                      'transitions ({}).'
+                raise ValueError(err.format(curr_node, curr_node_final_freq,
+                                            number_trans_out, number_trans_in))
+
+            self._set_node_data(curr_node,
+                                'final_frequency', curr_node_final_freq)
+
+    @classmethod
+    def load_flexfringe_data(cls, graph_data_file):
         """
         reads in graph configuration data from a flexfringe dot file
 
-        :param      graphDataFile:  The .dot graph data configuration file name
-        :type       graphDataFile:  filename path string
+        :param      graph_data_file:  The .dot graph data configuration file
+                                      name
+        :type       graph_data_file:  filename path string
 
-        :returns:   configuration data dictionary for the pdfa
-        :rtype:     dictionary of pdfa data and settings
+        :returns:   configuration data dictionary for the fdfa
+        :rtype:     dictionary
         """
 
-        graph = read_dot(graphDataFile)
-        nodes = FDFA.convert_FlexFringeNodes(graph.nodes(data=True))
-        edges = FDFA.convert_FlexFringeEdges(graph.edges(data=True))
-        # need to set final state probs in nodes
+        graph = read_dot(graph_data_file)
+        ff_nodes = graph.nodes(data=True)
+        ff_edges = graph.edges(data=True)
+
+        nodes, node_ID_to_node_label = cls.convert_flexfringe_nodes(ff_nodes)
+        edges, symbols = cls.convert_flexfringe_edges(ff_edges,
+                                                      node_ID_to_node_label)
+        root_node_label = '0'
+        config_data = {
+            'nodes': nodes,
+            'edges': edges,
+            'alphabet_size': len(symbols.keys()),
+            'num_states': len(nodes),
+            'start_state': node_ID_to_node_label[root_node_label],
+            # these are not things that are a part of flexfringe's automaton
+            # data model, so give them default values
+            'beta': None,
+            'final_transition_sym': -1}
+
+        return config_data
 
     @staticmethod
-    def convert_FlexFringeNodes(flexfringeNodes):
+    def convert_flexfringe_nodes(flexfringe_nodes):
         """
-        converts a node list from a flexfringe dot file into the internal node
-        format needed by getStatesAndEdges
+        converts a node list from a flexfringe (FF) dot file into the internal
+        node format needed by networkx.add_nodes_from()
 
-        :param      flexfringeNodes:  The flexfringe node list mapping node
-                                      labels to node attributes
-        :type       flexfringeNodes:  dict of dicts
+        :param      flexfringe_nodes:  The flexfringe node list mapping node
+                                       labels to node attributes
+        :type       flexfringe_nodes:  dict of dicts
 
-        :returns:   a dict mapping state labels to a dict of node attributes,
-                    a dict mapping state labels to flexfringe node IDs,
-        :rtype:     dict of dicts,
-                    dict
+        :returns:   node list as expected by networkx.add_nodes_from(),
+                    a dict mapping FF node IDs to FF state labels
+        :rtype:     list of tuples: (node label, node
+                    attribute dict), dict
 
-        :raises     ValueError:       can't read in "blue" flexfringe nodes, as
-                                      they are theoretically undefined for this
-                                      class right now
+        :raises     ValueError:        can't read in "blue" flexfringe nodes,
+                                       as they are theoretically undefined for
+                                       this class right now
         """
 
         nodes = {}
-        nodeLabelToNodeIDMap = {}
+        node_ID_to_node_label = {}
 
-        for nodeID, nodeData in flexfringeNodes:
+        for node_ID, node_data in flexfringe_nodes:
 
-            if 'label' not in nodeData:
+            if 'label' not in node_data:
                 continue
 
-            stateLabel = re.findall(r'\d+', nodeData['label'])
+            state_label = re.findall(r'\d+', node_data['label'])
 
             # we can't add blue nodes to our graph
-            if 'style' in nodeData:
-                if 'dotted' in nodeData['style']:
+            if 'style' in node_data:
+                if 'dotted' in node_data['style']:
                     err = ('node = {} from flexfringe is blue,' +
                            ' reading in blue states is not' +
-                           ' currently supported').format(nodeData)
+                           ' currently supported').format(node_data)
                     raise ValueError(err)
 
-            newNodeLabel = 'q' + stateLabel[0]
-            newNodeData = {'final_probability': 0.0,
-                           'transDistribution': None,
-                           'isAccepting': None}
-            nodes[newNodeLabel] = newNodeData
-            nodeLabelToNodeIDMap[newNodeLabel] = nodeID
+            new_node_label = state_label[0]
+            new_node_data = {'final_frequency': 0,
+                             'trans_distribution': None,
+                             'isAccepting': None}
 
-        return nodes, nodeLabelToNodeIDMap
+            nodes[new_node_label] = new_node_data
+            node_ID_to_node_label[node_ID] = new_node_label
+
+        return nodes, node_ID_to_node_label
 
     @staticmethod
-    def convert_FlexFringeEdges(flexfringeEdges):
+    def convert_flexfringe_edges(flexfringeEdges, node_ID_to_node_label):
         """
         converts edges read in from flexfringe (FF) dot files into the internal
-        edge format needed by getStatesAndEdges
+        edge format needed by networkx.add_edges_from()
 
-        :param      flexfringeEdges:  The flexfringe edge list mapping edges
-                                      labels to edge attributes
-        :type       flexfringeEdges:  list of tuples of: (srcFFNodeID,
-                                      srcFFNodeID, edgeData)
+        :param      flexfringeEdges:        The flexfringe edge list mapping
+                                            edges labels to edge attributes
+        :type       flexfringeEdges:        list of tuples of: (src_FF_node_ID,
+                                            src_FF_node_ID, edge_data)
+        :param      node_ID_to_node_label:  mapping from FF node ID to FF node
+                                            label
+        :type       node_ID_to_node_label:  dict
 
-        :returns:   { description_of_the_return_value }
-        :rtype:     { return_type_description }
+        :returns:   edge list as expected by networkx.add_edges_from(),
+                    dictionary of symbol counts
+        :rtype:     edges - list of tuples: (src node label,
+                    dest node label, edge attribute dict),
+                    all_symbols - dict
         """
 
-        edges = {}
+        edges = []
+        all_symbols = {}
 
-        for srcFFNodeID, destFFNodeID, edgeData in flexfringeEdges:
+        for src_FF_node_ID, dest_FF_node_ID, edge_data in flexfringeEdges:
 
-            if 'label' not in edgeData:
+            new_edge_data = {}
+
+            if 'label' not in edge_data:
                 continue
-            print(srcFFNodeID, destFFNodeID, edgeData)
-            transitionData = re.findall(r'(\d+):(\d+)', edgeData['label'])
 
-            symbols = []
+            transitionData = re.findall(r'(\d+):(\d+)', edge_data['label'])
+            symbols, frequencies = zip(*transitionData)
 
-            # for symbol, frequency in transitionData:
+            for symbol, frequency in transitionData:
 
+                # want to keep track of frequency of all symbols
+                if symbol in all_symbols:
+                    all_symbols[symbol] += 1
+                else:
+                    all_symbols[symbol] = 1
 
-        return None
+                new_edge_data = {'symbol': int(symbol),
+                                 'frequency': int(frequency)}
+
+                src_FF_node_label = node_ID_to_node_label[src_FF_node_ID]
+                dest_FF_node_label = node_ID_to_node_label[dest_FF_node_ID]
+                new_edge = (src_FF_node_label,
+                            dest_FF_node_label,
+                            new_edge_data)
+
+                edges.append(new_edge)
+
+        return edges, all_symbols
 
 
 class FDFABuilder(Builder):
@@ -155,52 +283,57 @@ class FDFABuilder(Builder):
         # need to call the super class constructor to gain its properties
         Builder.__init__(self)
 
-        # keep these properties so we don't re-initailize unless underlying
+        # keep these properties so we don't re-initialize unless underlying
         # data changes
         self.nodes = None
         self.edges = None
 
-    def __call__(self, graphDataFile, graphDataFileFormat='flexfringe'):
+    def __call__(self, graph_data_file, graph_data_file_format='flexfringe'):
         """
         Implements the smart constructor for FDFA
 
         Only reads the config data once, otherwise just returns the built
         object
 
-        :param      graphDataFile:        The graph configuration file name
-        :type       graphDataFile:        filename path string
-        :param      graphDataFileFormat:  The graph data file format.
-                                          Supported formats:
-                                          - 'flexfringe'
-                                          (Defualt 'flexfringe')
-        :type       graphDataFileFormat:  string
+        :param      graph_data_file:         The graph configuration file name
+        :type       graph_data_file:         filename path string
+        :param      graph_data_file_format:  The graph data file format.
+                                             (default 'flexfringe')
+                                             Supported formats:
+                                             - 'flexfringe'
+        :type       graph_data_file_format:  string
 
         :returns:   instance of an initialized FDFA object
         :rtype:     FDFA
+
+        :raises     ValueError:              checks if graph_data_file's ext
+                                             and graph_data_file_format have
+                                             a compatible data loader
         """
 
-        _, file_extension = os.path.splitext(graphDataFile)
-        if file_extension == '.dot' and graphDataFileFormat == 'flexfringe':
-            configData = FDFA.loadFlexFringeConfigData(graphDataFile)
+        _, file_extension = os.path.splitext(graph_data_file)
+        if file_extension == '.dot' and graph_data_file_format == 'flexfringe':
+            config_data = FDFA.load_flexfringe_data(graph_data_file)
         else:
-            errStr = 'graphDataFile ({}) is not a .dot ' + \
+            errStr = 'graph_data_file ({}) is not a .dot ' + \
                      'file matching the supported filetype(s) for the ' +\
-                     'selected graphDataFileFormat ({})'
-            raise ValueError(errStr.format(graphDataFile, graphDataFileFormat))
+                     'selected graph_data_file_format ({})'
+            raise ValueError(errStr.format(graph_data_file,
+                                           graph_data_file_format))
 
-        nodesHaveChanged = (self.nodes != configData['nodes'])
-        edgesHaveChanged = (self.edges != configData['edges'])
-        noInstanceLoadedYet = (self._instance is None)
+        nodes_have_changed = (self.nodes != config_data['nodes'])
+        edges_have_changed = (self.edges != config_data['edges'])
+        no_instance_loaded_yet = (self._instance is None)
 
-        if noInstanceLoadedYet or nodesHaveChanged or edgesHaveChanged:
+        if no_instance_loaded_yet or nodes_have_changed or edges_have_changed:
 
             self._instance = FDFA(
-                states=configData['states'],
-                edges=configData['edges'],
-                beta=configData['beta'],
-                alphabetSize=configData['alphabetSize'],
-                numStates=configData['numStates'],
-                lambdaTransitionSymbol=configData['lambdaTransitionSymbol'],
-                startState=configData['startState'])
+                nodes=config_data['nodes'],
+                edges=config_data['edges'],
+                beta=config_data['beta'],
+                alphabet_size=config_data['alphabet_size'],
+                num_states=config_data['num_states'],
+                final_transition_sym=config_data['final_transition_sym'],
+                start_state=config_data['start_state'])
 
         return self._instance
