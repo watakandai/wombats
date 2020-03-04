@@ -14,8 +14,8 @@ class ObjectFactory:
         self._builders = {}
 
     def register_builder(self, key, builder):
-        """!
-        ! adds the builder object to the internal builder dictionary
+        """
+        adds the builder object to the internal builder dictionary
 
         effects: the _builders dictionary has the key-builder pair appended
 
