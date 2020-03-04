@@ -1,6 +1,10 @@
 Icon?
 .DS_Store
 
+### sublime
+*.sublime-project
+*.sublime-workspace
+
 ### python development
 
 # Byte-compiled / optimized / DLL files
