@@ -288,7 +288,8 @@ class FDFABuilder(Builder):
         self.nodes = None
         self.edges = None
 
-    def __call__(self, graph_data_file, graph_data_file_format='flexfringe'):
+    def __call__(self, graph_data_file,
+                 graph_data_file_format='flexfringe') -> str:
         """
         Implements the smart constructor for FDFA
 

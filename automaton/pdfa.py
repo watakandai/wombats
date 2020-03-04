@@ -8,7 +8,9 @@ import os
 # local packages
 from wombats.factory.builder import Builder
 from wombats.automaton.stochastic_automaton import StochasticAutomaton
+from wombats.automaton.fdfa import FDFA
 
+# needed for multi-threaded sampling routine
 NUM_CORES = multiprocessing.cpu_count()
 
 
@@ -175,6 +177,12 @@ class PDFA(StochasticAutomaton):
         converted_nodes = list(nodes.items())
 
         return converted_nodes, edge_list
+
+    @classmethod
+    def from_fdfa(cls, fdfa: FDFA) -> 'PDFA':
+
+        fdfa_nodes = fdfa.nodes(data=True)
+        print(fdfa_nodes)
 
     def _compute_node_data_properties(self):
         """
@@ -376,19 +384,18 @@ class PDFABuilder(Builder):
         self.nodes = None
         self.edges = None
 
-    def __call__(self, graph_data_file, graph_data_file_format='native'):
+    def __call__(self, graph_data: {str, FDFA},
+                 graph_data_format: str='yaml') -> PDFA:
         """
-        Implements the smart constructor for PDFA
+        Returns an initialized PDFA instance given the graph_data
 
-        Only reads the config data once, otherwise just returns the built
-        object
+        graph_data and graph_data_format must match
 
         :param      graph_data_file:         The graph configuration file name
         :type       graph_data_file:         filename path string
         :param      graph_data_file_format:  The graph data file format.
-                                             (Defualt 'native')
-                                             Supported formats:
-                                             - 'native'
+                                             (Defualt 'yaml')
+                                             {'yaml', 'fdfa_object'}
         :type       graph_data_file_format:  string
 
         :returns:   instance of an initialized PDFA object
@@ -399,16 +406,41 @@ class PDFABuilder(Builder):
                                              a compatible data loader
         """
 
+        if graph_data_format == 'yaml':
+            self._instance = self._from_yaml(graph_data)
+        elif graph_data_format == 'fdfa_object':
+            self._instance = self._from_fdfa(graph_data)
+        else:
+            msg = 'graph_data_format ({}) must be one of: "yaml", ' + \
+                  '"fdfa_object"'.format(graph_data_format)
+            raise ValueError(msg)
+
+        return self._instance
+
+    def _from_yaml(self, graph_data_file: str) -> PDFA:
+        """
+        Returns an instance of a PDFA from the .yaml graph_data_file
+
+        Only reads the config data once, otherwise just returns the built
+        object
+
+        :param      graph_data_file:  The graph configuration file name
+        :type       graph_data_file:  filename path string
+
+        :returns:   instance of an initialized PDFA object
+        :rtype:     PDFA
+
+        :raises     ValueError:       checks if graph_data_file's ext is YAML
+        """
+
         _, file_extension = os.path.splitext(graph_data_file)
 
-        if file_extension == '.yaml' and graph_data_file_format == 'native':
+        allowed_exts = ['.yaml', '.yml']
+        if file_extension in allowed_exts:
             config_data = self.load_YAML_config_data(graph_data_file)
         else:
-            errStr = 'graph_data_file ({}) is not a .yaml ' + \
-                     'file matching the supported filetype(s) for the ' +\
-                     'selected graph_data_file_format ({})'
-            raise ValueError(errStr.format(graph_data_file,
-                                           graph_data_file_format))
+            msg = 'graph_data_file ({}) is not a ({}) file'
+            raise ValueError(msg.format(graph_data_file, allowed_exts))
 
         nodes_have_changed = (self.nodes != config_data['nodes'])
         edges_have_changed = (self.edges != config_data['edges'])
@@ -422,6 +454,11 @@ class PDFABuilder(Builder):
             states, edges = PDFA.convert_states_edges(config_data['nodes'],
                                                       config_data['edges'])
 
+            # saving these so we can just return initialized instances if the
+            # underlying data has not changed
+            self.nodes = states
+            self.edges = edges
+
             self._instance = PDFA(
                 nodes=states,
                 edge_list=edges,
@@ -430,5 +467,25 @@ class PDFABuilder(Builder):
                 num_states=config_data['num_states'],
                 final_transition_sym=config_data['final_transition_sym'],
                 start_state=config_data['start_state'])
+
+            return self._instance
+
+    def _from_fdfa(self, fdfa: FDFA) -> PDFA:
+        """
+        Returns an instance of a PDFA from an instance of FDFA
+
+        :param      fdfa:  initialized fdfa instance to convert to a pdfa
+        :type       fdfa:  FDFA
+
+        :returns:   instance of an initialized PDFA object
+        :rtype:     PDFA
+        """
+
+        self._instance = PDFA.from_fdfa(fdfa)
+
+        # saving these so we can just return initialized instances if the
+        # underlying data has not changed
+        self.nodes = self._instance.nodes
+        self.edges = self._instance.edges
 
         return self._instance
