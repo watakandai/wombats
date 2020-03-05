@@ -16,7 +16,16 @@ class FDFA(StochasticAutomaton):
 
     Node Attributes
     -----------------
-        - final_frequency: final state frequency for the node
+        - final_frequency: final state frequency for each node.
+                           Number of times that a trace ended in that state.
+        - in_frequency:    in "flow" of state frequency for each node
+                           total times that state was visited with incoming
+                           transitions.
+        - out_frequency:   out "flow" of state frequency for each node
+                           total times that state was visited with outgoing
+                           transitions.
+        - total_frequency: total state frequency for each node
+                           total times that state was visited for all traces.
         - trans_distribution: None, just there for consistency with PDFA
         - is_accepting: None, just there for consistency with PDFA
 
@@ -27,7 +36,7 @@ class FDFA(StochasticAutomaton):
     """
 
     def __init__(self, nodes, edges, alphabet_size, num_states,
-                 start_state, beta=None, final_transition_sym=-1):
+                 start_state, beta=0.95, final_transition_sym=-1):
         """
         Constructs a new instance of a FDFA object.
 
@@ -50,7 +59,7 @@ class FDFA(StochasticAutomaton):
         :type       start_state:           same type as FDFA.nodes node object
         :param      beta:                  the final state probability needed
                                            for a state to accept. Not used for
-                                           FDFA (default None)
+                                           FDFA (default 0.95)
         :type       beta:                  Float
         :param      final_transition_sym:  representation of the empty string /
                                            symbol (a.k.a. lambda) (default -1)
@@ -66,71 +75,6 @@ class FDFA(StochasticAutomaton):
             final_weight_key='final_frequency',
             can_have_accepting_nodes=False,
             edge_weight_key='frequency')
-
-    def _compute_node_data_properties(self):
-        """
-        Initializes the node and edge data properties correctly for a fdfa.
-        """
-
-        self._set_final_state_frequencies()
-
-    def _set_final_state_frequencies(self):
-        """
-        Sets the final state frequencies for each node in an initialized FDFA
-
-        requires self.nodes and self.edges to be properly loaded into nx data
-        structures
-
-        computes the final state as the difference between the sum of all
-        incoming edges' frequency property and the sum of all outgoing edges'
-        frequency property
-
-        :raises     ValueError:  checks if the final frequency is less than 0,
-                                 indicating something wrong with the edge
-                                 frequency data
-        """
-
-        nodes = self.nodes
-
-        for curr_node in nodes:
-
-            # counting current curr_node transition inflow
-            number_trans_in = 0
-            for node_pre in self.predecessors(curr_node):
-
-                curr_edges_in = self.get_edge_data(node_pre, curr_node)
-
-                for _, curr_in_edge_data in curr_edges_in.items():
-                    frequency = curr_in_edge_data['frequency']
-                    number_trans_in += frequency
-
-            # counting curr_node transition outflow
-            number_trans_out = 0
-            for node_post in self.successors(curr_node):
-
-                curr_edges_out = self.get_edge_data(curr_node, node_post)
-
-                for _, curr_out_edge_data in curr_edges_out.items():
-                    frequency = curr_out_edge_data['frequency']
-                    number_trans_out += frequency
-
-            # the final frequency is simply the number of times that you
-            # transitioned into a state and then did not leave it
-            curr_node_final_freq = number_trans_in - number_trans_out
-
-            # all flow comes from the root node, so it is the only node allowed
-            # to "create" transitions
-            is_root_node = (curr_node == self._start_state)
-            if curr_node_final_freq < 0 and not is_root_node:
-                err = 'current node ({}) final frequency ({}) should ' + \
-                      'not be less than 0. This means there were more ' +\
-                      'outgoing transitions ({}) than incoming ' +\
-                      'transitions ({}).'
-                raise ValueError(err.format(curr_node, curr_node_final_freq,
-                                            number_trans_out, number_trans_in))
-
-            self._set_node_data(curr_node,
-                                'final_frequency', curr_node_final_freq)
 
     @classmethod
     def load_flexfringe_data(cls, graph_data_file):
@@ -161,7 +105,7 @@ class FDFA(StochasticAutomaton):
             'start_state': node_ID_to_node_label[root_node_label],
             # these are not things that are a part of flexfringe's automaton
             # data model, so give them default values
-            'beta': None,
+            'beta': 0.95,
             'final_transition_sym': -1}
 
         return config_data
@@ -268,6 +212,117 @@ class FDFA(StochasticAutomaton):
                 edges.append(new_edge)
 
         return edges, all_symbols
+
+    def _compute_node_data_properties(self):
+        """
+        Initializes the node and edge data properties correctly for a fdfa.
+        """
+
+        self._set_state_frequencies()
+
+    def _set_state_frequencies(self):
+        """
+        Sets all state frequencies for each node in an initialized FDFA
+
+        requires self.nodes and self.edges to be properly loaded into nx data
+        structures
+
+        :raises     ValueError:  checks if the final frequency is less than 0,
+                                 indicating something wrong with the edge
+                                 frequency data
+        """
+
+        nodes = self.nodes
+
+        for curr_node in nodes:
+
+            number_trans_in, _ = self._compute_node_flow(curr_node,
+                                                         flow_type='in')
+            (number_trans_out,
+             number_self_trans) = self._compute_node_flow(curr_node,
+                                                          flow_type='out')
+
+            # the final frequency is simply the number of times that you
+            # transitioned into a state and then did not leave it.
+            #
+            # inflow and outflow must not include self transitions, as it self
+            # transitions are not true flow
+            curr_node_final_freq = number_trans_in - number_trans_out
+
+            # all flow comes from the root node, so it is the only node allowed
+            # to "create" transitions
+            is_root_node = (curr_node == self._start_state)
+            if curr_node_final_freq < 0 and not is_root_node:
+                err = 'current node ({}) final frequency ({}) should ' + \
+                      'not be less than 0. This means there were more ' +\
+                      'outgoing transitions ({}) than incoming ' +\
+                      'transitions ({}).'
+                raise ValueError(err.format(curr_node, curr_node_final_freq,
+                                            number_trans_out, number_trans_in))
+            elif is_root_node:
+
+                # only set absolute value of frequency "flow" for the root
+                # node, as it is the only node allowed to create frequency
+                # flow
+                curr_node_final_freq = abs(curr_node_final_freq)
+
+            self._set_node_data(curr_node,
+                                'final_frequency', curr_node_final_freq)
+            self._set_node_data(curr_node,
+                                'self_frequency', number_self_trans)
+            self._set_node_data(curr_node,
+                                'in_frequency', number_trans_in)
+            self._set_node_data(curr_node,
+                                'out_frequency', number_trans_out)
+
+    def _compute_node_flow(self, curr_node: str, flow_type: str):
+        """
+        Calculates frequency (in/out)flow at the current node
+
+        :param      curr_node:   The node to compute the flow at
+        :type       curr_node:   str
+        :param      flow_type:   The flow type {'in', 'out'}
+        :type       flow_type:   str
+
+        :returns:   The node's (in/out)flow, the node's self-transistion flow
+        :rtype:     tuple of ints
+
+        :raises     ValueError:  checks if flow_type is an supported setting
+        """
+
+        allowed_flow_types = ['in', 'out']
+        if flow_type not in allowed_flow_types:
+            msg = ('selected flow_type ({}) not one of '
+                   'allowed flow_types: {}').format(flow_type,
+                                                    allowed_flow_types)
+            raise ValueError(msg)
+
+        if flow_type == 'in':
+            nodes = self.predecessors(curr_node)
+        elif flow_type == 'out':
+            nodes = self.successors(curr_node)
+
+        number_trans = 0
+        number_self_trans = 0
+        for node in nodes:
+
+            if flow_type == 'in':
+                curr_edges = self.get_edge_data(node, curr_node)
+            elif flow_type == 'out':
+                curr_edges = self.get_edge_data(curr_node, node)
+
+            for _, curr_out_edge_data in curr_edges.items():
+                frequency = curr_out_edge_data['frequency']
+
+                # don't want to count flow from self-loops, as they
+                # cannot create flow and thus should only be counted as a
+                # possible choice and not as (in/out)flow
+                if node == curr_node:
+                    number_self_trans += frequency
+                else:
+                    number_trans += frequency
+
+        return number_trans, number_self_trans
 
 
 class FDFABuilder(Builder):

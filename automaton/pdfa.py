@@ -179,10 +179,69 @@ class PDFA(StochasticAutomaton):
         return converted_nodes, edge_list
 
     @classmethod
-    def from_fdfa(cls, fdfa: FDFA) -> 'PDFA':
+    def _fdfa_to_pdfa_data(cls, fdfa: FDFA) -> 'PDFA':
+        """
+        convert fdfa nodes and edges to pdfa nodes and edges
+
+        :param      cls:   The class instance reference (not an object instance
+                           reference)
+        :type       cls:   PDFA class data reference
+        :param      fdfa:  The fdfa to convert to a PDFA
+        :type       fdfa:  FDFA
+
+        :returns:   nodes, edges lists with all data initialized for creation
+                    of pdfa from networkx.add_nodes_from() and
+                    networkx.add_edges_from()
+        :rtype:     list of tuples: (node label, node, attribute dict),
+                    list of tuples: (src node label, dest node label,
+                                     edge attribute dict)
+        """
 
         fdfa_nodes = fdfa.nodes(data=True)
-        print(fdfa_nodes)
+        pdfa_nodes = []
+        pdfa_edges = []
+
+        # converting final state frequencies to final state probabilities
+        for curr_node, curr_node_data in fdfa_nodes:
+
+            # the final probability is just how often the execution ends at the
+            # curr_node divided by the all of sum of frequencies over all
+            # possible transitions from that node
+            final_freq = fdfa._get_node_data(curr_node, 'final_frequency')
+            out_freq = fdfa._get_node_data(curr_node, 'out_frequency')
+            self_freq = fdfa._get_node_data(curr_node, 'self_frequency')
+            number_of_choices = final_freq + out_freq + self_freq
+            new_final_probability = final_freq / number_of_choices
+
+            new_node_data = {'final_probability': new_final_probability,
+                             'trans_distribution': None,
+                             'is_accepting': None}
+            pdfa_nodes.append((curr_node, new_node_data))
+
+            # converting transition frequencies to transition probabilities
+            #
+            # the edge transition probability is the edge's frequency divided
+            # by the the number of time you either ended or transitioned out
+            # of the that node
+            for node_post in fdfa.successors(curr_node):
+
+                curr_edges_out = fdfa.get_edge_data(curr_node, node_post)
+
+                for _, curr_out_edge_data in curr_edges_out.items():
+
+                    edge_freq = curr_out_edge_data['frequency']
+                    symbol = curr_out_edge_data['symbol']
+                    trans_probability = edge_freq / number_of_choices
+                    new_edge_data = {'symbol': symbol,
+                                     'probability': trans_probability}
+
+                    new_edge = (curr_node,
+                                node_post,
+                                new_edge_data)
+
+                    pdfa_edges.append(new_edge)
+
+        return pdfa_nodes, pdfa_edges
 
     def _compute_node_data_properties(self):
         """
@@ -481,11 +540,20 @@ class PDFABuilder(Builder):
         :rtype:     PDFA
         """
 
-        self._instance = PDFA.from_fdfa(fdfa)
+        nodes, edges = PDFA._fdfa_to_pdfa_data(fdfa)
 
         # saving these so we can just return initialized instances if the
         # underlying data has not changed
-        self.nodes = self._instance.nodes
-        self.edges = self._instance.edges
+        self.nodes = nodes
+        self.edges = edges
+
+        self._instance = PDFA(
+            nodes=nodes,
+            edge_list=edges,
+            beta=fdfa._beta,
+            alphabet_size=fdfa._alphabet_size,
+            num_states=fdfa._num_states,
+            final_transition_sym=fdfa._final_transition_sym,
+            start_state=fdfa._start_state)
 
         return self._instance
