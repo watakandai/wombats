@@ -32,31 +32,30 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """
         Constructs a new instance of an Automaton object.
 
-        :param      nodes:                  dict of node objects to be
-                                            converted
-        :type       nodes:                  dict of node label to node
-                                            propeties
-        :param      edge_list:              dictionary adj. list representing
-                                            the edge_list
-        :type       edge_list:              dict of src node label to dict of
-                                            dest label to edge properties
-        :param      alphabet_size:          number of symbols in pdfa alphabet
-        :type       alphabet_size:          Int
-        :param      num_states:             number of states in automaton state
-                                            space
-        :type       num_states:             Int
-        :param      start_state:            unique start state string label of
-                                            pdfa
-        :type       start_state:            same type as PDFA.nodes node object
-        :param      beta:                   the final state probability needed
-                                            for a state to accept (default
-                                            0.95)
-        :type       beta:                   Float
-        :param      final_transition_sym:  representation of the empty string
-                                            / symbol (a.k.a. lambda) (defualt
-                                            -1)
+        :param      nodes:                 node list as expected by
+                                           networkx.add_nodes_from()
+        :type       nodes:                 list of tuples: (node label, node
+                                           attribute dict)
+        :param      edge_list:             edge list as expected by
+                                           networkx.add_edges_from()
+        :type       edge_list:             list of tuples: (src node label,
+                                           dest node label, edge attribute
+                                           dict)
+        :param      alphabet_size:         number of symbols in pdfa alphabet
+        :type       alphabet_size:         Int
+        :param      num_states:            number of states in automaton state
+                                           space
+        :type       num_states:            Int
+        :param      start_state:           unique start state string label of
+                                           pdfa
+        :type       start_state:           same type as PDFA.nodes node object
+        :param      beta:                  the final state probability needed
+                                           for a state to accept (default 0.95)
+        :type       beta:                  Float
+        :param      final_transition_sym:  representation of the empty string /
+                                           symbol (a.k.a. lambda) (defualt -1)
         :type       final_transition_sym:  same type as PDFA.edges symbol
-                                            property
+                                           property
         """
 
         # need to start with a fully initialized networkx digraph
