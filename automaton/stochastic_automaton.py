@@ -9,7 +9,7 @@ from IPython.display import display
 class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
     """
-    This class describes a automaton with stochastic transistion
+    This class describes a automaton with stochastic transition
 
     built on networkx, so inherits node and edge data structure definitions
 
@@ -53,7 +53,7 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                            for a state to accept (default 0.95)
         :type       beta:                  Float
         :param      final_transition_sym:  representation of the empty string /
-                                           symbol (a.k.a. lambda) (defualt -1)
+                                           symbol (a.k.a. lambda) (default -1)
         :type       final_transition_sym:  same type as PDFA.edges symbol
                                            property
         """

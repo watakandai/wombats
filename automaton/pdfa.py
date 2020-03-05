@@ -141,7 +141,7 @@ class PDFA(StochasticAutomaton):
             - networkx.add_edges_from()
 
         :param      nodes:  dict of node objects to be converted
-        :type       nodes:  dict of node label to node propeties
+        :type       nodes:  dict of node label to node properties
         :param      edges:  dictionary adj. list to be converted
         :type       edges:  dict of src node label to dict of dest label to
                             edge properties
@@ -438,7 +438,7 @@ class PDFABuilder(Builder):
         # need to call the super class constructor to gain its properties
         Builder.__init__(self)
 
-        # keep these properties so we don't re-initailize unless underlying
+        # keep these properties so we don't re-initialize unless underlying
         # data changes
         self.nodes = None
         self.edges = None
@@ -453,7 +453,7 @@ class PDFABuilder(Builder):
         :param      graph_data_file:         The graph configuration file name
         :type       graph_data_file:         filename path string
         :param      graph_data_file_format:  The graph data file format.
-                                             (Defualt 'yaml')
+                                             (default 'yaml')
                                              {'yaml', 'fdfa_object'}
         :type       graph_data_file_format:  string
 
