@@ -5,6 +5,9 @@ from networkx.drawing.nx_pydot import to_pydot
 import graphviz as gv
 from IPython.display import display
 
+# local packages
+from wombats.automaton.display import edge_weight_to_string
+
 
 class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
@@ -177,8 +180,10 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         for node_name, node_data in graph.nodes.data():
 
-            final_prob_string = str(node_data[final_weight_key])
+            prob = node_data[final_weight_key]
+            final_prob_string = edge_weight_to_string(prob)
             node_dot_label_string = node_name + ': ' + final_prob_string
+
             graphviz_node_label = {'label': node_dot_label_string}
 
             if can_have_accepting_nodes:
@@ -212,8 +217,8 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         for u, v, key, data in graph.edges(data=True, keys=True):
 
-            edge_label_string = str(data['symbol']) + ': ' + \
-                str(data[edge_weight_key])
+            wt_str = edge_weight_to_string(data[edge_weight_key])
+            edge_label_string = str(data['symbol']) + ': ' + wt_str
 
             new_label_property = {'label': edge_label_string}
             node_identifier = (u, v, key)
