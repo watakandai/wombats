@@ -24,8 +24,7 @@ class FDFA(StochasticAutomaton):
         - out_frequency:   out "flow" of state frequency for each node
                            total times that state was visited with outgoing
                            transitions.
-        - total_frequency: total state frequency for each node
-                           total times that state was visited for all traces.
+        - self_frequency:  the frequency of self transition for each node.
         - trans_distribution: None, just there for consistency with PDFA
         - is_accepting: None, just there for consistency with PDFA
 
