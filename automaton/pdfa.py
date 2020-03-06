@@ -106,7 +106,7 @@ class PDFA(StochasticAutomaton):
     def write_traces_to_file(self, traces, num_samples, trace_lengths, f_name):
         """
         Writes trace samples to a file in the abbadingo format for use in
-        flexfringe
+        grammatical inference tools like flexfringe
 
         :param      traces:         The traces to write to a file
         :type       traces:         list of strings
@@ -114,8 +114,8 @@ class PDFA(StochasticAutomaton):
         :type       num_samples:    integer
         :param      trace_lengths:  list of sampled trace lengths
         :type       trace_lengths:  list of integers
-        :param      f_name:          The file name to write to
-        :type       f_name:          filename string
+        :param      f_name:         The file name to write to
+        :type       f_name:         filename string
         """
 
         # make sure the num_samples is an int, so you don't have to wrap shit
@@ -302,7 +302,7 @@ class PDFA(StochasticAutomaton):
         edge_dests = [edge[1] for edge in edge_data]
         edge_symbols = [edge[2]['symbol'] for edge in edge_data]
 
-        # need to add final state probability to dicrete rv dist
+        # need to add final state probability to discrete rv dist
         edge_probs = [edge[2]['probability'] for edge in edge_data]
 
         curr_final_state_prob = self._get_node_data(curr_state,
@@ -313,7 +313,7 @@ class PDFA(StochasticAutomaton):
         edge_dests.append(curr_state)
         edge_symbols.append(self._final_transition_sym)
 
-        next_symbol_dist = stats.rv_discrete(name='custm',
+        next_symbol_dist = stats.rv_discrete(name='transition',
                                              values=(edge_symbols, edge_probs))
 
         return next_symbol_dist

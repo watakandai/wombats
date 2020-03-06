@@ -283,7 +283,7 @@ class FDFA(StochasticAutomaton):
         :param      flow_type:   The flow type {'in', 'out'}
         :type       flow_type:   str
 
-        :returns:   The node's (in/out)flow, the node's self-transistion flow
+        :returns:   The node's (in/out)flow, the node's self-transition flow
         :rtype:     tuple of ints
 
         :raises     ValueError:  checks if flow_type is an supported setting
