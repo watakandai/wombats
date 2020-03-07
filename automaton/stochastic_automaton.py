@@ -186,14 +186,19 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
             final_prob_string = edge_weight_to_string(prob)
             node_dot_label_string = node_name + ': ' + final_prob_string
 
-            graphviz_node_label = {'label': node_dot_label_string}
+            graphviz_node_label = {'label': node_dot_label_string,
+                                   'fillcolor': 'gray80',
+                                   'style': 'filled'}
 
-            if can_have_accepting_nodes:
-                is_accepting = node_data['is_accepting']
-                if is_accepting:
-                    graphviz_node_label.update({'shape': 'doublecircle'})
-                else:
-                    graphviz_node_label.update({'shape': 'circle'})
+            is_start_state = (node_name == self._start_state)
+
+            if can_have_accepting_nodes and node_data['is_accepting']:
+                graphviz_node_label.update({'peripheries': 2})
+                graphviz_node_label.update({'fillcolor': 'tomato1'})
+
+            if is_start_state:
+                graphviz_node_label.update({'shape': 'box'})
+                graphviz_node_label.update({'fillcolor': 'royalblue1'})
 
             label_dict[node_name] = graphviz_node_label
 
@@ -223,7 +228,8 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
             wt_str = edge_weight_to_string(data[edge_weight_key])
             edge_label_string = str(data['symbol']) + ': ' + wt_str
 
-            new_label_property = {'label': edge_label_string}
+            new_label_property = {'label': edge_label_string,
+                                  'fontcolor': 'blue'}
             node_identifier = (u, v, key)
 
             label_dict[node_identifier] = new_label_property
