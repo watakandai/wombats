@@ -15,7 +15,7 @@ class FlexfringeInterface():
     def __init__(self, binary_location: str='dfasat/flexfringe',
                  output_directory: str='./') -> 'FlexfringeInterface':
         """
-        contructs an instance of the Flexfringe interface class instance
+        constructs an instance of the Flexfringe interface class instance
 
         :param      binary_location:   (absolute / relative) filepath to the
                                        flexfringe binary
@@ -47,7 +47,7 @@ class FlexfringeInterface():
         """
 
         cmd = self._get_command(kwargs)
-        output_file = self._get_learned_model_filepath()
+        output_file = self.learned_model_filepath
 
         flexfringe_call = [self.binary_location] + cmd + [training_file]
 
@@ -104,9 +104,10 @@ class FlexfringeInterface():
         (self._output_directory,
          self._output_base_filepath) = os.path.split(filepath)
 
-    def _get_learned_model_filepath(self) -> str:
+    @property
+    def learned_model_filepath(self) -> str:
         """
-        returns the output filename for the fully learned model, as this is a
+        the output filename for the fully learned model, as this is a
         different from the inputted "output-dir"
 
         :returns:   The learned model filepath.
@@ -121,8 +122,28 @@ class FlexfringeInterface():
 
         full_learned_model_filepath = os.path.join(f_dir,
                                                    full_learned_model_filename)
+        self._learned_model_filepath = full_learned_model_filepath
+        return self._learned_model_filepath
 
-        return full_learned_model_filepath
+    @learned_model_filepath.setter
+    def learned_model_filepath(self, filepath: str) -> None:
+        """
+        sets the learned_model_filepath
+
+        :param      filepath:  The new learned model filepath.
+        :type       filepath:  str
+        """
+
+        f_dir, full_fname = os.path.split(filepath)
+        fname, ext = os.path.splitext(full_fname)
+
+        # output filepath is just the basename, before the 'final' model is
+        # outputted
+        if fname.endswith('final'):
+            fname = fname[:-len('final')]
+
+        self._learned_model_filepath = filepath
+        self.output_filepath = os.path.join(f_dir, fname)
 
     def _get_command(self, kwargs: dict) -> list:
         """
