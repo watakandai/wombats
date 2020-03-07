@@ -1,6 +1,7 @@
 # 3rd-party packages
-import os
+import pygraphviz
 from networkx.drawing.nx_pydot import read_dot
+from networkx.drawing import nx_agraph
 import re
 
 # local packages
@@ -77,19 +78,20 @@ class FDFA(StochasticAutomaton):
             edge_weight_key='frequency')
 
     @classmethod
-    def load_flexfringe_data(cls: 'FDFA', graph_data_file: str) -> dict:
+    def load_flexfringe_data(cls: 'FDFA', graph) -> dict:
         """
         reads in graph configuration data from a flexfringe dot file
 
-        :param      graph_data_file:  The .dot graph data configuration file
-                                      name
-        :type       graph_data_file:  filename path string
+        :param      cls:    The "class instance" this method belongs to (not
+                            object instance)
+        :type       cls:    FDFA
+        :param      graph:  The graph with the flexfringe fdfa model
+        :type       graph:  networkx (MultiDi/Di)graph
 
         :returns:   configuration data dictionary for the fdfa
         :rtype:     dictionary
         """
 
-        graph = read_dot(graph_data_file)
         ff_nodes = graph.nodes(data=True)
         ff_edges = graph.edges(data=True)
 
@@ -344,39 +346,39 @@ class FDFABuilder(Builder):
         self.nodes = None
         self.edges = None
 
-    def __call__(self, graph_data_file: str,
-                 graph_data_file_format='flexfringe') -> str:
+    def __call__(self, graph_data: str,
+                 graph_data_format: str='dot_string') -> FDFA:
         """
-        Implements the smart constructor for FDFA
+        Returns an initialized FDFA instance given the graph_data
 
-        Only reads the config data once, otherwise just returns the built
-        object
+        graph_data and graph_data_format must match
 
-        :param      graph_data_file:         The graph configuration file name
-        :type       graph_data_file:         filename path string
-        :param      graph_data_file_format:  The graph data file format.
-                                             (default 'flexfringe')
-                                             Supported formats:
-                                             - 'flexfringe'
-        :type       graph_data_file_format:  string
+        :param      graph_data:         The string containing graph data. Could
+                                        be a filename or just the raw data
+        :type       graph_data:         string
+        :param      graph_data_format:  The graph data file format.
+                                        (default 'dot_file')
+                                        {'dot_file', 'dot_string'}
+        :type       graph_data_format:  string
 
         :returns:   instance of an initialized FDFA object
         :rtype:     FDFA
 
-        :raises     ValueError:              checks if graph_data_file's ext
-                                             and graph_data_file_format have
-                                             a compatible data loader
+        :raises     ValueError:         checks if graph_data and
+                                        graph_data_format have a
+                                        compatible data loader
         """
 
-        _, file_extension = os.path.splitext(graph_data_file)
-        if file_extension == '.dot' and graph_data_file_format == 'flexfringe':
-            config_data = FDFA.load_flexfringe_data(graph_data_file)
+        if graph_data_format == 'dot_string':
+            graph = nx_agraph.from_agraph(pygraphviz.AGraph(string=graph_data))
+        elif graph_data_format == 'dot_file':
+            graph = read_dot(graph_data)
         else:
-            errStr = 'graph_data_file ({}) is not a .dot ' + \
-                     'file matching the supported filetype(s) for the ' +\
-                     'selected graph_data_file_format ({})'
-            raise ValueError(errStr.format(graph_data_file,
-                                           graph_data_file_format))
+            msg = 'graph_data_format ({}) must be one of: "dot_file", ' + \
+                  '"dot_string"'.format(graph_data_format)
+            raise ValueError(msg)
+
+        config_data = FDFA.load_flexfringe_data(graph)
 
         nodes_have_changed = (self.nodes != config_data['nodes'])
         edges_have_changed = (self.edges != config_data['edges'])
