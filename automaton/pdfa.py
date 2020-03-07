@@ -457,19 +457,19 @@ class PDFABuilder(Builder):
 
         graph_data and graph_data_format must match
 
-        :param      graph_data_file:         The graph configuration file name
-        :type       graph_data_file:         filename path string
-        :param      graph_data_file_format:  The graph data file format.
-                                             (default 'yaml')
-                                             {'yaml', 'fdfa_object'}
-        :type       graph_data_file_format:  string
+        :param      graph_data:         The object containing graph data
+        :type       graph_data:         {str, FDFA}
+        :param      graph_data_format:  The graph data file format.
+                                        (default 'yaml')
+                                        {'yaml', 'fdfa_object'}
+        :type       graph_data_format:  string
 
         :returns:   instance of an initialized PDFA object
         :rtype:     PDFA
 
-        :raises     ValueError:              checks if graph_data_file's ext
-                                             and graph_data_file_format have
-                                             a compatible data loader
+        :raises     ValueError:         checks if graph_data and
+                                        graph_data_format have a
+                                        compatible data loader
         """
 
         if graph_data_format == 'yaml':
