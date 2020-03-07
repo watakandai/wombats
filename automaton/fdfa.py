@@ -34,8 +34,9 @@ class FDFA(StochasticAutomaton):
         - frequency: the number of times the edge was traversed
     """
 
-    def __init__(self, nodes, edges, alphabet_size, num_states,
-                 start_state, beta=0.95, final_transition_sym=-1):
+    def __init__(self, nodes: list, edges: list, alphabet_size: int,
+                 num_states: int, start_state, beta: float=0.95,
+                 final_transition_sym=-1) -> 'FDFA':
         """
         Constructs a new instance of a FDFA object.
 
@@ -76,7 +77,7 @@ class FDFA(StochasticAutomaton):
             edge_weight_key='frequency')
 
     @classmethod
-    def load_flexfringe_data(cls, graph_data_file):
+    def load_flexfringe_data(cls: 'FDFA', graph_data_file: str) -> dict:
         """
         reads in graph configuration data from a flexfringe dot file
 
@@ -110,7 +111,7 @@ class FDFA(StochasticAutomaton):
         return config_data
 
     @staticmethod
-    def convert_flexfringe_nodes(flexfringe_nodes):
+    def convert_flexfringe_nodes(flexfringe_nodes: dict) -> (list, dict):
         """
         converts a node list from a flexfringe (FF) dot file into the internal
         node format needed by networkx.add_nodes_from()
@@ -158,7 +159,8 @@ class FDFA(StochasticAutomaton):
         return nodes, node_ID_to_node_label
 
     @staticmethod
-    def convert_flexfringe_edges(flexfringeEdges, node_ID_to_node_label):
+    def convert_flexfringe_edges(flexfringeEdges: list,
+                                 node_ID_to_node_label: dict) -> (list, dict):
         """
         converts edges read in from flexfringe (FF) dot files into the internal
         edge format needed by networkx.add_edges_from()
@@ -212,14 +214,14 @@ class FDFA(StochasticAutomaton):
 
         return edges, all_symbols
 
-    def _compute_node_data_properties(self):
+    def _compute_node_data_properties(self) -> None:
         """
         Initializes the node and edge data properties correctly for a fdfa.
         """
 
         self._set_state_frequencies()
 
-    def _set_state_frequencies(self):
+    def _set_state_frequencies(self) -> None:
         """
         Sets all state frequencies for each node in an initialized FDFA
 
@@ -274,7 +276,7 @@ class FDFA(StochasticAutomaton):
             self._set_node_data(curr_node,
                                 'out_frequency', number_trans_out)
 
-    def _compute_node_flow(self, curr_node: str, flow_type: str):
+    def _compute_node_flow(self, curr_node: str, flow_type: str) -> (int, int):
         """
         Calculates frequency (in/out)flow at the current node
 
@@ -329,7 +331,7 @@ class FDFABuilder(Builder):
     Implements the generic automaton builder class for FDFA objects
     """
 
-    def __init__(self):
+    def __init__(self) -> 'FDFABuilder':
         """
         Constructs a new instance of the FDFABuilder
         """
@@ -342,7 +344,7 @@ class FDFABuilder(Builder):
         self.nodes = None
         self.edges = None
 
-    def __call__(self, graph_data_file,
+    def __call__(self, graph_data_file: str,
                  graph_data_file_format='flexfringe') -> str:
         """
         Implements the smart constructor for FDFA

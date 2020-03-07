@@ -8,7 +8,7 @@ class AutomatonCollection(ObjectFactory):
     with a more readable interface to our generic factory class.
     """
 
-    def get(self, automaton_type, **config_data):
+    def get(self, automaton_type: str, **config_data):
         """
         return an instance of an automaton given the automaton_type and the
         config_data.

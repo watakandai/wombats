@@ -30,8 +30,9 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
         - probability: the probability of selecting this edge for traversal
     """
 
-    def __init__(self, nodes, edge_list, alphabet_size, num_states,
-                 start_state, beta=0.95, final_transition_sym=-1):
+    def __init__(self, nodes: list, edge_list: list, alphabet_size: int,
+                 num_states: int, start_state, beta: float=0.95,
+                 final_transition_sym=-1) -> 'StochasticAutomaton':
         """
         Constructs a new instance of an Automaton object.
 
@@ -82,12 +83,12 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
         self._start_state = start_state
         """unique start state string label of pdfa"""
 
-    def disp_edges(self, graph=None):
+    def disp_edges(self, graph: {None, nx.MultiDiGraph}=None) -> None:
         """
         Prints each edge in the graph in an edge-list tuple format
 
         :param      graph:  The graph to access. Default = None => use instance
-        :type       graph:  PDFA, nx.MultiDiGraph, or None
+        :type       graph:  {None, nx.MultiDiGraph}
         """
 
         if graph is None:
@@ -99,12 +100,12 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
                     print(node, neighbor, edge_data)
 
-    def disp_nodes(self, graph=None):
+    def disp_nodes(self, graph: {None, nx.MultiDiGraph}=None) -> None:
         """
         Prints each node's data view
 
         :param      graph:  The graph to access. Default = None => use instance
-        :type       graph:  PDFA, nx.MultiDiGraph, or None
+        :type       graph:  {None, nx.MultiDiGraph}
         """
 
         if graph is None:
@@ -113,7 +114,7 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
         for node in graph.nodes(data=True):
             print(node)
 
-    def draw_IPython(self):
+    def draw_IPython(self) -> None:
         """
         Draws the pdfa structure in a way compatible with a jupyter / IPython
         notebook
@@ -122,9 +123,9 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
         dot_string = to_pydot(self).to_string()
         display(gv.Source(dot_string))
 
-    def _initialize_node_edge_properties(self, final_weight_key,
-                                         can_have_accepting_nodes,
-                                         edge_weight_key):
+    def _initialize_node_edge_properties(self, final_weight_key: str,
+                                         can_have_accepting_nodes: bool,
+                                         edge_weight_key: str) -> None:
         """
         Initializes the node and edge data properties correctly for a pdfa.
 
@@ -147,22 +148,23 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
         self._set_edge_labels(edge_weight_key)
 
     @abstractmethod
-    def _compute_node_data_properties(self):
+    def _compute_node_data_properties(self) -> None:
         """
         Initializes the node and edge data properties.
         """
 
         return
 
-    def _set_node_labels(self, final_weight_key, can_have_accepting_nodes,
-                         graph=None):
+    def _set_node_labels(self, final_weight_key: str,
+                         can_have_accepting_nodes: str,
+                         graph: {None, nx.MultiDiGraph}=None) -> None:
         """
         Sets each node's label property for use in graphviz output
 
         :param      graph:                     The graph to access. Default =
                                                None => use instance (default
                                                None)
-        :type       graph:                     {None, PDFA, nx.MultiDiGraph}
+        :type       graph:                     {None, nx.MultiDiGraph}
         :param      final_weight_key:          key in the automaton's node data
                                                corresponding to the weight /
                                                probability of ending in that
@@ -197,7 +199,8 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         nx.set_node_attributes(graph, label_dict)
 
-    def _set_edge_labels(self, edge_weight_key, graph=None):
+    def _set_edge_labels(self, edge_weight_key: str,
+                         graph: {None, nx.MultiDiGraph}=None) -> None:
         """
         Sets each edge's label property for use in graphviz output
 
@@ -205,7 +208,7 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :type       edge_weight_key:  string
         :param      graph:            The graph to access. Default = None =>
                                       use instance (default None)
-        :type       graph:            {None, PDFA, nx.MultiDiGraph}
+        :type       graph:            {None, nx.MultiDiGraph}
         """
 
         if graph is None:
@@ -227,7 +230,8 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         nx.set_edge_attributes(graph, label_dict)
 
-    def _get_node_data(self, node_label, data_key, graph=None):
+    def _get_node_data(self, node_label: str, data_key: str,
+                       graph: {None, nx.MultiDiGraph}=None):
         """
         Gets the node's data_key data from the graph
 
@@ -237,7 +241,7 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :type       data_key:    string
         :param      graph:       The graph to access. Default = None => use
                                  instance (default None)
-        :type       graph:       {None, PDFA, nx.MultiDiGraph}
+        :type       graph:       {None, nx.MultiDiGraph}
 
         :returns:   The node data associated with the node_label and data_key
         :rtype:     type of self.nodes.data()[node_label][data_key]
@@ -250,7 +254,8 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return node_data[node_label][data_key]
 
-    def _set_node_data(self, node_label, data_key, data, graph=None):
+    def _set_node_data(self, node_label: str, data_key: str, data,
+                       graph: {None, nx.MultiDiGraph}=None) -> None:
         """
         Sets the node's data_key data from the graph
 
@@ -262,7 +267,7 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :type       data:        whatever u want bro
         :param      graph:       The graph to access. Default = None => use
                                  instance (default None)
-        :type       graph:       {None, PDFA, nx.MultiDiGraph}
+        :type       graph:       {None, nx.MultiDiGraph}
         """
 
         if graph is None:

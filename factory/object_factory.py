@@ -1,3 +1,5 @@
+# local packages
+from .builder import Builder
 
 
 class ObjectFactory:
@@ -6,14 +8,14 @@ class ObjectFactory:
     see: https://realpython.com/factory-method-python/
     """
 
-    def __init__(self):
+    def __init__(self) -> 'ObjectFactory':
         """
         Constructs a new instance of the ObjectFactory
         """
 
         self._builders = {}
 
-    def register_builder(self, key, builder):
+    def register_builder(self, key: str, builder: Builder) -> None:
         """
         adds the builder object to the internal builder dictionary
 
@@ -30,7 +32,7 @@ class ObjectFactory:
 
         self._builders[key] = builder
 
-    def create(self, key, **kwargs):
+    def create(self, key: str, **kwargs):
         """
         Returns an instance object built with the keyed builder key and the
         constructor arguments in kwargs

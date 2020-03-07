@@ -1,15 +1,16 @@
 # 3rd-party packages
 import yaml
+from abc import ABCMeta, abstractmethod
 
 
-class Builder:
+class Builder(metaclass=ABCMeta):
     """
     Implements an abstract generic builder class to use with ObjectFactory
 
     implementation based on https://realpython.com/factory-method-python/
     """
 
-    def __init__(self):
+    def __init__(self) -> 'Builder':
         """
         Builder constructor. Just sets the internal instance references to None
         """
@@ -17,6 +18,7 @@ class Builder:
         self._instance = None
         self._config_name = None
 
+    @abstractmethod
     def __call__(self, **kwargs):
         """
         Abstract implementation of the constructor for the object to be
@@ -27,13 +29,13 @@ class Builder:
         :type       kwargs:  dictionary
 
         :returns:   a concrete instance of the object to be built
-        :rtype:     { return_type_description }
+        :rtype:     built object's type
         """
 
         return NotImplementedError
 
     @staticmethod
-    def load_YAML_config_data(config_file_name):
+    def load_YAML_config_data(config_file_name: str) -> dict:
         """
         reads in the object configuration parameters from a YAML config file
 
