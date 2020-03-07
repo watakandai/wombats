@@ -7,8 +7,8 @@ import os
 
 # local packages
 from wombats.factory.builder import Builder
-from wombats.automaton.stochastic_automaton import StochasticAutomaton
-from wombats.automaton.fdfa import FDFA
+from .stochastic_automaton import StochasticAutomaton
+from .fdfa import FDFA
 
 # needed for multi-threaded sampling routine
 NUM_CORES = multiprocessing.cpu_count()

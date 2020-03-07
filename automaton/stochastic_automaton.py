@@ -6,7 +6,7 @@ import graphviz as gv
 from IPython.display import display
 
 # local packages
-from wombats.automaton.display import edge_weight_to_string
+from .display import edge_weight_to_string
 
 
 class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):

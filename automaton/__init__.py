@@ -1,6 +1,6 @@
-from wombats.automaton.pdfa import PDFABuilder
-from wombats.automaton.fdfa import FDFABuilder
-from wombats.automaton.factory import AutomatonCollection
+from .pdfa import PDFABuilder
+from .fdfa import FDFABuilder
+from .factory import AutomatonCollection
 
 active_automata = AutomatonCollection()
 active_automata.register_builder('PDFA', PDFABuilder())

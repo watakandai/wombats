@@ -5,7 +5,7 @@ import re
 
 # local packages
 from wombats.factory.builder import Builder
-from wombats.automaton.stochastic_automaton import StochasticAutomaton
+from .stochastic_automaton import StochasticAutomaton
 
 
 class FDFA(StochasticAutomaton):
