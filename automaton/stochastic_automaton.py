@@ -4,6 +4,7 @@ import networkx as nx
 from networkx.drawing.nx_pydot import to_pydot
 import graphviz as gv
 from IPython.display import display
+from pydot import Dot
 
 # local packages
 from .display import edge_weight_to_string
@@ -120,8 +121,26 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
         notebook
         """
 
-        dot_string = to_pydot(self).to_string()
+        graph = self._get_pydot_representation()
+
+        dot_string = graph.to_string()
         display(gv.Source(dot_string))
+
+    def _get_pydot_representation(self) -> Dot:
+        """
+        converts the networkx graph to pydot and sets graphviz graph attributes
+
+        :returns:   The pydot Dot data structure representation.
+        :rtype:     pydot.Dot
+        """
+
+        graph = to_pydot(self)
+        graph.set_splines(True)
+        graph.set_nodesep(0.5)
+        graph.set_sep('+25,25')
+        graph.set_ratio(1)
+
+        return graph
 
     def _initialize_node_edge_properties(self, final_weight_key: str,
                                          can_have_accepting_nodes: bool,
