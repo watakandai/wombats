@@ -1,10 +1,12 @@
 # 3rd-party packages
+import multiprocessing
+import numpy as np
+import os
 from numpy.random import RandomState
 from scipy.stats import rv_discrete
-import multiprocessing
 from joblib import Parallel, delayed
-import os
 from collections.abc import Iterable
+from typing import List
 
 # local packages
 from wombats.factory.builder import Builder
@@ -72,6 +74,9 @@ class PDFA(StochasticAutomaton):
         super().__init__(nodes, edge_list, alphabet_size, num_states,
                          start_state, beta=0.95, final_transition_sym=-1)
 
+        self._transition_map = {}
+        """keep a map of start state label and symbol to destination state"""
+
         self._initialize_node_edge_properties(
             final_weight_key='final_probability',
             can_have_accepting_nodes=True,
@@ -134,6 +139,23 @@ class PDFA(StochasticAutomaton):
             for trace, trace_length in zip(traces, trace_lengths):
                 f.write(self._get_abbadingo_string(trace, trace_length,
                                                    is_pos_example=True))
+
+    def compute_trace_probability(self, trace: List[str]) -> float:
+        """
+        Calculates the given trace's probability in the language of the PDFA.
+
+        :param      trace:  The trace
+        :type       trace:  List[str]
+
+        :returns:   The trace probability.
+        :rtype:     float
+        """
+
+        curr_state = self.start_state
+        for symbol in trace:
+            print('yo')
+
+        return trace_prob
 
     @staticmethod
     def convert_states_edges(nodes: dict, edges: dict) -> (list, list):
@@ -246,6 +268,49 @@ class PDFA(StochasticAutomaton):
 
         return pdfa_nodes, pdfa_edges
 
+    def _get_next_state(self, curr_state, symbol: str) -> tuple:
+        """
+        Gets the next state given the current state and the "input" symbol.
+
+        :param      curr_state:  The curr state
+        :type       curr_state:  any hashable object type
+        :param      symbol:      The input symbol
+        :type       symbol:      str
+
+        :returns:   The next state label.
+        :rtype:     any hashable object type
+        """
+
+        trans_distribution = self._get_node_data(curr_state,
+                                                 'trans_distribution')
+        symbols = trans_distribution.xk
+        probabilities = trans_distribution.pk
+
+        if symbol not in symbols:
+            msg = ('given symbol ({}) is not found in the ' +
+                   'curr_state\'s ({}) ' +
+                   'transition distribution').format(symbol, curr_state)
+            raise ValueError(msg)
+
+        symbol_idx = np.where(symbols == symbol)
+        num_matched_symbols = len(symbol_idx)
+        if num_matched_symbols != 1:
+            msg = ('given symbol ({}) is found multiple times in ' +
+                   'curr_state\'s ({}) ' +
+                   'transition distribution').format(symbol, curr_state)
+            raise ValueError(msg)
+
+        symbol_probability = probabilities[symbol_idx]
+
+        if symbol_probability == 0.0:
+            msg = ('symbol ({}) has zero probability of transition in the ' +
+                   'pdfa from curr_state: {}').format(symbol, curr_state)
+            raise ValueError(msg)
+
+        next_state = self._transition_map[(curr_state, symbol)]
+
+        return next_state
+
     def _compute_node_data_properties(self) -> None:
         """
         Calculates the properties for each node.
@@ -261,8 +326,26 @@ class PDFA(StochasticAutomaton):
             self._set_state_acceptance(node, self._beta)
 
             # if we compute this once, we can sample from each distribution
-            self.nodes[node]['trans_distribution'] = \
-                self._set_state_trans_distribution(node, self.edges)
+            (self.nodes[node]['trans_distribution'],
+             new_trans_map_entries) = \
+                self._set_state_transition_dist(node, self.edges)
+
+            # need to merge the newly computed transition map at node to the
+            # existing map
+            #
+            # for a PDFA, a given start state and symbol must have a
+            # deterministic transition
+            for key in new_trans_map_entries.keys():
+                if key in self._transition_map:
+                    curr_state = key[0]
+                    symbol = key[1]
+                    msg = ('duplicate transition from state {} '
+                           'under symbol {} found - transition must be '
+                           'deterministic').format(curr_state, symbol)
+                    raise ValueError(msg)
+
+            self._transition_map = {**self._transition_map,
+                                    **new_trans_map_entries}
 
     def _set_state_acceptance(self, curr_state, beta: float) -> None:
         """
@@ -286,8 +369,8 @@ class PDFA(StochasticAutomaton):
 
         self._set_node_data(curr_state, 'is_accepting', state_accepts)
 
-    def _set_state_trans_distribution(self, curr_state,
-                                      edges: list) -> rv_discrete:
+    def _set_state_transition_dist(self, curr_state,
+                                   edges: list) -> tuple:
         """
         Computes a static state transition distribution for given state
 
@@ -296,9 +379,10 @@ class PDFA(StochasticAutomaton):
         :param      edges:       The networkx edge list
         :type       edges:       list
 
-        :returns:   a function to sample the discrete state transition
-                    distribution
-        :rtype:     stats.rv_discrete object
+        :returns:   (a function to sample the discrete state transition
+                    distribution, the mapping from (start state, symbol) ->
+                    edge_dests
+        :rtype:     tuple(stats.rv_discrete object, dict)
         """
 
         edge_data = edges([curr_state], data=True)
@@ -320,7 +404,12 @@ class PDFA(StochasticAutomaton):
         next_symbol_dist = rv_discrete(name='transition',
                                        values=(edge_symbols, edge_probs))
 
-        return next_symbol_dist
+        # creating the mapping from (start state, symbol) -> edge_dests
+        state_symbol_keys = list(zip([curr_state] * len(edge_symbols),
+                                     edge_symbols))
+        transition_map = dict(zip(state_symbol_keys, edge_dests))
+
+        return next_symbol_dist, transition_map
 
     def _choose_next_state(self, curr_state,
                            random_state: {None, int, Iterable}=None) -> tuple:
@@ -351,7 +440,7 @@ class PDFA(StochasticAutomaton):
         # seed, and we get lots of duplicated strings
         trans_dist.random_state = RandomState(random_state)
 
-        # sampling an action (symbol )from the state-action distribution at
+        # sampling an action (symbol) from the state-action distribution at
         # curr_state
         next_symbol = trans_dist.rvs(size=1)[0]
 
@@ -359,15 +448,10 @@ class PDFA(StochasticAutomaton):
             return curr_state, self._final_transition_sym
 
         else:
-            edge_data = self.edges([curr_state], data=True)
-            next_state = [qNext for qCurr, qNext, data in edge_data
-                          if data['symbol'] == next_symbol]
+            next_state = self._get_next_state(curr_state, next_symbol)
+            print(next_state)
 
-            if len(next_state) > 1:
-                raise ValueError('1 < transitions: ' + str(next_state) +
-                                 'from' + curr_state + ' - not deterministic')
-            else:
-                return (next_state[0], next_symbol)
+            return (next_state, next_symbol)
 
     def _generate_trace(self, start_state, N: int,
                         random_state: RandomState=None) -> (str, int):
