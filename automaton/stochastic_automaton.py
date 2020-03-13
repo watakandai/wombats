@@ -86,7 +86,7 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
         self._final_transition_sym = final_transition_sym
         """representation of the empty string / symbol (a.k.a. lambda)"""
 
-        self._start_state = start_state
+        self.start_state = start_state
         """unique start state string label of pdfa"""
 
     def disp_edges(self, graph: {None, nx.MultiDiGraph}=None) -> None:
@@ -214,7 +214,7 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                    'fillcolor': 'gray80',
                                    'style': 'filled'}
 
-            is_start_state = (node_name == self._start_state)
+            is_start_state = (node_name == self.start_state)
 
             if can_have_accepting_nodes and node_data['is_accepting']:
                 graphviz_node_label.update({'peripheries': 2})

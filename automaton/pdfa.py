@@ -96,12 +96,12 @@ class PDFA(StochasticAutomaton):
         :param      N:            maximum length of trace
         :type       N:            scalar integer
 
-        :returns:   the list of sampled trace strings and a list of the
+        :returns:   the list of sampled traces and a list of the
                     associated trace lengths
-        :rtype:     tuple(list(strings), list(integers))
+        :rtype:     tuple(list(str), list(int))
         """
 
-        start_state = self._start_state
+        start_state = self.start_state
 
         # make sure the num_samples is an int, so you don't have to wrap shit
         # in an 'int()' every time...
@@ -145,20 +145,25 @@ class PDFA(StochasticAutomaton):
                 f.write(self._get_abbadingo_string(trace, trace_length,
                                                    is_pos_example=True))
 
-    def compute_trace_probability(self, trace: List[str]) -> float:
+    def compute_trace_probability(self, trace: List[int]) -> float:
         """
         Calculates the given trace's probability in the language of the PDFA.
 
         :param      trace:  The trace
-        :type       trace:  List[str]
+        :type       trace:  List[int]
 
         :returns:   The trace probability.
         :rtype:     float
         """
 
         curr_state = self.start_state
+        trace_prob = 1.0
         for symbol in trace:
-            next_state
+            next_state, trans_probability = self._get_next_state(curr_state,
+                                                                 symbol)
+
+            trace_prob *= trans_probability
+            curr_state = next_state
 
         return trace_prob
 
@@ -650,6 +655,6 @@ class PDFABuilder(Builder):
             alphabet_size=fdfa._alphabet_size,
             num_states=fdfa._num_states,
             final_transition_sym=fdfa._final_transition_sym,
-            start_state=fdfa._start_state)
+            start_state=fdfa.start_state)
 
         return self._instance

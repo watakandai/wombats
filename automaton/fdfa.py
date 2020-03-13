@@ -255,7 +255,7 @@ class FDFA(StochasticAutomaton):
 
             # all flow comes from the root node, so it is the only node allowed
             # to "create" transitions
-            is_root_node = (curr_node == self._start_state)
+            is_root_node = (curr_node == self.start_state)
             if curr_node_final_freq < 0 and not is_root_node:
                 err = 'current node ({}) final frequency ({}) should ' + \
                       'not be less than 0. This means there were more ' +\
