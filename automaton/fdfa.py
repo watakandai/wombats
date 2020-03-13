@@ -1,8 +1,8 @@
 # 3rd-party packages
 import pygraphviz
+import re
 from networkx.drawing.nx_pydot import read_dot
 from networkx.drawing import nx_agraph
-import re
 
 # local packages
 from wombats.factory.builder import Builder
