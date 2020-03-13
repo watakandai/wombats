@@ -6,12 +6,16 @@ from numpy.random import RandomState
 from scipy.stats import rv_discrete
 from joblib import Parallel, delayed
 from collections.abc import Iterable
-from typing import List
+from typing import Union, List, Hashable, Tuple
 
 # local packages
 from wombats.factory.builder import Builder
-from .stochastic_automaton import StochasticAutomaton
+from .stochastic_automaton import StochasticAutomaton, NXNodeList, NXEdgeList
 from .fdfa import FDFA
+
+# needed for method type hint annotations
+Numeric = Union[int, float]
+Trans = (str, Numeric)
 
 # needed for multi-threaded sampling routine
 NUM_CORES = multiprocessing.cpu_count()
@@ -82,7 +86,8 @@ class PDFA(StochasticAutomaton):
             can_have_accepting_nodes=True,
             edge_weight_key='probability')
 
-    def generate_traces(self, num_samples: int, N: int) -> (list, list):
+    def generate_traces(self, num_samples: int, N: int) -> (List[str],
+                                                            List[int]):
         """
         generates num_samples random traces from the pdfa
 
@@ -153,12 +158,13 @@ class PDFA(StochasticAutomaton):
 
         curr_state = self.start_state
         for symbol in trace:
-            print('yo')
+            next_state
 
         return trace_prob
 
     @staticmethod
-    def convert_states_edges(nodes: dict, edges: dict) -> (list, list):
+    def convert_states_edges(nodes: dict, edges: dict) -> (NXNodeList,
+                                                           NXEdgeList):
         """
         Converts node and edges data from a manually specified YAML config file
         to the format needed by:
@@ -268,17 +274,18 @@ class PDFA(StochasticAutomaton):
 
         return pdfa_nodes, pdfa_edges
 
-    def _get_next_state(self, curr_state, symbol: str) -> tuple:
+    def _get_next_state(self, curr_state: Hashable,
+                        symbol: str) -> Tuple[Hashable, float]:
         """
         Gets the next state given the current state and the "input" symbol.
 
         :param      curr_state:  The curr state
-        :type       curr_state:  any hashable object type
+        :type       curr_state:  Hashable
         :param      symbol:      The input symbol
         :type       symbol:      str
 
-        :returns:   The next state label.
-        :rtype:     any hashable object type
+        :returns:   (The next state label, the transition probability)
+        :rtype:     (Hashable, float)
         """
 
         trans_distribution = self._get_node_data(curr_state,
@@ -309,7 +316,7 @@ class PDFA(StochasticAutomaton):
 
         next_state = self._transition_map[(curr_state, symbol)]
 
-        return next_state
+        return next_state, symbol_probability
 
     def _compute_node_data_properties(self) -> None:
         """
@@ -347,14 +354,14 @@ class PDFA(StochasticAutomaton):
             self._transition_map = {**self._transition_map,
                                     **new_trans_map_entries}
 
-    def _set_state_acceptance(self, curr_state, beta: float) -> None:
+    def _set_state_acceptance(self, curr_state: Hashable, beta: float) -> None:
         """
         Sets the state acceptance property for the given state.
 
         If curr_state's final_probability >= beta, then the state accepts
 
         :param      curr_state:  The current state's node label
-        :type       curr_state:  any hashable object type
+        :type       curr_state:  Hashable
         :param      beta:        The cut point final state probability
                                  acceptance parameter for the PDFA
         :type       beta:        float
@@ -369,13 +376,13 @@ class PDFA(StochasticAutomaton):
 
         self._set_node_data(curr_state, 'is_accepting', state_accepts)
 
-    def _set_state_transition_dist(self, curr_state,
-                                   edges: list) -> tuple:
+    def _set_state_transition_dist(self, curr_state: Hashable,
+                                   edges: list) -> (rv_discrete, dict):
         """
         Computes a static state transition distribution for given state
 
         :param      curr_state:  The current state label
-        :type       curr_state:  any hashable object type
+        :type       curr_state:  Hashable
         :param      edges:       The networkx edge list
         :type       edges:       list
 
@@ -411,13 +418,13 @@ class PDFA(StochasticAutomaton):
 
         return next_symbol_dist, transition_map
 
-    def _choose_next_state(self, curr_state,
-                           random_state: {None, int, Iterable}=None) -> tuple:
+    def _choose_next_state(self, curr_state: Hashable,
+                           random_state: {None, int, Iterable}=None) -> Trans:
         """
         Chooses the next state based on curr_state's transition distribution
 
         :param      curr_state:    The current state label
-        :type       curr_state:    any hashable object type
+        :type       curr_state:    Hashable
         :param      random_state:  The np.random.RandomState() seed parameter
                                    for sampling from the state transition
                                    distribution. Defaulting to None causes the
@@ -448,19 +455,17 @@ class PDFA(StochasticAutomaton):
             return curr_state, self._final_transition_sym
 
         else:
-            next_state = self._get_next_state(curr_state, next_symbol)
-            print(next_state)
-
+            next_state, _ = self._get_next_state(curr_state, next_symbol)
             return (next_state, next_symbol)
 
-    def _generate_trace(self, start_state, N: int,
-                        random_state: RandomState=None) -> (str, int):
+    def _generate_trace(self, start_state: Hashable, N: int,
+                        random_state: RandomState=None) -> (List[str], int):
         """
         Generates a trace from the pdfa starting from start_state
 
         :param      start_state:   the state label to start sampling traces
                                    from
-        :type       start_state:   any hashable object type
+        :type       start_state:   Hashable
         :param      N:             maximum length of trace
         :type       N:             scalar integer
         :param      random_state:  The np.random.RandomState() seed parameter

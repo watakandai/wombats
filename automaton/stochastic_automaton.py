@@ -5,9 +5,14 @@ from abc import ABCMeta, abstractmethod
 from networkx.drawing.nx_pydot import to_pydot
 from IPython.display import display
 from pydot import Dot
+from typing import Hashable, List, Tuple
 
 # local packages
 from .display import edge_weight_to_string
+
+# define these type defs for method annotation type hints
+NXNodeList = List[Tuple[Hashable, dict]]
+NXEdgeList = List[Tuple[Hashable, Hashable, dict]]
 
 
 class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
@@ -255,13 +260,13 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         nx.set_edge_attributes(graph, label_dict)
 
-    def _get_node_data(self, node_label, data_key: str,
+    def _get_node_data(self, node_label: Hashable, data_key: str,
                        graph: {None, nx.MultiDiGraph}=None):
         """
         Gets the node's data_key data from the graph
 
         :param      node_label:  The node label
-        :type       node_label:  any hashable object type
+        :type       node_label:  Hashable
         :param      data_key:    The desired node data's key name
         :type       data_key:    string
         :param      graph:       The graph to access. Default = None => use
@@ -279,13 +284,13 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return node_data[node_label][data_key]
 
-    def _set_node_data(self, node_label, data_key: str, data,
+    def _set_node_data(self, node_label: Hashable, data_key: str, data,
                        graph: {None, nx.MultiDiGraph}=None) -> None:
         """
         Sets the node's data_key data from the graph
 
         :param      node_label:  The node label
-        :type       node_label:  any hashable object type
+        :type       node_label:  Hashable
         :param      data_key:    The desired node data's key name
         :type       data_key:    string
         :param      data:        The data to associate with data_key

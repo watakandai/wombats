@@ -6,7 +6,7 @@ from networkx.drawing import nx_agraph
 
 # local packages
 from wombats.factory.builder import Builder
-from .stochastic_automaton import StochasticAutomaton
+from .stochastic_automaton import StochasticAutomaton, NXNodeList, NXEdgeList
 
 
 class FDFA(StochasticAutomaton):
@@ -113,7 +113,7 @@ class FDFA(StochasticAutomaton):
         return config_data
 
     @staticmethod
-    def convert_flexfringe_nodes(flexfringe_nodes: dict) -> (list, dict):
+    def convert_flexfringe_nodes(flexfringe_nodes: dict) -> (NXNodeList, dict):
         """
         converts a node list from a flexfringe (FF) dot file into the internal
         node format needed by networkx.add_nodes_from()
@@ -162,7 +162,8 @@ class FDFA(StochasticAutomaton):
 
     @staticmethod
     def convert_flexfringe_edges(flexfringeEdges: list,
-                                 node_ID_to_node_label: dict) -> (list, dict):
+                                 node_ID_to_node_label: dict) -> (NXEdgeList,
+                                                                  dict):
         """
         converts edges read in from flexfringe (FF) dot files into the internal
         edge format needed by networkx.add_edges_from()
