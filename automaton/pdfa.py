@@ -2,6 +2,7 @@
 import multiprocessing
 import numpy as np
 import os
+import matplotlib.pyplot as plt
 from numpy.random import RandomState
 from scipy.stats import rv_discrete
 from joblib import Parallel, delayed
@@ -14,8 +15,7 @@ from .stochastic_automaton import StochasticAutomaton, NXNodeList, NXEdgeList
 from .fdfa import FDFA
 
 # needed for method type hint annotations
-Numeric = Union[int, float]
-Trans = (str, Numeric)
+Trans = (str, int, float)
 
 # needed for multi-threaded sampling routine
 NUM_CORES = multiprocessing.cpu_count()
@@ -41,9 +41,9 @@ class PDFA(StochasticAutomaton):
         - probability: the probability of selecting this edge for traversal
     """
 
-    def __init__(self, nodes: list, edge_list: list, alphabet_size: int,
-                 num_states: int, start_state, beta: float=0.95,
-                 final_transition_sym=-1) -> 'PDFA':
+    def __init__(self, nodes: NXNodeList, edge_list: NXEdgeList,
+                 alphabet_size: int, num_states: int, start_state,
+                 beta: float=0.95, final_transition_sym=-1) -> 'PDFA':
         """
         Constructs a new instance of a PDFA object.
 
@@ -86,8 +86,9 @@ class PDFA(StochasticAutomaton):
             can_have_accepting_nodes=True,
             edge_weight_key='probability')
 
-    def generate_traces(self, num_samples: int, N: int) -> (List[str],
-                                                            List[int]):
+    def generate_traces(self, num_samples: int, N: int) -> (List[List[int]],
+                                                            List[int],
+                                                            List[float]):
         """
         generates num_samples random traces from the pdfa
 
@@ -96,9 +97,10 @@ class PDFA(StochasticAutomaton):
         :param      N:            maximum length of trace
         :type       N:            scalar integer
 
-        :returns:   the list of sampled traces and a list of the
-                    associated trace lengths
-        :rtype:     tuple(list(str), list(int))
+        :returns:   list of sampled traces,
+                    list of the associated trace lengths,
+                    list of the associated trace probabilities
+        :rtype:     tuple(list(list(int)), list(int), list(float))
         """
 
         start_state = self.start_state
@@ -109,26 +111,26 @@ class PDFA(StochasticAutomaton):
 
         iters = range(0, num_samples)
         results = Parallel(n_jobs=NUM_CORES, verbose=1)(
-            delayed(self._generate_trace)(start_state, N) for i in iters)
+            delayed(self.generate_trace)(start_state, N) for i in iters)
 
-        samples, trace_lengths = zip(*results)
+        samples, trace_lengths, trace_probs = zip(*results)
 
-        return samples, trace_lengths
+        return samples, trace_lengths, trace_probs
 
-    def write_traces_to_file(self, traces: list, num_samples: int,
-                             trace_lengths: list, f_name: str) -> None:
+    def write_traces_to_file(self, traces: List[List[int]], num_samples: int,
+                             trace_lengths: List[int], f_name: str) -> None:
         """
         Writes trace samples to a file in the abbadingo format for use in
         grammatical inference tools like flexfringe
 
         :param      traces:         The traces to write to a file
-        :type       traces:         list of strings
+        :type       traces:         List[List[int]]
         :param      num_samples:    The number sampled traces
-        :type       num_samples:    integer
+        :type       num_samples:    int
         :param      trace_lengths:  list of sampled trace lengths
-        :type       trace_lengths:  list of integers
+        :type       trace_lengths:  List[int]
         :param      f_name:         The file name to write to
-        :type       f_name:         filename string
+        :type       f_name:         str
         """
 
         # make sure the num_samples is an int, so you don't have to wrap shit
@@ -158,6 +160,7 @@ class PDFA(StochasticAutomaton):
 
         curr_state = self.start_state
         trace_prob = 1.0
+
         for symbol in trace:
             next_state, trans_probability = self._get_next_state(curr_state,
                                                                  symbol)
@@ -214,8 +217,76 @@ class PDFA(StochasticAutomaton):
 
         return converted_nodes, edge_list
 
+    def generate_trace(self, start_state: Hashable, N: int,
+                        random_state: RandomState=None) -> (List[int], int,
+                                                            float):
+        """
+        Generates a trace from the pdfa starting from start_state
+
+        :param      start_state:   the state label to start sampling traces
+                                   from
+        :type       start_state:   Hashable
+        :param      N:             maximum length of trace
+        :type       N:             scalar integer
+        :param      random_state:  The np.random.RandomState() seed parameter
+                                   for sampling from the state transition
+                                   distribution. Defaulting to None causes the
+                                   seed to reset. (default None)
+        :type       random_state:  {None, int, array_like}
+
+        :returns:   the sequence of symbols emitted, the length of the trace,
+                    the probability of the trace in the language of the pdfa
+        :rtype:     tuple(List[int], integer, float)
+        """
+
+        curr_state = start_state
+        length_of_trace = 1
+        trace_prob = 1.0
+
+        (next_state,
+         next_symbol,
+         trans_probability) = self._choose_next_state(curr_state, random_state)
+
+        sampled_trace = [next_symbol]
+        curr_state = next_state
+        at_terminal_state = next_symbol == self._final_transition_sym
+        trace_prob *= trans_probability
+
+        while (not at_terminal_state and length_of_trace <= N):
+            (next_state,
+             next_symbol,
+             trans_probability) = self._choose_next_state(curr_state,
+                                                          random_state)
+
+            if next_symbol == self._final_transition_sym:
+                break
+
+            sampled_trace.append(next_symbol)
+            length_of_trace += 1
+            curr_state = next_state
+            trace_prob *= trans_probability
+        print(trace_prob)
+        return sampled_trace, length_of_trace, trace_prob
+
+    def plot_node_trans_dist(self, curr_state: Hashable) -> None:
+        """!
+        Plots the transition pmf at the given curr_state / node.
+    
+        :param      curr_state:  state to display its transition distribution
+        :type       curr_state:  Hashable
+        """
+
+        trans_dist = self._get_node_data(curr_state, 'trans_distribution')
+        
+        fig, ax = plt.subplots(1, 1)
+        ax.plot(trans_dist.xk, trans_dist.pmf(trans_dist.xk), 'ro',
+                ms=12, mec='r')
+        ax.vlines(trans_dist.xk, 0, trans_dist.pmf(trans_dist.xk),
+                  colors='r', lw=4)
+        plt.show()
+
     @classmethod
-    def _fdfa_to_pdfa_data(cls, fdfa: FDFA) -> 'PDFA':
+    def _fdfa_to_pdfa_data(cls, fdfa: FDFA) -> Tuple[NXNodeList, NXEdgeList]:
         """
         convert fdfa nodes and edges to pdfa nodes and edges
 
@@ -382,7 +453,7 @@ class PDFA(StochasticAutomaton):
         self._set_node_data(curr_state, 'is_accepting', state_accepts)
 
     def _set_state_transition_dist(self, curr_state: Hashable,
-                                   edges: list) -> (rv_discrete, dict):
+                                   edges: NXEdgeList) -> (rv_discrete, dict):
         """
         Computes a static state transition distribution for given state
 
@@ -436,9 +507,9 @@ class PDFA(StochasticAutomaton):
                                    seed to reset. (default None)
         :type       random_state:  {None, int, Iterable}
 
-        :returns:   The next state's label and the symbol emitted by changing
-                    states
-        :rtype:     tuple(string, numeric)
+        :returns:   The next state's label, the symbol emitted by changing
+                    states, the probability of this transition occurring
+        :rtype:     tuple(string, int, float)
 
         :raises     ValueError:    if more than one non-zero probability
                                    transition from curr_state under a given
@@ -457,61 +528,21 @@ class PDFA(StochasticAutomaton):
         next_symbol = trans_dist.rvs(size=1)[0]
 
         if next_symbol == self._final_transition_sym:
-            return curr_state, self._final_transition_sym
-
+            trans_probability = 1.0
+            return curr_state, next_symbol, trans_probability
         else:
-            next_state, _ = self._get_next_state(curr_state, next_symbol)
-            return (next_state, next_symbol)
+            next_state, trans_probability = self._get_next_state(curr_state,
+                                                                 next_symbol)
+            return next_state, next_symbol, trans_probability
 
-    def _generate_trace(self, start_state: Hashable, N: int,
-                        random_state: RandomState=None) -> (List[str], int):
-        """
-        Generates a trace from the pdfa starting from start_state
-
-        :param      start_state:   the state label to start sampling traces
-                                   from
-        :type       start_state:   Hashable
-        :param      N:             maximum length of trace
-        :type       N:             scalar integer
-        :param      random_state:  The np.random.RandomState() seed parameter
-                                   for sampling from the state transition
-                                   distribution. Defaulting to None causes the
-                                   seed to reset. (default None)
-        :type       random_state:  {None, int, array_like}
-
-        :returns:   the sequence of symbols emitted and the length of the trace
-        :rtype:     tuple(list of strings, integer)
-        """
-
-        curr_state = start_state
-        length_of_trace = 1
-        next_state, next_symbol = self._choose_next_state(curr_state,
-                                                          random_state)
-        sampled_trace = str(next_symbol)
-
-        while (next_symbol != self._final_transition_sym and
-               length_of_trace <= N):
-
-            next_state, next_symbol = self._choose_next_state(curr_state,
-                                                              random_state)
-
-            if next_symbol == self._final_transition_sym:
-                break
-
-            sampled_trace += ' ' + str(next_symbol)
-            length_of_trace += 1
-            curr_state = next_state
-
-        return sampled_trace, length_of_trace
-
-    def _get_abbadingo_string(self, trace: str, trace_length: int,
+    def _get_abbadingo_string(self, trace: List[int], trace_length: int,
                               is_pos_example: bool) -> str:
         """
         Returns the Abbadingo (sigh) formatted string given a trace string and
         the label for the trace
 
         :param      trace:           The trace string to represent in Abbadingo
-        :type       trace:           string
+        :type       trace:           List[int]
         :param      trace_length:    The trace length
         :type       trace_length:    integer
         :param      is_pos_example:  Indicates if the trace is a positive
@@ -521,9 +552,10 @@ class PDFA(StochasticAutomaton):
         :returns:   The abbadingo formatted string for the given trace
         :rtype:     string
         """
+        trace = ' '.join(str(x) for x in trace)
 
         trace_label = {False: '0', True: '1'}[is_pos_example]
-        return trace_label + ' ' + str(trace_length) + ' ' + str(trace) + '\n'
+        return trace_label + ' ' + str(trace_length) + ' ' + trace + '\n'
 
 
 class PDFABuilder(Builder):
