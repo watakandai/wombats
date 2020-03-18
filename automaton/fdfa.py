@@ -35,9 +35,9 @@ class FDFA(StochasticAutomaton):
         - frequency: the number of times the edge was traversed
     """
 
-    def __init__(self, nodes: list, edges: list, alphabet_size: int,
-                 num_states: int, start_state, beta: float=0.95,
-                 final_transition_sym=-1) -> 'FDFA':
+    def __init__(self, nodes: NXNodeList, edges: NXEdgeList,
+                 alphabet_size: int, num_states: int, start_state,
+                 beta: float=0.95, final_transition_sym=-1) -> 'FDFA':
         """
         Constructs a new instance of a FDFA object.
 
@@ -115,7 +115,7 @@ class FDFA(StochasticAutomaton):
     @staticmethod
     def convert_flexfringe_nodes(flexfringe_nodes: dict) -> (NXNodeList, dict):
         """
-        converts a node list from a flexfringe (FF) dot file into the internal
+        converts node data from a flexfringe (FF) dot file into the internal
         node format needed by networkx.add_nodes_from()
 
         :param      flexfringe_nodes:  The flexfringe node list mapping node
@@ -161,7 +161,7 @@ class FDFA(StochasticAutomaton):
         return nodes, node_ID_to_node_label
 
     @staticmethod
-    def convert_flexfringe_edges(flexfringeEdges: list,
+    def convert_flexfringe_edges(flexfringeEdges: NXEdgeList,
                                  node_ID_to_node_label: dict) -> (NXEdgeList,
                                                                   dict):
         """
