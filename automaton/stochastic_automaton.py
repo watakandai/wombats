@@ -36,8 +36,9 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
         - probability: the probability of selecting this edge for traversal
     """
 
-    def __init__(self, nodes: list, edge_list: list, alphabet_size: int,
-                 num_states: int, start_state, beta: float=0.95,
+    def __init__(self, nodes: NXNodeList, edge_list: NXEdgeList,
+                 alphabet_size: int, num_states: int, start_state,
+                 beta: float=0.95,
                  final_transition_sym=-1) -> 'StochasticAutomaton':
         """
         Constructs a new instance of an Automaton object.
