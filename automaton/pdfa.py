@@ -7,7 +7,7 @@ from numpy.random import RandomState
 from scipy.stats import rv_discrete
 from joblib import Parallel, delayed
 from collections.abc import Iterable
-from typing import Union, List, Hashable, Tuple
+from typing import List, Hashable, Tuple
 
 # local packages
 from wombats.factory.builder import Builder
@@ -218,8 +218,8 @@ class PDFA(StochasticAutomaton):
         return converted_nodes, edge_list
 
     def generate_trace(self, start_state: Hashable, N: int,
-                        random_state: RandomState=None) -> (List[int], int,
-                                                            float):
+                       random_state: RandomState=None) -> (List[int], int,
+                                                           float):
         """
         Generates a trace from the pdfa starting from start_state
 
@@ -271,13 +271,13 @@ class PDFA(StochasticAutomaton):
     def plot_node_trans_dist(self, curr_state: Hashable) -> None:
         """!
         Plots the transition pmf at the given curr_state / node.
-    
+
         :param      curr_state:  state to display its transition distribution
         :type       curr_state:  Hashable
         """
 
         trans_dist = self._get_node_data(curr_state, 'trans_distribution')
-        
+
         fig, ax = plt.subplots(1, 1)
         ax.plot(trans_dist.xk, trans_dist.pmf(trans_dist.xk), 'ro',
                 ms=12, mec='r')
