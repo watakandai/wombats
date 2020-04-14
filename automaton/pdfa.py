@@ -27,6 +27,8 @@ class PDFA(StochasticAutomaton):
 
     built on networkx, so inherits node and edge data structure definitions
 
+    inherits some of its api from the NLTK LM API
+
     Node Attributes
     -----------------
         - final_probability: final state probability for the node
@@ -147,9 +149,12 @@ class PDFA(StochasticAutomaton):
                 f.write(self._get_abbadingo_string(trace, trace_length,
                                                    is_pos_example=True))
 
-    def compute_trace_probability(self, trace: List[int]) -> float:
+    def score(self, trace: List[int]) -> float:
         """
         Calculates the given trace's probability in the language of the PDFA.
+
+        PDFA is a language model (LM) in this case:
+            ==> score = P_{PDFA LM}(trace)
 
         :param      trace:  The trace
         :type       trace:  List[int]
@@ -284,6 +289,162 @@ class PDFA(StochasticAutomaton):
         ax.vlines(trans_dist.xk, 0, trans_dist.pmf(trans_dist.xk),
                   colors='r', lw=4)
         plt.show()
+
+    def logscore(self, trace: List[int], base: float=2.0) -> float:
+        """
+        computes the log of the score (sequence probability) of the given trace
+        in the language of the PDFA
+
+        :param      trace:  The sequence of symbols to compute the log score of
+        :type       trace:  List[int]
+        :param      base:   The log base. Commonly set to 2 in classic
+                            information theory literature (default 2.0)
+        :type       base:   float
+
+        :returns:   log of the probability - NOT log odds
+        :rtype:     float
+        """
+
+        score = self.score(trace)
+
+        return np.log(score) / np.log(base)
+
+    def cross_entropy_approx(self, trace: List[int], base: float=2.0) -> float:
+        """
+        computes approximate cross-entropy of the given trace in the language
+        of the PDFA
+
+        Here, we are using the Shannon-McMillian-Breiman theorem to approximate
+        the cross-entropy of the trace, given that we sampled the trace from
+        the actual target distribution and we are evaluating it in the PDFA LM.
+        Then, as a PDFA is a stationary ergodic stochastic process model, we
+        can calculate the cross-entropy as:
+
+            trace ~ target
+            H(target, model) = lim {(- 1 / n) * log(P_{model}(trace))}
+                             n -> inf
+
+        where:
+
+            H(target) <= H(target, model)
+
+        The finite-length approximation to the cross-entropy is then given by:
+
+            H(trace) = (- 1 / N) log(P_{model}(trace))
+
+        References:
+        NLTK.lm.api
+        Speech and Language Processing, Ch3
+        (https://web.stanford.edu/~jurafsky/slp3/3.pdf)
+
+        :param      trace:  The sequence of symbols to evaluate
+        :type       trace:  List[int]
+        :param      base:   The log base. Commonly set to 2 in classic
+                            information theory literature (default 2.0)
+        :type       base:   float
+
+        :returns:   the approximate cross-entropy of the given trace
+        :rtype:     float
+        """
+
+        N = len(trace)
+
+        return (-1.0 / N) * self.logscore(trace, base)
+
+    def perplexity_approx(self, trace: List[int], base: float=2.0) -> float:
+        """
+        computes approximate perplexity of the given trace in the language of
+        the PDFA
+
+        The approximate perplexity is based on computing the approximate
+        cross-entropy (cross_entropy_approximate).
+
+        References:
+        NLTK.lm.api
+        Speech and Language Processing, Ch3
+        (https://web.stanford.edu/~jurafsky/slp3/3.pdf)
+
+        :param      trace:  The sequence of symbols to evaluate
+        :type       trace:  List[int]
+        :param      base:   The log base used for log probability calculations
+                            of the approximate cross-entropy underpinning the
+                            perplexity. Commonly set to 2 in classic
+                            information theory literature (default 2.0)
+        :type       base:   float
+
+        :returns:   the approximate perplexity of the given trace
+        :rtype:     float
+        """
+
+        return base ** self.cross_entropy_approx(trace, base)
+
+    def cross_entropy(self, traces: List[List[int]],
+                      actual_trace_probs: List[float],
+                      base: float=2.0) -> float:
+        """
+        computes actual cross-entropy of the given traces in the language of
+        the PDFA on the given actual trace probabilities
+
+        References: Speech and Language Processing, Ch3
+        (https://web.stanford.edu/~jurafsky/slp3/3.pdf)
+
+        :param      traces:              The list of sequence of symbols to
+                                         evaluate the model's actual cross
+                                         entropy on.
+        :type       traces:              List[int]
+        :param      actual_trace_probs:  The actual probability of each trace
+                                         in the target language distribution
+        :type       actual_trace_probs:  List[float]
+        :param      base:                The log base. Commonly set to 2 in
+                                         classic information theory literature
+                                         (default 2.0)
+        :type       base:                float
+
+        :returns:   the actual cross-entropy of the given trace
+        :rtype:     float
+        """
+
+        cross_entropy_sum = 0
+        for target_prob, trace in zip(actual_trace_probs, traces):
+            cross_entropy_sum += target_prob * self.logscore(trace, base)
+
+        N = len(actual_trace_probs)
+
+        return (-1.0 / N) * cross_entropy_sum
+
+    def perplexity(self, traces: List[List[int]],
+                   actual_trace_probs: List[float],
+                   base: float=2.0) -> float:
+        """
+        computes actual perplexity of the given traces in the language of
+        the PDFA on the given actual trace probabilities
+
+        References: Speech and Language Processing, Ch3
+        (https://web.stanford.edu/~jurafsky/slp3/3.pdf)
+
+        :param      traces:              The list of sequence of symbols to
+                                         evaluate the model's actual cross
+                                         entropy on.
+        :type       traces:              List[int]
+        :param      actual_trace_probs:  The actual probability of each trace
+                                         in the target language distribution
+        :type       actual_trace_probs:  List[float]
+        :param      base:                The log base. Commonly set to 2 in
+                                         classic information theory literature
+                                         (default 2.0)
+        :type       base:                float
+
+        :returns:   the actual cross-entropy of the given trace
+        :rtype:     float
+        """
+
+        cross_entropy_sum = 0
+        for target_prob, trace in zip(actual_trace_probs, traces):
+            cross_entropy_sum += target_prob * self.logscore(trace, base)
+
+        N = len(actual_trace_probs)
+
+        return (-1.0 / N) * cross_entropy_sum
 
     @classmethod
     def _fdfa_to_pdfa_data(cls, fdfa: FDFA) -> Tuple[NXNodeList, NXEdgeList]:
