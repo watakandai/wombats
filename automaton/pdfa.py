@@ -149,32 +149,6 @@ class PDFA(StochasticAutomaton):
                 f.write(self._get_abbadingo_string(trace, trace_length,
                                                    is_pos_example=True))
 
-    def score(self, trace: List[int]) -> float:
-        """
-        Calculates the given trace's probability in the language of the PDFA.
-
-        PDFA is a language model (LM) in this case:
-            ==> score = P_{PDFA LM}(trace)
-
-        :param      trace:  The trace
-        :type       trace:  List[int]
-
-        :returns:   The trace probability.
-        :rtype:     float
-        """
-
-        curr_state = self.start_state
-        trace_prob = 1.0
-
-        for symbol in trace:
-            next_state, trans_probability = self._get_next_state(curr_state,
-                                                                 symbol)
-
-            trace_prob *= trans_probability
-            curr_state = next_state
-
-        return trace_prob
-
     @staticmethod
     def convert_states_edges(nodes: dict, edges: dict) -> (NXNodeList,
                                                            NXEdgeList):
@@ -270,7 +244,7 @@ class PDFA(StochasticAutomaton):
             length_of_trace += 1
             curr_state = next_state
             trace_prob *= trans_probability
-        print(trace_prob)
+
         return sampled_trace, length_of_trace, trace_prob
 
     def plot_node_trans_dist(self, curr_state: Hashable) -> None:
@@ -290,6 +264,32 @@ class PDFA(StochasticAutomaton):
                   colors='r', lw=4)
         plt.show()
 
+    def score(self, trace: List[int]) -> float:
+        """
+        Calculates the given trace's probability in the language of the PDFA.
+
+        PDFA is a language model (LM) in this case:
+            ==> score = P_{PDFA LM}(trace)
+
+        :param      trace:  The trace
+        :type       trace:  List[int]
+
+        :returns:   The trace probability.
+        :rtype:     float
+        """
+
+        curr_state = self.start_state
+        trace_prob = 1.0
+
+        for symbol in trace:
+            next_state, trans_probability = self._get_next_state(curr_state,
+                                                                 symbol)
+
+            trace_prob *= trans_probability
+            curr_state = next_state
+
+        return trace_prob
+
     def logscore(self, trace: List[int], base: float=2.0) -> float:
         """
         computes the log of the score (sequence probability) of the given trace
@@ -307,18 +307,18 @@ class PDFA(StochasticAutomaton):
 
         score = self.score(trace)
 
-        return np.log(score) / np.log(base)
+        return np.asscalar(np.log(score) / np.log(base))
 
     def cross_entropy_approx(self, trace: List[int], base: float=2.0) -> float:
         """
         computes approximate cross-entropy of the given trace in the language
         of the PDFA
 
-        Here, we are using the Shannon-McMillian-Breiman theorem to approximate
+        Here, we are using the Shannon-McMillian-Breiman theorem to define
         the cross-entropy of the trace, given that we sampled the trace from
         the actual target distribution and we are evaluating it in the PDFA LM.
         Then, as a PDFA is a stationary ergodic stochastic process model, we
-        can calculate the cross-entropy as:
+        can calculate the cross-entropy as (eq. 3.49 from SLP ch3):
 
             trace ~ target
             H(target, model) = lim {(- 1 / n) * log(P_{model}(trace))}
@@ -328,13 +328,14 @@ class PDFA(StochasticAutomaton):
 
             H(target) <= H(target, model)
 
-        The finite-length approximation to the cross-entropy is then given by:
+        The finite-length approximation to the cross-entropy is then given by
+        (eq. 3.51 from SLP ch3):
 
             H(trace) = (- 1 / N) log(P_{model}(trace))
 
         References:
         NLTK.lm.api
-        Speech and Language Processing, Ch3
+        Speech and Language Processing (SLP), 3 ed., Ch3
         (https://web.stanford.edu/~jurafsky/slp3/3.pdf)
 
         :param      trace:  The sequence of symbols to evaluate
@@ -357,11 +358,11 @@ class PDFA(StochasticAutomaton):
         the PDFA
 
         The approximate perplexity is based on computing the approximate
-        cross-entropy (cross_entropy_approximate).
+        cross-entropy (cross_entropy_approximate) (eq. 3.52 of SLP).
 
         References:
         NLTK.lm.api
-        Speech and Language Processing, Ch3
+        Speech and Language Processing (SLP), 3 ed., Ch3
         (https://web.stanford.edu/~jurafsky/slp3/3.pdf)
 
         :param      trace:  The sequence of symbols to evaluate
@@ -385,7 +386,8 @@ class PDFA(StochasticAutomaton):
         computes actual cross-entropy of the given traces in the language of
         the PDFA on the given actual trace probabilities
 
-        References: Speech and Language Processing, Ch3
+        References:
+        Speech and Language Processing (SLP), 3 ed., Ch3
         (https://web.stanford.edu/~jurafsky/slp3/3.pdf)
 
         :param      traces:              The list of sequence of symbols to
@@ -404,9 +406,10 @@ class PDFA(StochasticAutomaton):
         :rtype:     float
         """
 
-        cross_entropy_sum = 0
+        cross_entropy_sum = 0.0
+
         for target_prob, trace in zip(actual_trace_probs, traces):
-            cross_entropy_sum += target_prob * self.logscore(trace, base)
+            cross_entropy_sum += target_prob[0] * self.logscore(trace, base)
 
         N = len(actual_trace_probs)
 
@@ -419,7 +422,8 @@ class PDFA(StochasticAutomaton):
         computes actual perplexity of the given traces in the language of
         the PDFA on the given actual trace probabilities
 
-        References: Speech and Language Processing, Ch3
+        References:
+        Speech and Language Processing (SLP), 3 ed., Ch3
         (https://web.stanford.edu/~jurafsky/slp3/3.pdf)
 
         :param      traces:              The list of sequence of symbols to
@@ -438,13 +442,7 @@ class PDFA(StochasticAutomaton):
         :rtype:     float
         """
 
-        cross_entropy_sum = 0
-        for target_prob, trace in zip(actual_trace_probs, traces):
-            cross_entropy_sum += target_prob * self.logscore(trace, base)
-
-        N = len(actual_trace_probs)
-
-        return (-1.0 / N) * cross_entropy_sum
+        return base ** self.cross_entropy(traces, actual_trace_probs, base)
 
     @classmethod
     def _fdfa_to_pdfa_data(cls, fdfa: FDFA) -> Tuple[NXNodeList, NXEdgeList]:
@@ -644,6 +642,15 @@ class PDFA(StochasticAutomaton):
         edge_probs.append(curr_final_state_prob)
         edge_dests.append(curr_state)
         edge_symbols.append(self._final_transition_sym)
+
+        # laplace smoothing
+        smoothing_amount = 0.00001
+        for i in range(self._alphabet_size):
+            if i not in edge_symbols:
+                edge_probs[-1] -= smoothing_amount
+                edge_probs.append(smoothing_amount)
+                edge_dests.append(curr_state)
+                edge_symbols.append(i)
 
         next_symbol_dist = rv_discrete(name='transition',
                                        values=(edge_symbols, edge_probs))
