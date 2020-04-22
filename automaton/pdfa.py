@@ -200,6 +200,30 @@ class PDFA(StochasticAutomaton):
 
         return converted_nodes, edge_list
 
+    def predict(self, symbols: List[int]) -> int:
+        """
+        predicts the next symbol condition on the given previous symbols
+
+        :param      symbols:  The previously observed emitted symbols
+        :type       symbols:  list of symbols strings
+
+        :returns:   the most probable next symbol in the sequence
+        :rtype:     str
+        """
+
+        # simulating the state trajectory under the given sequence
+        state = self.start_state
+
+        for symbol in symbols:
+            state, _ = self._get_next_state(state, symbol)
+
+        # now making the next state prediction based on the "causal" model
+        # state induced by the deterministic sequence governed by the
+        # observed symbols
+        _, next_symbol, _ = self._choose_next_state(state)
+
+        return next_symbol
+
     def generate_trace(self, start_state: Hashable, N: int,
                        random_state: RandomState=None) -> (List[int], int,
                                                            float):
@@ -447,6 +471,35 @@ class PDFA(StochasticAutomaton):
         """
 
         return base ** self.cross_entropy(traces, actual_trace_probs, base)
+
+    def predictive_accuracy(self, test_traces: List[List[int]]):
+        """
+        compares the model's predictions to the actual values of the next
+        symbol and returns the ratio of correct predictions.
+
+        :param      test_traces:  The traces to compute predictive accuracy for
+        :type       test_traces:  List
+
+        :returns:   { description_of_the_return_value }
+        :rtype:     { return_type_description }
+        """
+
+        N = len(test_traces)
+        num_correct_predictions = 0
+
+        for trace in test_traces:
+
+            observations = trace[:-1]
+            actual_symbol = trace[-1]
+
+            # check the predictive capability when conditioned on all but the
+            # last symbol
+            predicted_symbol = self.predict(observations)
+
+            if predicted_symbol == actual_symbol:
+                num_correct_predictions += 1
+
+        return num_correct_predictions / N
 
     @classmethod
     def _fdfa_to_pdfa_data(cls, fdfa: FDFA) -> Tuple[NXNodeList, NXEdgeList]:
