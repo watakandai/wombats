@@ -16,6 +16,7 @@ from .fdfa import FDFA
 
 # needed for method type hint annotations
 Trans = (str, int, float)
+Categorical_data = (List[float], List[int], List[Hashable])
 
 # needed for multi-threaded sampling routine
 NUM_CORES = multiprocessing.cpu_count()
@@ -82,6 +83,9 @@ class PDFA(StochasticAutomaton):
 
         self._transition_map = {}
         """keep a map of start state label and symbol to destination state"""
+
+        self._smoothing_amount = 0.00001
+        """probability mass to re-assign to unseen symbols at each node"""
 
         self._initialize_node_edge_properties(
             final_weight_key='final_probability',
@@ -409,7 +413,7 @@ class PDFA(StochasticAutomaton):
         cross_entropy_sum = 0.0
 
         for target_prob, trace in zip(actual_trace_probs, traces):
-            cross_entropy_sum += target_prob[0] * self.logscore(trace, base)
+            cross_entropy_sum += target_prob * self.logscore(trace, base)
 
         N = len(actual_trace_probs)
 
@@ -542,7 +546,8 @@ class PDFA(StochasticAutomaton):
                    'transition distribution').format(symbol, curr_state)
             raise ValueError(msg)
 
-        symbol_probability = probabilities[symbol_idx]
+        # stored in numpy array, so we just want the float probability value
+        symbol_probability = np.asscalar(probabilities[symbol_idx])
 
         if symbol_probability == 0.0:
             msg = ('symbol ({}) has zero probability of transition in the ' +
@@ -643,14 +648,13 @@ class PDFA(StochasticAutomaton):
         edge_dests.append(curr_state)
         edge_symbols.append(self._final_transition_sym)
 
-        # laplace smoothing
-        smoothing_amount = 0.00001
-        for i in range(self._alphabet_size):
-            if i not in edge_symbols:
-                edge_probs[-1] -= smoothing_amount
-                edge_probs.append(smoothing_amount)
-                edge_dests.append(curr_state)
-                edge_symbols.append(i)
+        # need to smooth to better generalize and not have infinite perplexity
+        # on unknown symbols in the alphabet
+        (edge_probs,
+         edge_dests,
+         edge_symbols) = self._smooth_categorical(curr_state,
+                                                  edge_probs,
+                                                  edge_symbols, edge_dests)
 
         next_symbol_dist = rv_discrete(name='transition',
                                        values=(edge_symbols, edge_probs))
@@ -661,6 +665,61 @@ class PDFA(StochasticAutomaton):
         transition_map = dict(zip(state_symbol_keys, edge_dests))
 
         return next_symbol_dist, transition_map
+
+    def _smooth_categorical(self, curr_state: Hashable,
+                            edge_probs: List[float],
+                            edge_symbols: List[int],
+                            edge_dests: List[Hashable]) -> Tuple:
+        """
+        Applies Laplace smoothing to the given categorical state-symbol
+        distribution
+
+        :param      curr_state:    The current state label for which to smooth
+                                   the distribution
+        :type       curr_state:    Hashable
+        :param      edge_probs:    The transition probability values for each
+                                   edge
+        :type       edge_probs:    list of floats
+        :param      edge_symbols:  The emitted symbols for each edge
+        :type       edge_symbols:  list of integer symbols
+        :param      edge_dests:    The labels of the destination states under
+                                   each symbol at the curr_state
+        :type       edge_dests:    label
+
+        :returns:   The smoothed version of edge_probs, edge_symbols,
+                    edge_dests
+        :rtype:     Tuple
+        """
+
+        all_possible_trans = [idx for idx, prob in enumerate(edge_probs) if
+                              prob > 0.0]
+        num_orig_samples = len(all_possible_trans)
+
+        # here we add in the missing transition probabilities as just very
+        # unlikely self-loops
+        num_of_missing_transitions = 0
+        new_edge_probs, new_edge_dests, new_edge_symbols = [], [], []
+        for i in range(self._alphabet_size):
+            if i not in edge_symbols:
+
+                num_of_missing_transitions += 1
+                new_edge_probs.append(self._smoothing_amount)
+                new_edge_dests.append(curr_state)
+                new_edge_symbols.append(i)
+
+        # now, we need to remove the smoothed probability mass from the
+        # original transition distribution
+        smoothing_per_orig_trans = self._smoothing_amount / num_orig_samples
+        for trans_idx in all_possible_trans:
+            edge_probs[trans_idx] -= smoothing_per_orig_trans
+
+        # combining the new transitions with the smoothed, original
+        # distribution to get the final smoothed distribution
+        final_edge_probs = edge_probs + new_edge_probs
+        final_edge_dests = edge_dests + new_edge_dests
+        final_edge_symbols = edge_symbols + new_edge_symbols
+
+        return final_edge_probs, final_edge_dests, final_edge_symbols
 
     def _choose_next_state(self, curr_state: Hashable,
                            random_state: {None, int, Iterable}=None) -> Trans:
