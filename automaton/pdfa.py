@@ -529,16 +529,16 @@ class PDFA(StochasticAutomaton):
 
         trans_distribution = self._get_node_data(curr_state,
                                                  'trans_distribution')
-        symbols = trans_distribution.xk
+        possible_symbols = trans_distribution.xk
         probabilities = trans_distribution.pk
 
-        if symbol not in symbols:
+        if symbol not in possible_symbols:
             msg = ('given symbol ({}) is not found in the ' +
                    'curr_state\'s ({}) ' +
                    'transition distribution').format(symbol, curr_state)
             raise ValueError(msg)
 
-        symbol_idx = np.where(symbols == symbol)
+        symbol_idx = np.where(possible_symbols == symbol)
         num_matched_symbols = len(symbol_idx)
         if num_matched_symbols != 1:
             msg = ('given symbol ({}) is found multiple times in ' +
@@ -669,7 +669,7 @@ class PDFA(StochasticAutomaton):
     def _smooth_categorical(self, curr_state: Hashable,
                             edge_probs: List[float],
                             edge_symbols: List[int],
-                            edge_dests: List[Hashable]) -> Tuple:
+                            edge_dests: List[Hashable]) -> Categorical_data:
         """
         Applies Laplace smoothing to the given categorical state-symbol
         distribution
@@ -688,7 +688,7 @@ class PDFA(StochasticAutomaton):
 
         :returns:   The smoothed version of edge_probs, edge_symbols,
                     edge_dests
-        :rtype:     Tuple
+        :rtype:     Tuple(list(float), list(int), list(node_label_type))
         """
 
         all_possible_trans = [idx for idx, prob in enumerate(edge_probs) if
@@ -709,17 +709,20 @@ class PDFA(StochasticAutomaton):
 
         # now, we need to remove the smoothed probability mass from the
         # original transition distribution
-        smoothing_per_orig_trans = self._smoothing_amount / num_orig_samples
+        num_added_symbols = len(new_edge_symbols)
+        added_prob_mass = self._smoothing_amount * num_added_symbols
+        smoothing_per_orig_trans = added_prob_mass / num_orig_samples
+
         for trans_idx in all_possible_trans:
             edge_probs[trans_idx] -= smoothing_per_orig_trans
 
         # combining the new transitions with the smoothed, original
         # distribution to get the final smoothed distribution
-        final_edge_probs = edge_probs + new_edge_probs
-        final_edge_dests = edge_dests + new_edge_dests
-        final_edge_symbols = edge_symbols + new_edge_symbols
+        edge_probs += new_edge_probs
+        edge_dests += new_edge_dests
+        edge_symbols += new_edge_symbols
 
-        return final_edge_probs, final_edge_dests, final_edge_symbols
+        return edge_probs, edge_dests, edge_symbols
 
     def _choose_next_state(self, curr_state: Hashable,
                            random_state: {None, int, Iterable}=None) -> Trans:
