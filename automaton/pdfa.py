@@ -472,7 +472,7 @@ class PDFA(StochasticAutomaton):
 
         return base ** self.cross_entropy(traces, actual_trace_probs, base)
 
-    def predictive_accuracy(self, test_traces: List[List[int]]):
+    def predictive_accuracy(self, test_traces: List[List[int]]) -> float:
         """
         compares the model's predictions to the actual values of the next
         symbol and returns the ratio of correct predictions.
@@ -480,8 +480,8 @@ class PDFA(StochasticAutomaton):
         :param      test_traces:  The traces to compute predictive accuracy for
         :type       test_traces:  List
 
-        :returns:   { description_of_the_return_value }
-        :rtype:     { return_type_description }
+        :returns:   predictive accuracy ratio of the model on the given traces
+        :rtype:     float from [0, 1]
         """
 
         N = len(test_traces)
