@@ -6,10 +6,10 @@ from networkx.drawing import nx_agraph
 
 # local packages
 from wombats.factory.builder import Builder
-from .stochastic_automaton import StochasticAutomaton, NXNodeList, NXEdgeList
+from .base import Automaton, NXNodeList, NXEdgeList
 
 
-class FDFA(StochasticAutomaton):
+class FDFA(Automaton):
     """
     This class describes a frequency deterministic finite automaton (fdfa).
 
@@ -37,7 +37,7 @@ class FDFA(StochasticAutomaton):
 
     def __init__(self, nodes: NXNodeList, edges: NXEdgeList,
                  alphabet_size: int, num_states: int, start_state,
-                 beta: float=0.95, final_transition_sym=-1) -> 'FDFA':
+                 beta: float = 0.95, final_transition_sym=-1) -> 'FDFA':
         """
         Constructs a new instance of a FDFA object.
 
@@ -145,8 +145,8 @@ class FDFA(StochasticAutomaton):
             # we can't add blue nodes to our graph
             if 'style' in node_data:
                 if 'dotted' in node_data['style']:
-                    err = ('node = {} from flexfringe is blue,' +
-                           ' reading in blue states is not' +
+                    err = ('node = {} from flexfringe is blue,'
+                           ' reading in blue states is not'
                            ' currently supported').format(node_data)
                     raise ValueError(err)
 
@@ -251,6 +251,7 @@ class FDFA(StochasticAutomaton):
             #
             # inflow and outflow must not include self transitions, as it self
             # transitions are not true flow
+            print(curr_node, number_trans_in, number_trans_out)
             curr_node_final_freq = number_trans_in - number_trans_out
 
             # all flow comes from the root node, so it is the only node allowed
@@ -268,6 +269,8 @@ class FDFA(StochasticAutomaton):
                 # only set absolute value of frequency "flow" for the root
                 # node, as it is the only node allowed to create frequency
                 # flow
+                #
+                # @warning this shit works
                 curr_node_final_freq = abs(curr_node_final_freq)
 
             self._set_node_data(curr_node,
@@ -348,7 +351,7 @@ class FDFABuilder(Builder):
         self.edges = None
 
     def __call__(self, graph_data: str,
-                 graph_data_format: str='dot_string') -> FDFA:
+                 graph_data_format: str = 'dot_string') -> FDFA:
         """
         Returns an initialized FDFA instance given the graph_data
 

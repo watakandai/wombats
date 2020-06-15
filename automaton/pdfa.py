@@ -7,14 +7,14 @@ from numpy.random import RandomState
 from scipy.stats import rv_discrete
 from joblib import Parallel, delayed
 from collections.abc import Iterable
-from typing import List, Hashable, Tuple
+from typing import List, Hashable, Tuple, Callable
 
 # local packages
 from wombats.factory.builder import Builder
-from .stochastic_automaton import StochasticAutomaton, NXNodeList, NXEdgeList
+from .base import Automaton, NXNodeList, NXEdgeList
 from .fdfa import FDFA
 
-# needed for method type hint annotations
+# needed for pred_method type hint annotations
 Trans = (str, int, float)
 Categorical_data = (List[float], List[int], List[Hashable])
 
@@ -22,7 +22,46 @@ Categorical_data = (List[float], List[int], List[Hashable])
 NUM_CORES = multiprocessing.cpu_count()
 
 
-class PDFA(StochasticAutomaton):
+def check_predict_method(prediction_function: Callable):
+    """
+    decorator to check an enumerated typestring for prediction method.
+    pred_method:  The pred_method string to check. one of: {'sample',
+    'max_prob'}
+
+    :type       prediction_function:  function handle to check. Must have
+                                      keyword argument: 'pred_method'
+    :param      prediction_function:  the function to decorate
+
+    :raises     ValueError: raises if:
+                                - pred_method is not a keyword argument
+                                - pred_method is not one of allowed methods
+    """
+
+    def checker(*args, **kwargs):
+
+        # checking if the decorator has been applied to an appropriate function
+        print(args, kwargs)
+        if 'pred_method' not in kwargs:
+            f_name = prediction_function.__name__
+            msg = f'"pred_method" is not a kwarg of {f_name}'
+            raise ValueError(msg)
+
+        pred_method = kwargs['pred_method']
+
+        # checking for the enumerated types
+        allowed_methods = ['max_prob', 'sample']
+
+        if pred_method not in allowed_methods:
+            msg = f'pred_method: "{pred_method}" must be one of allowed ' + \
+                  f'methods: {allowed_methods}'
+            raise ValueError(msg)
+
+        return prediction_function(*args, **kwargs)
+
+    return checker
+
+
+class PDFA(Automaton):
     """
     This class describes a probabilistic deterministic finite automaton (pdfa).
 
@@ -46,7 +85,8 @@ class PDFA(StochasticAutomaton):
 
     def __init__(self, nodes: NXNodeList, edge_list: NXEdgeList,
                  alphabet_size: int, num_states: int, start_state,
-                 beta: float=0.95, final_transition_sym=-1) -> 'PDFA':
+                 beta: float = 0.95,
+                 final_transition_sym: str = -1) -> 'PDFA':
         """
         Constructs a new instance of a PDFA object.
 
@@ -118,6 +158,14 @@ class PDFA(StochasticAutomaton):
         iters = range(0, num_samples)
         results = Parallel(n_jobs=NUM_CORES, verbose=1)(
             delayed(self.generate_trace)(start_state, N) for i in iters)
+
+        # samples, trace_lengths, trace_probs = [], [], []
+
+        # for i in iters:
+        #     a, b, c = self.generate_trace(start_state, N)
+        #     samples.append(a)
+        #     trace_lengths.append(b)
+        #     trace_probs.append(c)
 
         samples, trace_lengths, trace_probs = zip(*results)
 
@@ -200,12 +248,18 @@ class PDFA(StochasticAutomaton):
 
         return converted_nodes, edge_list
 
-    def predict(self, symbols: List[int]) -> int:
+    def predict(self, symbols: List[int],
+                pred_method: str = 'max_prob') -> int:
         """
-        predicts the next symbol condition on the given previous symbols
+        predicts the next symbol conditioned on the given previous symbols
 
-        :param      symbols:  The previously observed emitted symbols
-        :type       symbols:  list of symbols strings
+        :param      symbols:      The previously observed emitted symbols
+        :type       symbols:      list of symbols strings
+        :param      pred_method:  The method used to choose the next
+                                  state. see _choose_next_state for details on
+                                  how each pred_method is implemented.
+                                  {'sample', 'max_prob'} (default 'max_prob')
+        :type       pred_method:  str
 
         :returns:   the most probable next symbol in the sequence
         :rtype:     str
@@ -225,8 +279,8 @@ class PDFA(StochasticAutomaton):
         return next_symbol
 
     def generate_trace(self, start_state: Hashable, N: int,
-                       random_state: RandomState=None) -> (List[int], int,
-                                                           float):
+                       random_state: RandomState = None) -> (List[int], int,
+                                                             float):
         """
         Generates a trace from the pdfa starting from start_state
 
@@ -318,7 +372,7 @@ class PDFA(StochasticAutomaton):
 
         return trace_prob
 
-    def logscore(self, trace: List[int], base: float=2.0) -> float:
+    def logscore(self, trace: List[int], base: float = 2.0) -> float:
         """
         computes the log of the score (sequence probability) of the given trace
         in the language of the PDFA
@@ -337,7 +391,8 @@ class PDFA(StochasticAutomaton):
 
         return np.asscalar(np.log(score) / np.log(base))
 
-    def cross_entropy_approx(self, trace: List[int], base: float=2.0) -> float:
+    def cross_entropy_approx(self, trace: List[int],
+                             base: float = 2.0) -> float:
         """
         computes approximate cross-entropy of the given trace in the language
         of the PDFA
@@ -380,7 +435,7 @@ class PDFA(StochasticAutomaton):
 
         return (-1.0 / N) * self.logscore(trace, base)
 
-    def perplexity_approx(self, trace: List[int], base: float=2.0) -> float:
+    def perplexity_approx(self, trace: List[int], base: float = 2.0) -> float:
         """
         computes approximate perplexity of the given trace in the language of
         the PDFA
@@ -409,7 +464,7 @@ class PDFA(StochasticAutomaton):
 
     def cross_entropy(self, traces: List[List[int]],
                       actual_trace_probs: List[float],
-                      base: float=2.0) -> float:
+                      base: float = 2.0) -> float:
         """
         computes actual cross-entropy of the given traces in the language of
         the PDFA on the given actual trace probabilities
@@ -445,7 +500,7 @@ class PDFA(StochasticAutomaton):
 
     def perplexity(self, traces: List[List[int]],
                    actual_trace_probs: List[float],
-                   base: float=2.0) -> float:
+                   base: float = 2.0) -> float:
         """
         computes actual perplexity of the given traces in the language of
         the PDFA on the given actual trace probabilities
@@ -472,13 +527,19 @@ class PDFA(StochasticAutomaton):
 
         return base ** self.cross_entropy(traces, actual_trace_probs, base)
 
-    def predictive_accuracy(self, test_traces: List[List[int]]) -> float:
+    def predictive_accuracy(self, test_traces: List[List[int]],
+                            pred_method: str = 'max_prob') -> float:
         """
         compares the model's predictions to the actual values of the next
         symbol and returns the ratio of correct predictions.
 
         :param      test_traces:  The traces to compute predictive accuracy for
         :type       test_traces:  List
+        :param      pred_method:  The method used to choose the next state.
+                                  see _choose_next_state for details on how
+                                  each pred_method is implemented.
+                                  {'sample', 'max_prob'} (default 'max_prob')
+        :type       pred_method:       str
 
         :returns:   predictive accuracy ratio of the model on the given traces
         :rtype:     float from [0, 1]
@@ -494,7 +555,7 @@ class PDFA(StochasticAutomaton):
 
             # check the predictive capability when conditioned on all but the
             # last symbol
-            predicted_symbol = self.predict(observations)
+            predicted_symbol = self.predict(observations, pred_method)
 
             if predicted_symbol == actual_symbol:
                 num_correct_predictions += 1
@@ -586,16 +647,16 @@ class PDFA(StochasticAutomaton):
         probabilities = trans_distribution.pk
 
         if symbol not in possible_symbols:
-            msg = ('given symbol ({}) is not found in the ' +
-                   'curr_state\'s ({}) ' +
+            msg = ('given symbol ({}) is not found in the '
+                   'curr_state\'s ({}) '
                    'transition distribution').format(symbol, curr_state)
             raise ValueError(msg)
 
         symbol_idx = np.where(possible_symbols == symbol)
         num_matched_symbols = len(symbol_idx)
         if num_matched_symbols != 1:
-            msg = ('given symbol ({}) is found multiple times in ' +
-                   'curr_state\'s ({}) ' +
+            msg = ('given symbol ({}) is found multiple times in '
+                   'curr_state\'s ({}) '
                    'transition distribution').format(symbol, curr_state)
             raise ValueError(msg)
 
@@ -603,7 +664,7 @@ class PDFA(StochasticAutomaton):
         symbol_probability = np.asscalar(probabilities[symbol_idx])
 
         if symbol_probability == 0.0:
-            msg = ('symbol ({}) has zero probability of transition in the ' +
+            msg = ('symbol ({}) has zero probability of transition in the '
                    'pdfa from curr_state: {}').format(symbol, curr_state)
             raise ValueError(msg)
 
@@ -778,7 +839,8 @@ class PDFA(StochasticAutomaton):
         return edge_probs, edge_dests, edge_symbols
 
     def _choose_next_state(self, curr_state: Hashable,
-                           random_state: {None, int, Iterable}=None) -> Trans:
+                           random_state: {None, int, Iterable}=None,
+                           pred_method: str = 'sample') -> Trans:
         """
         Chooses the next state based on curr_state's transition distribution
 
@@ -789,14 +851,27 @@ class PDFA(StochasticAutomaton):
                                    distribution. Defaulting to None causes the
                                    seed to reset. (default None)
         :type       random_state:  {None, int, Iterable}
+        :param      pred_method:   The method used to choose the next state:
+                                   'sample':
+                                   sample from the transition
+                                   distribution of the casual state of the PDFA
+                                   (the state the machine is left in after the
+                                   sequence of observations). makes
+                                   non-deterministic predictions.
+                                   'max_prob':
+                                   like many language models, the selection of
+                                   the next state s_{t+1}, and thus the next
+                                   emitted symbol, conditioned on the set of
+                                   observation symbols O_t = {o_1, ..., o_t}
+                                   is:
+                                   s_{t+1} = argmax_{s'}P(s' | s_t, O_t)
+                                   makes deterministic predictions.
+                                   {'sample', 'max_prob'} (default 'max_prob')
+        :type       pred_method:        str
 
         :returns:   The next state's label, the symbol emitted by changing
                     states, the probability of this transition occurring
         :rtype:     tuple(string, int, float)
-
-        :raises     ValueError:    if more than one non-zero probability
-                                   transition from curr_state under a given
-                                   symbol exists
         """
 
         trans_dist = self.nodes[curr_state]['trans_distribution']
@@ -860,7 +935,7 @@ class PDFABuilder(Builder):
         self.edges = None
 
     def __call__(self, graph_data: {str, FDFA},
-                 graph_data_format: str='yaml') -> PDFA:
+                 graph_data_format: str = 'yaml') -> PDFA:
         """
         Returns an initialized PDFA instance given the graph_data
 

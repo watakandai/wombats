@@ -12,8 +12,8 @@ class FlexfringeInterface():
     and return the resulting dotfile data of the returned model
     """
 
-    def __init__(self, binary_location: str='dfasat/flexfringe',
-                 output_directory: str='./') -> 'FlexfringeInterface':
+    def __init__(self, binary_location: str = 'dfasat/flexfringe',
+                 output_directory: str = './') -> 'FlexfringeInterface':
         """
         constructs an instance of the Flexfringe interface class instance
 
