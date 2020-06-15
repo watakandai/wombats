@@ -7,15 +7,12 @@ from IPython.display import display
 from pydot import Dot
 from typing import Hashable, List, Tuple
 
-# local packages
-from .display import edge_weight_to_string
-
 # define these type defs for method annotation type hints
 NXNodeList = List[Tuple[Hashable, dict]]
 NXEdgeList = List[Tuple[Hashable, Hashable, dict]]
 
 
-class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
+class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
     """
     This class describes a automaton with stochastic transition
@@ -27,8 +24,8 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
         - final_probability: final state probability for the node
         - trans_distribution: a sampled-able function to select the next state
           and emitted symbol
-        - is_accepting: a boolean flag determining whether the pdfa considers
-          the node accepting
+        - is_accepting: a boolean flag determining whether the automaton
+          considers the node accepting
 
     Edge Properties
     -----------------
@@ -38,8 +35,8 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
     def __init__(self, nodes: NXNodeList, edge_list: NXEdgeList,
                  alphabet_size: int, num_states: int, start_state,
-                 beta: float=0.95,
-                 final_transition_sym=-1) -> 'StochasticAutomaton':
+                 beta: float = 0.95,
+                 final_transition_sym: str = -1) -> 'Automaton':
         """
         Constructs a new instance of an Automaton object.
 
@@ -52,13 +49,13 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :type       edge_list:             list of tuples: (src node label,
                                            dest node label, edge attribute
                                            dict)
-        :param      alphabet_size:         number of symbols in pdfa alphabet
+        :param      alphabet_size:         number of symbols in automaton
         :type       alphabet_size:         Int
         :param      num_states:            number of states in automaton state
                                            space
         :type       num_states:            Int
         :param      start_state:           unique start state string label of
-                                           pdfa
+                                           automaton
         :type       start_state:           same type as PDFA.nodes node object
         :param      beta:                  the final state probability needed
                                            for a state to accept (default 0.95)
@@ -306,3 +303,22 @@ class StochasticAutomaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         node_data = graph.nodes.data()
         node_data[node_label][data_key] = data
+
+
+def edge_weight_to_string(weight: {int, float}) -> str:
+    """
+    returns a numeric edge weight as an appropriately formatted string
+
+    :param      weight:  The edge weight to convert to string.
+    :type       weight:  int or float
+
+    :returns:   properly formatted weight string
+    :rtype:     string
+    """
+    if isinstance(weight, int):
+        wt_str = '{weight:d}'.format(weight=weight)
+    elif isinstance(weight, float):
+        wt_str = '{weight:.{digits}f}'.format(weight=weight,
+                                              digits=2)
+
+    return wt_str
