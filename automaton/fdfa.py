@@ -3,6 +3,7 @@ import pygraphviz
 import re
 from networkx.drawing.nx_pydot import read_dot
 from networkx.drawing import nx_agraph
+from typing import Hashable
 
 # local packages
 from wombats.factory.builder import Builder
@@ -37,7 +38,7 @@ class FDFA(Automaton):
 
     def __init__(self, nodes: NXNodeList, edges: NXEdgeList,
                  alphabet_size: int, num_states: int, start_state,
-                 beta: float = 0.95, final_transition_sym=-1) -> 'FDFA':
+                 final_transition_sym=-1) -> 'FDFA':
         """
         Constructs a new instance of a FDFA object.
 
@@ -58,10 +59,6 @@ class FDFA(Automaton):
         :param      start_state:           unique start state string label of
                                            fdfa
         :type       start_state:           same type as FDFA.nodes node object
-        :param      beta:                  the final state probability needed
-                                           for a state to accept. Not used for
-                                           FDFA (default 0.95)
-        :type       beta:                  Float
         :param      final_transition_sym:  representation of the empty string /
                                            symbol (a.k.a. lambda) (default -1)
         :type       final_transition_sym:  same type as FDFA.edges symbol
@@ -70,7 +67,8 @@ class FDFA(Automaton):
 
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, alphabet_size, num_states,
-                         start_state, beta=0.95, final_transition_sym=-1)
+                         start_state, is_stochastic=False,
+                         smooth_transitions=False, final_transition_sym=-1)
 
         self._initialize_node_edge_properties(
             final_weight_key='final_frequency',
@@ -107,7 +105,6 @@ class FDFA(Automaton):
             'start_state': node_ID_to_node_label[root_node_label],
             # these are not things that are a part of flexfringe's automaton
             # data model, so give them default values
-            'beta': 0.95,
             'final_transition_sym': -1}
 
         return config_data
@@ -217,70 +214,73 @@ class FDFA(Automaton):
 
         return edges, all_symbols
 
-    def _compute_node_data_properties(self) -> None:
+    def _set_state_acceptance(self, curr_state: Hashable) -> None:
         """
-        Initializes the node and edge data properties correctly for a fdfa.
+        Sets the state acceptance property for the given state.
+
+        FDFA doesn't accept anything, so this just passes
         """
+        pass
 
-        self._set_state_frequencies()
-
-    def _set_state_frequencies(self) -> None:
+    def _compute_node_data_properties(self, curr_node: str) -> None:
         """
         Sets all state frequencies for each node in an initialized FDFA
 
         requires self.nodes and self.edges to be properly loaded into nx data
         structures
 
+        :warning this overrides the base _compute_node_data_properties method
+                 in the Automaton
+
+        :param      curr_node:   The node to set properties for
+
+        :returns:   None
+
         :raises     ValueError:  checks if the final frequency is less than 0,
                                  indicating something wrong with the edge
                                  frequency data
         """
 
-        nodes = self.nodes
+        number_trans_in, _ = self._compute_node_flow(curr_node,
+                                                     flow_type='in')
+        (number_trans_out,
+         number_self_trans) = self._compute_node_flow(curr_node,
+                                                      flow_type='out')
 
-        for curr_node in nodes:
+        # the final frequency is simply the number of times that you
+        # transitioned into a state and then did not leave it.
+        #
+        # inflow and outflow must not include self transitions, as it self
+        # transitions are not true flow
+        curr_node_final_freq = number_trans_in - number_trans_out
 
-            number_trans_in, _ = self._compute_node_flow(curr_node,
-                                                         flow_type='in')
-            (number_trans_out,
-             number_self_trans) = self._compute_node_flow(curr_node,
-                                                          flow_type='out')
+        # all flow comes from the root node, so it is the only node allowed
+        # to "create" transitions
+        is_root_node = (curr_node == self.start_state)
+        if curr_node_final_freq < 0 and not is_root_node:
+            err = 'current node ({}) final frequency ({}) should ' + \
+                  'not be less than 0. This means there were more ' +\
+                  'outgoing transitions ({}) than incoming ' +\
+                  'transitions ({}).'
+            raise ValueError(err.format(curr_node, curr_node_final_freq,
+                                        number_trans_out, number_trans_in))
+        elif is_root_node:
 
-            # the final frequency is simply the number of times that you
-            # transitioned into a state and then did not leave it.
+            # only set absolute value of frequency "flow" for the root
+            # node, as it is the only node allowed to create frequency
+            # flow
             #
-            # inflow and outflow must not include self transitions, as it self
-            # transitions are not true flow
-            print(curr_node, number_trans_in, number_trans_out)
-            curr_node_final_freq = number_trans_in - number_trans_out
+            # @warning this shit doesn't really work right now
+            curr_node_final_freq = abs(curr_node_final_freq)
 
-            # all flow comes from the root node, so it is the only node allowed
-            # to "create" transitions
-            is_root_node = (curr_node == self.start_state)
-            if curr_node_final_freq < 0 and not is_root_node:
-                err = 'current node ({}) final frequency ({}) should ' + \
-                      'not be less than 0. This means there were more ' +\
-                      'outgoing transitions ({}) than incoming ' +\
-                      'transitions ({}).'
-                raise ValueError(err.format(curr_node, curr_node_final_freq,
-                                            number_trans_out, number_trans_in))
-            elif is_root_node:
-
-                # only set absolute value of frequency "flow" for the root
-                # node, as it is the only node allowed to create frequency
-                # flow
-                #
-                # @warning this shit works
-                curr_node_final_freq = abs(curr_node_final_freq)
-
-            self._set_node_data(curr_node,
-                                'final_frequency', curr_node_final_freq)
-            self._set_node_data(curr_node,
-                                'self_frequency', number_self_trans)
-            self._set_node_data(curr_node,
-                                'in_frequency', number_trans_in)
-            self._set_node_data(curr_node,
-                                'out_frequency', number_trans_out)
+        self._set_node_data(curr_node,
+                            'final_frequency', curr_node_final_freq)
+        self._set_node_data(curr_node,
+                            'self_frequency', number_self_trans)
+        self._set_node_data(curr_node,
+                            'in_frequency', number_trans_in)
+        self._set_node_data(curr_node,
+                            'out_frequency', number_trans_out)
 
     def _compute_node_flow(self, curr_node: str, flow_type: str) -> (int, int):
         """
@@ -393,7 +393,6 @@ class FDFABuilder(Builder):
             self._instance = FDFA(
                 nodes=config_data['nodes'],
                 edges=config_data['edges'],
-                beta=config_data['beta'],
                 alphabet_size=config_data['alphabet_size'],
                 num_states=config_data['num_states'],
                 final_transition_sym=config_data['final_transition_sym'],

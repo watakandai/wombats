@@ -4,7 +4,6 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 from numpy.random import RandomState
-from scipy.stats import rv_discrete
 from joblib import Parallel, delayed
 from collections.abc import Iterable
 from typing import List, Hashable, Tuple, Callable
@@ -86,6 +85,8 @@ class PDFA(Automaton):
     def __init__(self, nodes: NXNodeList, edge_list: NXEdgeList,
                  alphabet_size: int, num_states: int, start_state,
                  beta: float = 0.95,
+                 smooth_transitions: bool = False,
+                 is_stochastic: bool = False,
                  final_transition_sym: str = -1) -> 'PDFA':
         """
         Constructs a new instance of a PDFA object.
@@ -111,6 +112,13 @@ class PDFA(Automaton):
                                            for a state to accept. Not used for
                                            PDFA (default None)
         :type       beta:                  Float
+        :param      smooth_transitions:    whether to smooth the symbol
+                                           transitions distributions
+        :param      is_stochastic:         the transitions are
+                                           non-probabilistic, so we are going
+                                           to assign a uniform distribution
+                                           over all symbols for the purpose of
+                                           generation
         :param      final_transition_sym:  representation of the empty string /
                                            symbol (a.k.a. lambda) (default -1)
         :type       final_transition_sym:  same type as PDFA.edges symbol
@@ -119,10 +127,14 @@ class PDFA(Automaton):
 
         # need to start with a fully initialized automaton
         super().__init__(nodes, edge_list, alphabet_size, num_states,
-                         start_state, beta=0.95, final_transition_sym=-1)
+                         start_state, smooth_transitions,
+                         is_stochastic, final_transition_sym=-1)
 
         self._transition_map = {}
         """keep a map of start state label and symbol to destination state"""
+
+        self._beta = beta
+        """the final state probability needed for a state to accept"""
 
         self._smoothing_amount = 0.00001
         """probability mass to re-assign to unseen symbols at each node"""
@@ -158,14 +170,6 @@ class PDFA(Automaton):
         iters = range(0, num_samples)
         results = Parallel(n_jobs=NUM_CORES, verbose=1)(
             delayed(self.generate_trace)(start_state, N) for i in iters)
-
-        # samples, trace_lengths, trace_probs = [], [], []
-
-        # for i in iters:
-        #     a, b, c = self.generate_trace(start_state, N)
-        #     samples.append(a)
-        #     trace_lengths.append(b)
-        #     trace_probs.append(c)
 
         samples, trace_lengths, trace_probs = zip(*results)
 
@@ -672,42 +676,6 @@ class PDFA(Automaton):
 
         return next_state, symbol_probability
 
-    def _compute_node_data_properties(self) -> None:
-        """
-        Calculates the properties for each node.
-
-        currently calculated properties:
-            - 'is_accepting'
-            - 'trans_distribution'
-        """
-
-        for node in self.nodes:
-
-            # beta-acceptance property shouldn't change after load in
-            self._set_state_acceptance(node, self._beta)
-
-            # if we compute this once, we can sample from each distribution
-            (self.nodes[node]['trans_distribution'],
-             new_trans_map_entries) = \
-                self._set_state_transition_dist(node, self.edges)
-
-            # need to merge the newly computed transition map at node to the
-            # existing map
-            #
-            # for a PDFA, a given start state and symbol must have a
-            # deterministic transition
-            for key in new_trans_map_entries.keys():
-                if key in self._transition_map:
-                    curr_state = key[0]
-                    symbol = key[1]
-                    msg = ('duplicate transition from state {} '
-                           'under symbol {} found - transition must be '
-                           'deterministic').format(curr_state, symbol)
-                    raise ValueError(msg)
-
-            self._transition_map = {**self._transition_map,
-                                    **new_trans_map_entries}
-
     def _set_state_acceptance(self, curr_state: Hashable, beta: float) -> None:
         """
         Sets the state acceptance property for the given state.
@@ -729,56 +697,6 @@ class PDFA(Automaton):
             state_accepts = False
 
         self._set_node_data(curr_state, 'is_accepting', state_accepts)
-
-    def _set_state_transition_dist(self, curr_state: Hashable,
-                                   edges: NXEdgeList) -> (rv_discrete, dict):
-        """
-        Computes a static state transition distribution for given state
-
-        :param      curr_state:  The current state label
-        :type       curr_state:  Hashable
-        :param      edges:       The networkx edge list
-        :type       edges:       list
-
-        :returns:   (a function to sample the discrete state transition
-                    distribution, the mapping from (start state, symbol) ->
-                    edge_dests
-        :rtype:     tuple(stats.rv_discrete object, dict)
-        """
-
-        edge_data = edges([curr_state], data=True)
-
-        edge_dests = [edge[1] for edge in edge_data]
-        edge_symbols = [edge[2]['symbol'] for edge in edge_data]
-
-        # need to add final state probability to discrete rv dist
-        edge_probs = [edge[2]['probability'] for edge in edge_data]
-
-        curr_final_state_prob = self._get_node_data(curr_state,
-                                                    'final_probability')
-
-        # adding the final-state sequence end transition to the distribution
-        edge_probs.append(curr_final_state_prob)
-        edge_dests.append(curr_state)
-        edge_symbols.append(self._final_transition_sym)
-
-        # need to smooth to better generalize and not have infinite perplexity
-        # on unknown symbols in the alphabet
-        (edge_probs,
-         edge_dests,
-         edge_symbols) = self._smooth_categorical(curr_state,
-                                                  edge_probs,
-                                                  edge_symbols, edge_dests)
-
-        next_symbol_dist = rv_discrete(name='transition',
-                                       values=(edge_symbols, edge_probs))
-
-        # creating the mapping from (start state, symbol) -> edge_dests
-        state_symbol_keys = list(zip([curr_state] * len(edge_symbols),
-                                     edge_symbols))
-        transition_map = dict(zip(state_symbol_keys, edge_dests))
-
-        return next_symbol_dist, transition_map
 
     def _smooth_categorical(self, curr_state: Hashable,
                             edge_probs: List[float],
@@ -1016,7 +934,9 @@ class PDFABuilder(Builder):
                 alphabet_size=config_data['alphabet_size'],
                 num_states=config_data['num_states'],
                 final_transition_sym=config_data['final_transition_sym'],
-                start_state=config_data['start_state'])
+                start_state=config_data['start_state'],
+                smooth_transitions=True,
+                is_stochastic=True)
 
             return self._instance
 
@@ -1041,7 +961,9 @@ class PDFABuilder(Builder):
         self._instance = PDFA(
             nodes=nodes,
             edge_list=edges,
-            beta=fdfa._beta,
+            # just choose a default value, FDFAs have no notion of acceptance
+            # this at the moment
+            beta=0.95,
             alphabet_size=fdfa._alphabet_size,
             num_states=fdfa._num_states,
             final_transition_sym=fdfa._final_transition_sym,
