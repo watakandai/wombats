@@ -568,7 +568,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         edge_dests = [edge[1] for edge in edge_data]
 
-        # need to conver the hashable symbols to thier integer indices for
+        # need to convert the hashable symbols to their integer indices for
         # creating the categorical distribution, which only works with
         # integers
         original_edge_symbols = [edge[2]['symbol'] for edge in edge_data]

@@ -66,7 +66,7 @@ class TransitionSystem(Automaton):
 
         :returns:   the next TS state, and the obs
 
-        :raises     ValueError:  Catches and re-raises execeptions from
+        :raises     ValueError:  Catches and re-raises exceptions from
                                  invalid symbol use
         """
 
@@ -89,7 +89,7 @@ class TransitionSystem(Automaton):
 
         :returns:   output word (list of symbols), list of states visited
 
-        :raises     ValueError:  Catches and re-raises execeptions from
+        :raises     ValueError:  Catches and re-raises exceptions from
                                  invalid symbol use
         """
 
