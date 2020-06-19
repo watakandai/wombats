@@ -4,6 +4,7 @@ import re
 from networkx.drawing.nx_pydot import read_dot
 from networkx.drawing import nx_agraph
 from typing import Hashable
+from bidict import bidict
 
 # local packages
 from wombats.factory.builder import Builder
@@ -36,55 +37,61 @@ class FDFA(Automaton):
         - frequency: the number of times the edge was traversed
     """
 
-    def __init__(self, nodes: NXNodeList, edges: NXEdgeList,
-                 alphabet_size: int, num_states: int, start_state,
+    def __init__(self, nodes: NXNodeList,
+                 edges: NXEdgeList,
+                 symbol_display_map: bidict,
+                 alphabet_size: int,
+                 num_states: int,
+                 start_state: Hashable,
                  final_transition_sym=-1) -> 'FDFA':
         """
         Constructs a new instance of a FDFA object.
 
         :param      nodes:                 node list as expected by
-                                           networkx.add_nodes_from()
-        :type       nodes:                 list of tuples: (node label, node,
-                                           attribute dict)
-        :param      edges:                 edge list as expected by
-                                           networkx.add_edges_from()
-        :type       edges:                 list of tuples: (src node label,
-                                           dest node label, edge attribute
+                                           networkx.add_nodes_from() list of
+                                           tuples: (node label, node, attribute
                                            dict)
+        :param      edges:                 edge list as expected by
+                                           networkx.add_edges_from() list of
+                                           tuples: (src node label, dest node
+                                           label, edge attribute dict)
+        :param      symbol_display_map:    bidirectional mapping of hashable
+                                           symbols, to a unique integer index
+                                           in the symbol map. Needed to
+                                           translate between the indices in the
+                                           transition distribution and the
+                                           hashable representation which is
+                                           meaningful to the user
         :param      alphabet_size:         number of symbols in fdfa alphabet
-        :type       alphabet_size:         Int
         :param      num_states:            number of states in automaton state
                                            space
-        :type       num_states:            Int
         :param      start_state:           unique start state string label of
                                            fdfa
-        :type       start_state:           same type as FDFA.nodes node object
         :param      final_transition_sym:  representation of the empty string /
                                            symbol (a.k.a. lambda) (default -1)
-        :type       final_transition_sym:  same type as FDFA.edges symbol
-                                           property
         """
 
         # need to start with a fully initialized automaton
-        super().__init__(nodes, edges, alphabet_size, num_states,
-                         start_state, is_stochastic=False,
-                         smooth_transitions=False, final_transition_sym=-1)
-
-        self._initialize_node_edge_properties(
-            final_weight_key='final_frequency',
-            can_have_accepting_nodes=False,
-            edge_weight_key='frequency')
+        super().__init__(nodes, edges, symbol_display_map,
+                         alphabet_size, num_states, start_state,
+                         smooth_transitions=False,
+                         is_stochastic=False,
+                         final_transition_sym=final_transition_sym,
+                         final_weight_key='final_frequency',
+                         can_have_accepting_nodes=False,
+                         edge_weight_key='frequency')
 
     @classmethod
-    def load_flexfringe_data(cls: 'FDFA', graph) -> dict:
+    def load_flexfringe_data(cls: 'FDFA', graph, final_transition_sym) -> dict:
         """
         reads in graph configuration data from a flexfringe dot file
 
-        :param      cls:    The "class instance" this method belongs to (not
-                            object instance)
-        :type       cls:    FDFA
-        :param      graph:  The graph with the flexfringe fdfa model
-        :type       graph:  networkx (MultiDi/Di)graph
+        :param      cls:                   The "class instance" this method
+                                           belongs to (not object instance)
+        :param      graph:                 The nx graph with the flexfringe
+                                           fdfa model loaded in
+        :param      final_transition_sym:  representation of the empty string /
+                                           symbol (a.k.a. lambda) (default -1)
 
         :returns:   configuration data dictionary for the fdfa
         :rtype:     dictionary
@@ -94,18 +101,18 @@ class FDFA(Automaton):
         ff_edges = graph.edges(data=True)
 
         nodes, node_ID_to_node_label = cls.convert_flexfringe_nodes(ff_nodes)
-        edges, symbols = cls.convert_flexfringe_edges(ff_edges,
-                                                      node_ID_to_node_label)
+        (symbol_display_map,
+         edges, symbols) = cls.convert_flexfringe_edges(ff_edges,
+                                                        final_transition_sym,
+                                                        node_ID_to_node_label)
         root_node_label = '0'
         config_data = {
             'nodes': nodes,
             'edges': edges,
+            'symbol_display_map': symbol_display_map,
             'alphabet_size': len(symbols.keys()),
             'num_states': len(nodes),
-            'start_state': node_ID_to_node_label[root_node_label],
-            # these are not things that are a part of flexfringe's automaton
-            # data model, so give them default values
-            'final_transition_sym': -1}
+            'start_state': node_ID_to_node_label[root_node_label]}
 
         return config_data
 
@@ -159,7 +166,9 @@ class FDFA(Automaton):
 
     @staticmethod
     def convert_flexfringe_edges(flexfringeEdges: NXEdgeList,
-                                 node_ID_to_node_label: dict) -> (NXEdgeList,
+                                 final_transition_sym,
+                                 node_ID_to_node_label: dict) -> (bidict,
+                                                                  NXEdgeList,
                                                                   dict):
         """
         converts edges read in from flexfringe (FF) dot files into the internal
@@ -169,13 +178,19 @@ class FDFA(Automaton):
                                             edges labels to edge attributes
         :type       flexfringeEdges:        list of tuples of: (src_FF_node_ID,
                                             src_FF_node_ID, edge_data)
+        :param      final_transition_sym:   representation of the empty string
+                                            / symbol (a.k.a. lambda)
         :param      node_ID_to_node_label:  mapping from FF node ID to FF node
                                             label
         :type       node_ID_to_node_label:  dict
 
-        :returns:   edge list as expected by networkx.add_edges_from(),
+        :returns:   symbol_display_map - bidirectional mapping of hashable
+                                         symbols, to a unique integer index in
+                                         the symbol map.
+                    edge list as expected by networkx.add_edges_from(),
                     dictionary of symbol counts
-        :rtype:     edges - list of tuples: (src node label,
+        :rtype:     symbol_display_map - bidict
+                    edges - list of tuples: (src node label,
                     dest node label, edge attribute dict),
                     all_symbols - dict
         """
@@ -183,6 +198,8 @@ class FDFA(Automaton):
         edges = []
         all_symbols = {}
 
+        symbol_count = 0
+        symbol_display_map = bidict({})
         for src_FF_node_ID, dest_FF_node_ID, edge_data in flexfringeEdges:
 
             new_edge_data = {}
@@ -195,13 +212,20 @@ class FDFA(Automaton):
 
             for symbol, frequency in transitionData:
 
+                symbol = int(symbol)
+
+                # need to store new symbols in a map for display
+                if symbol not in symbol_display_map:
+                    symbol_count += 1
+                    symbol_display_map[symbol] = symbol_count
+
                 # want to keep track of frequency of all symbols
                 if symbol in all_symbols:
                     all_symbols[symbol] += 1
                 else:
                     all_symbols[symbol] = 1
 
-                new_edge_data = {'symbol': int(symbol),
+                new_edge_data = {'symbol': symbol,
                                  'frequency': int(frequency)}
 
                 src_FF_node_label = node_ID_to_node_label[src_FF_node_ID]
@@ -212,7 +236,11 @@ class FDFA(Automaton):
 
                 edges.append(new_edge)
 
-        return edges, all_symbols
+        # we need to add the empty / final symbol to the display map
+        # for completeness
+        symbol_display_map[final_transition_sym] = final_transition_sym
+
+        return symbol_display_map, edges, all_symbols
 
     def _set_state_acceptance(self, curr_state: Hashable) -> None:
         """
@@ -382,7 +410,10 @@ class FDFABuilder(Builder):
                   '"dot_string"'.format(graph_data_format)
             raise ValueError(msg)
 
-        config_data = FDFA.load_flexfringe_data(graph)
+        # these are not things that are a part of flexfringe's automaton
+        # data model, so give them default values
+        final_transition_sym = -1
+        config_data = FDFA.load_flexfringe_data(graph, final_transition_sym)
 
         nodes_have_changed = (self.nodes != config_data['nodes'])
         edges_have_changed = (self.edges != config_data['edges'])
@@ -393,9 +424,10 @@ class FDFABuilder(Builder):
             self._instance = FDFA(
                 nodes=config_data['nodes'],
                 edges=config_data['edges'],
+                symbol_display_map=config_data['symbol_display_map'],
                 alphabet_size=config_data['alphabet_size'],
                 num_states=config_data['num_states'],
-                final_transition_sym=config_data['final_transition_sym'],
+                final_transition_sym=final_transition_sym,
                 start_state=config_data['start_state'])
 
         return self._instance

@@ -1,12 +1,15 @@
 # 3rd-party packages
 import graphviz as gv
 import networkx as nx
+import numpy as np
 from abc import ABCMeta, abstractmethod
 from scipy.stats import rv_discrete
 from networkx.drawing.nx_pydot import to_pydot
 from IPython.display import display
 from pydot import Dot
 from typing import Hashable, List, Tuple
+from bidict import bidict
+from collections import Iterable
 
 # define these type defs for method annotation type hints
 NXNodeList = List[Tuple[Hashable, dict]]
@@ -14,7 +17,6 @@ NXEdgeList = List[Tuple[Hashable, Hashable, dict]]
 
 
 class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
-
     """
     This class describes a automaton with stochastic transition
 
@@ -34,38 +36,76 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         - probability: the probability of selecting this edge for traversal
     """
 
-    def __init__(self, nodes: NXNodeList, edge_list: NXEdgeList,
-                 alphabet_size: int, num_states: int, start_state: str,
-                 smooth_transitions: bool, is_stochastic: bool,
-                 final_transition_sym: str = -1) -> 'Automaton':
+    def __init__(self,
+                 nodes: NXNodeList,
+                 edge_list: NXEdgeList,
+                 symbol_display_map: bidict,
+                 alphabet_size: int,
+                 num_states: int,
+                 start_state: str,
+                 smooth_transitions: bool,
+                 is_stochastic: bool,
+                 final_transition_sym=-1,
+                 final_weight_key: str = None,
+                 state_observation_key: str = None,
+                 can_have_accepting_nodes: bool = True,
+                 edge_weight_key: str = None) -> 'Automaton':
         """
         Constructs a new instance of an Automaton object.
 
-        :param      nodes:                 node list as expected by
-                                           networkx.add_nodes_from()
-        :param      edge_list:             edge list as expected by
-                                           networkx.add_edges_from()
-        :param      alphabet_size:         number of symbols in automaton
-        :param      num_states:            number of states in automaton state
-                                           space
-        :param      start_state:           unique start state string label of
-                                           automaton
-        :param      smooth_transitions:    whether to smooth the symbol
-                                           transitions distributions
-        :param      is_stochastic:         the transitions are
-                                           non-probabilistic, so we are going
-                                           to assign a uniform distribution
-                                           over all symbols for the purpose of
-                                           generation
-        :param      final_transition_sym:  representation of the empty string /
-                                           symbol (a.k.a. lambda) (default -1)
+        :param      nodes:                     node list as expected by
+                                               networkx.add_nodes_from()
+        :param      edge_list:                 edge list as expected by
+                                               networkx.add_edges_from()
+        :param      symbol_display_map:        bidirectional mapping of
+                                               hashable symbols, to a unique
+                                               integer index in the symbol map.
+                                               Needed to translate between the
+                                               indices in the transition
+                                               distribution and the hashable
+                                               representation which is
+                                               meaningful to the user
+        :param      alphabet_size:             number of symbols in automaton
+        :param      num_states:                number of states in automaton
+                                               state space
+        :param      start_state:               unique start state string label
+                                               of automaton
+        :param      smooth_transitions:        whether to smooth the symbol
+                                               transitions distributions
+        :param      is_stochastic:             the transitions are
+                                               non-probabilistic, so we are
+                                               going to assign a uniform
+                                               distribution over all symbols
+                                               for the purpose of generation
+        :param      final_transition_sym:      representation of the empty
+                                               string / symbol (a.k.a. lambda)
+                                               (default -1)
+        :param      final_weight_key:          key in the automaton's node data
+                                               corresponding to the weight /
+                                               probability of ending in that
+                                               node.
+                                               If None, don't include this info
+                                               in the display of the automaton.
+                                               (default None)
+        :param      state_observation_key:     The key in each node's data
+                                               dict for state observations.
+                                               If None, don't include this info
+                                               in the display of the automaton
+                                               (default None)
+        :param      can_have_accepting_nodes:  Indicates if the automata can
+                                               have accepting nodes
+                                               (default True)
+        :param      edge_weight_key:           The key in each edge's data
+                                               dict for edge weight / prob.
+                                               If None, don't include this info
+                                               in the display of the automaton
+                                               (default None)
         """
 
-        # need to start with a fully initialized networkx digraph
-        super().__init__()
+        self._transition_map = {}
+        """keep a map of start state label and symbol to destination state"""
 
-        self.add_nodes_from(nodes)
-        self.add_edges_from(edge_list)
+        self._symbol_display_map = symbol_display_map
 
         self._alphabet_size = alphabet_size
         """number of symbols in automaton alphabet"""
@@ -84,6 +124,18 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         self._use_smoothing = smooth_transitions
         """whether or not to smooth the input transition distributions"""
+
+        # need to start with a fully initialized networkx digraph
+        super().__init__()
+
+        self.add_nodes_from(nodes)
+        self.add_edges_from(edge_list)
+
+        self._initialize_node_edge_properties(
+            state_observation_key=state_observation_key,
+            final_weight_key=final_weight_key,
+            can_have_accepting_nodes=can_have_accepting_nodes,
+            edge_weight_key=edge_weight_key)
 
     def disp_edges(self, graph: {None, nx.MultiDiGraph}=None) -> None:
         """
@@ -127,6 +179,83 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         dot_string = graph.to_string()
         display(gv.Source(dot_string))
 
+    @staticmethod
+    def _convert_states_edges(nodes: dict, edges: dict,
+                              final_transition_sym,
+                              is_stochastic: bool) -> (bidict,
+                                                       NXNodeList, NXEdgeList):
+        """
+        Converts node and edges data from a manually specified YAML config file
+        to the format needed by:
+            - networkx.add_nodes_from()
+            - networkx.add_edges_from()
+
+        :param      nodes:                 dict of node objects to be converted
+        :param      edges:                 dictionary adj. list to be converted
+        :param      final_transition_sym:  representation of the empty string /
+                                           symbol (a.k.a. lambda)
+        :param      is_stochastic:         the transitions are
+                                           non-probabilistic, so we are going
+                                           to assign a uniform distribution
+                                           over all symbols for the purpose of
+                                           generation
+
+        :returns:   mapping to display symbols according to their
+                    index in the transition distributions,
+                    properly formated node and edge list containers
+        :rtype:     tuple:
+                    (symbol_display_map - bidirectional mapping of hashable
+                                          symbols, to a unique integer index in
+                                          the symbol map.
+                     nodes - list of tuples:
+                     (node label, node attribute dict),
+                     edges - list of tuples:
+                     (src node label, dest node label, edge attribute dict))
+        """
+
+        # need to convert the configuration adjacency list given in the config
+        # to an edge list given as a 3-tuple of (source, dest, edgeAttrDict)
+        edge_list = []
+        symbol_count = 0
+        symbol_display_map = bidict({})
+        for source_node, dest_edges_data in edges.items():
+
+            # don't need to add any edges if there is no edge data
+            if dest_edges_data is None:
+                continue
+
+            for dest_node in dest_edges_data:
+
+                symbols = dest_edges_data[dest_node]['symbols']
+                if is_stochastic:
+                    probabilities = dest_edges_data[dest_node]['probabilities']
+
+                for symbol_idx, symbol in enumerate(symbols):
+
+                    # need to store new symbols in a map for display
+                    if symbol not in symbol_display_map:
+                        symbol_count += 1
+                        symbol_display_map[symbol] = symbol_count
+
+                    edge_data = {'symbol': symbol}
+
+                    if is_stochastic:
+                        probability = probabilities[symbol_idx]
+                        edge_data['probability'] = probability
+
+                    newEdge = (source_node, dest_node, edge_data)
+                    edge_list.append(newEdge)
+
+        # best convention is to convert dict_items to a list, even though both
+        # are iterable
+        converted_nodes = list(nodes.items())
+
+        # we need to add the empty / final symbol to the display map
+        # for completeness
+        symbol_display_map[final_transition_sym] = final_transition_sym
+
+        return symbol_display_map, converted_nodes, edge_list
+
     def _get_pydot_representation(self) -> Dot:
         """
         converts the networkx graph to pydot and sets graphviz graph attributes
@@ -153,13 +282,23 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      final_weight_key:          key in the automaton's node data
                                                corresponding to the weight /
                                                probability of ending in that
-                                               node
-        :type       final_weight_key:          string
+                                               node.
+                                               If None, don't include this info
+                                               in the display of the automaton.
+                                               (default None)
+        :param      state_observation_key:     The key in each node's data
+                                               dict for state observations.
+                                               If None, don't include this info
+                                               in the display of the automaton
+                                               (default None)
         :param      can_have_accepting_nodes:  Indicates if the automata can
                                                have accepting nodes
-        :type       can_have_accepting_nodes:  boolean
-        :param      edge_weight_key:           The edge data's "weight" key
-        :type       edge_weight_key:           string
+                                               (default True)
+        :param      edge_weight_key:           The key in each edge's data
+                                               dict for edge weight / prob.
+                                               If None, don't include this info
+                                               in the display of the automaton
+                                               (default None)
         """
 
         # do batch computations at initialization, as these shouldn't
@@ -186,8 +325,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :raises     ValueError:  checks for non-deterministic transitions
         """
 
-        # beta-acceptance property shouldn't change after load in
-        self._set_state_acceptance(node, self._beta)
+        # acceptance property shouldn't change after load in
+        self._set_state_acceptance(node)
 
         # if we compute this once, we can sample from each distribution
         (self.nodes[node]['trans_distribution'],
@@ -212,6 +351,42 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         self._transition_map = {**self._transition_map,
                                 **new_trans_map_entries}
+
+    def _convert_symbol_idxs(self, integer_symbols: {List, int}) -> List:
+        """
+        Convert an iterable container of integer representations of automaton
+        symbols to their readable, user-meaningful form.
+
+        :param      integer_symbols:  The integer symbol(s) to convert
+
+        :returns:   a list of displayable automaton symbols corresponding to
+                    the inputted integer symbols
+
+        :raises     ValueError:       all given symbol indices must be ints
+        """
+
+        display_symbols = []
+
+        # need to do type-checking / polymorphism handling here
+        if not isinstance(integer_symbols, Iterable):
+            if np.issubdtype(integer_symbols, np.integer):
+                return self._symbol_display_map.inv[integer_symbols]
+            else:
+                msg = f'symbol index ({integer_symbols}) is not an int'
+                raise ValueError(msg)
+        else:
+
+            all_ints = all(np.issubdtype(type(sym), np.integer) for sym in
+                           integer_symbols)
+            if not all_ints:
+                msg = f'not all symbol indices ({integer_symbols}) are ints'
+                raise ValueError(msg)
+
+        for integer_symbol in integer_symbols:
+            converted_symbol = self._symbol_display_map.inv[integer_symbol]
+            display_symbols.append(converted_symbol)
+
+        return display_symbols
 
     @abstractmethod
     def _set_state_acceptance(self, curr_state: Hashable) -> None:
@@ -309,7 +484,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                 wt_str = edge_weight_to_string(data[edge_weight_key])
                 edge_label_string = str(data['symbol']) + ': ' + wt_str
             else:
-                edge_label_string = ''
+                edge_label_string = str(data['symbol'])
 
             new_label_property = {'label': edge_label_string,
                                   'fontcolor': 'blue'}
@@ -389,7 +564,13 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         edge_data = edges([curr_state], data=True)
 
         edge_dests = [edge[1] for edge in edge_data]
-        edge_symbols = [edge[2]['symbol'] for edge in edge_data]
+
+        # need to conver the hashable symbols to thier integer indices for
+        # creating the categorical distribution, which only works with
+        # integers
+        original_edge_symbols = [edge[2]['symbol'] for edge in edge_data]
+        edge_symbols = [self._symbol_display_map[symbol] for symbol in
+                        original_edge_symbols]
 
         if stochastic:
             # need to add final state probability to discrete rv dist
@@ -430,8 +611,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                        values=(edge_symbols, edge_probs))
 
         # creating the mapping from (start state, symbol) -> edge_dests
-        state_symbol_keys = list(zip([curr_state] * len(edge_symbols),
-                                     edge_symbols))
+        disp_edge_symbols = self._convert_symbol_idxs(edge_symbols)
+        state_symbol_keys = list(zip([curr_state] * len(disp_edge_symbols),
+                                     disp_edge_symbols))
         transition_map = dict(zip(state_symbol_keys, edge_dests))
 
         return next_symbol_dist, transition_map

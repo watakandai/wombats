@@ -7,6 +7,7 @@ from numpy.random import RandomState
 from joblib import Parallel, delayed
 from collections.abc import Iterable
 from typing import List, Hashable, Tuple, Callable
+from bidict import bidict
 
 # local packages
 from wombats.factory.builder import Builder
@@ -82,56 +83,47 @@ class PDFA(Automaton):
         - probability: the probability of selecting this edge for traversal
     """
 
-    def __init__(self, nodes: NXNodeList, edge_list: NXEdgeList,
-                 alphabet_size: int, num_states: int, start_state,
+    def __init__(self,
+                 nodes: NXNodeList,
+                 edges: NXEdgeList,
+                 symbol_display_map: bidict,
+                 alphabet_size: int,
+                 num_states: int,
+                 start_state,
                  beta: float = 0.95,
-                 smooth_transitions: bool = False,
-                 is_stochastic: bool = False,
+                 smooth_transitions: bool = True,
                  final_transition_sym: str = -1) -> 'PDFA':
         """
         Constructs a new instance of a PDFA object.
 
         :param      nodes:                 node list as expected by
-                                           networkx.add_nodes_from()
-        :type       nodes:                 list of tuples: (node label, node,
-                                           attribute dict)
-        :param      edges:                 edge list as expected by
-                                           networkx.add_edges_from()
-        :type       edges:                 list of tuples: (src node label,
-                                           dest node label, edge attribute
+                                           networkx.add_nodes_from() list of
+                                           tuples: (node label, node, attribute
                                            dict)
+        :param      edges:                 edge list as expected by
+                                           networkx.add_edges_from() list of
+                                           tuples: (src node label, dest node
+                                           label, edge attribute dict)
+        :param      symbol_display_map:    bidirectional mapping of hashable
+                                           symbols, to a unique integer index
+                                           in the symbol map. Needed to
+                                           translate between the indices in the
+                                           transition distribution and the
+                                           hashable representation which is
+                                           meaningful to the user
         :param      alphabet_size:         number of symbols in fdfa alphabet
-        :type       alphabet_size:         Int
         :param      num_states:            number of states in automaton state
                                            space
-        :type       num_states:            Int
         :param      start_state:           unique start state string label of
                                            fdfa
-        :type       start_state:           same type as PDFA.nodes node object
         :param      beta:                  the final state probability needed
                                            for a state to accept. Not used for
                                            PDFA (default None)
-        :type       beta:                  Float
         :param      smooth_transitions:    whether to smooth the symbol
                                            transitions distributions
-        :param      is_stochastic:         the transitions are
-                                           non-probabilistic, so we are going
-                                           to assign a uniform distribution
-                                           over all symbols for the purpose of
-                                           generation
         :param      final_transition_sym:  representation of the empty string /
                                            symbol (a.k.a. lambda) (default -1)
-        :type       final_transition_sym:  same type as PDFA.edges symbol
-                                           property
         """
-
-        # need to start with a fully initialized automaton
-        super().__init__(nodes, edge_list, alphabet_size, num_states,
-                         start_state, smooth_transitions,
-                         is_stochastic, final_transition_sym=-1)
-
-        self._transition_map = {}
-        """keep a map of start state label and symbol to destination state"""
 
         self._beta = beta
         """the final state probability needed for a state to accept"""
@@ -139,10 +131,15 @@ class PDFA(Automaton):
         self._smoothing_amount = 0.00001
         """probability mass to re-assign to unseen symbols at each node"""
 
-        self._initialize_node_edge_properties(
-            final_weight_key='final_probability',
-            can_have_accepting_nodes=True,
-            edge_weight_key='probability')
+        # need to start with a fully initialized automaton
+        super().__init__(nodes, edges, symbol_display_map,
+                         alphabet_size, num_states, start_state,
+                         final_transition_sym=final_transition_sym,
+                         smooth_transitions=True,
+                         is_stochastic=True,
+                         final_weight_key='final_probability',
+                         can_have_accepting_nodes=True,
+                         edge_weight_key='probability')
 
     def generate_traces(self, num_samples: int, N: int) -> (List[List[int]],
                                                             List[int],
@@ -204,53 +201,6 @@ class PDFA(Automaton):
             for trace, trace_length in zip(traces, trace_lengths):
                 f.write(self._get_abbadingo_string(trace, trace_length,
                                                    is_pos_example=True))
-
-    @staticmethod
-    def convert_states_edges(nodes: dict, edges: dict) -> (NXNodeList,
-                                                           NXEdgeList):
-        """
-        Converts node and edges data from a manually specified YAML config file
-        to the format needed by:
-            - networkx.add_nodes_from()
-            - networkx.add_edges_from()
-
-        :param      nodes:  dict of node objects to be converted
-        :type       nodes:  dict of node label to node properties
-        :param      edges:  dictionary adj. list to be converted
-        :type       edges:  dict of src node label to dict of dest label to
-                            edge properties
-
-        :returns:   properly formated node and edge list containers
-        :rtype:     tuple: ( nodes - list of tuples: (node label, node
-                    attribute dict), edges - list of tuples: (src node label,
-                    dest node label, edge attribute dict) )
-        """
-
-        # need to convert the configuration adjacency list given in the config
-        # to an edge list given as a 3-tuple of (source, dest, edgeAttrDict)
-        edge_list = []
-        for source_node, dest_edges_data in edges.items():
-
-            # don't need to add any edges if there is no edge data
-            if dest_edges_data is None:
-                continue
-
-            for dest_node in dest_edges_data:
-
-                symbols = dest_edges_data[dest_node]['symbols']
-                probabilities = dest_edges_data[dest_node]['probabilities']
-
-                for symbol, probability in zip(symbols, probabilities):
-
-                    edge_data = {'symbol': symbol, 'probability': probability}
-                    newEdge = (source_node, dest_node, edge_data)
-                    edge_list.append(newEdge)
-
-        # best convention is to convert dict_items to a list, even though both
-        # are iterable
-        converted_nodes = list(nodes.items())
-
-        return converted_nodes, edge_list
 
     def predict(self, symbols: List[int],
                 pred_method: str = 'max_prob') -> int:
@@ -323,18 +273,19 @@ class PDFA(Automaton):
              trans_probability) = self._choose_next_state(curr_state,
                                                           random_state)
 
+            curr_state = next_state
+            trace_prob *= trans_probability
+
             if next_symbol == self._final_transition_sym:
                 break
 
             sampled_trace.append(next_symbol)
             length_of_trace += 1
-            curr_state = next_state
-            trace_prob *= trans_probability
 
         return sampled_trace, length_of_trace, trace_prob
 
     def plot_node_trans_dist(self, curr_state: Hashable) -> None:
-        """!
+        """
         Plots the transition pmf at the given curr_state / node.
 
         :param      curr_state:  state to display its transition distribution
@@ -342,11 +293,12 @@ class PDFA(Automaton):
         """
 
         trans_dist = self._get_node_data(curr_state, 'trans_distribution')
+        symbols = self._convert_symbol_idxs(trans_dist.xk)
 
         fig, ax = plt.subplots(1, 1)
-        ax.plot(trans_dist.xk, trans_dist.pmf(trans_dist.xk), 'ro',
+        ax.plot(symbols, trans_dist.pmf(trans_dist.xk), 'ro',
                 ms=12, mec='r')
-        ax.vlines(trans_dist.xk, 0, trans_dist.pmf(trans_dist.xk),
+        ax.vlines(symbols, 0, trans_dist.pmf(trans_dist.xk),
                   colors='r', lw=4)
         plt.show()
 
@@ -647,7 +599,7 @@ class PDFA(Automaton):
 
         trans_distribution = self._get_node_data(curr_state,
                                                  'trans_distribution')
-        possible_symbols = trans_distribution.xk
+        possible_symbols = self._convert_symbol_idxs(trans_distribution.xk)
         probabilities = trans_distribution.pk
 
         if symbol not in possible_symbols:
@@ -656,7 +608,8 @@ class PDFA(Automaton):
                    'transition distribution').format(symbol, curr_state)
             raise ValueError(msg)
 
-        symbol_idx = np.where(possible_symbols == symbol)
+        symbol_idx = [i for i, val in enumerate(possible_symbols)
+                      if val == symbol]
         num_matched_symbols = len(symbol_idx)
         if num_matched_symbols != 1:
             msg = ('given symbol ({}) is found multiple times in '
@@ -676,11 +629,11 @@ class PDFA(Automaton):
 
         return next_state, symbol_probability
 
-    def _set_state_acceptance(self, curr_state: Hashable, beta: float) -> None:
+    def _set_state_acceptance(self, curr_state: Hashable) -> None:
         """
         Sets the state acceptance property for the given state.
 
-        If curr_state's final_probability >= beta, then the state accepts
+        If curr_state's final_probability >= self._beta, then the state accepts
 
         :param      curr_state:  The current state's node label
         :type       curr_state:  Hashable
@@ -731,13 +684,14 @@ class PDFA(Automaton):
         # unlikely self-loops
         num_of_missing_transitions = 0
         new_edge_probs, new_edge_dests, new_edge_symbols = [], [], []
-        for i in range(self._alphabet_size):
-            if i not in edge_symbols:
+        all_symbols_idxs = list(self._symbol_display_map.inv.keys())
 
+        for symbol in all_symbols_idxs:
+            if symbol not in edge_symbols:
                 num_of_missing_transitions += 1
                 new_edge_probs.append(self._smoothing_amount)
                 new_edge_dests.append(curr_state)
-                new_edge_symbols.append(i)
+                new_edge_symbols.append(symbol)
 
         # now, we need to remove the smoothed probability mass from the
         # original transition distribution
@@ -801,15 +755,12 @@ class PDFA(Automaton):
 
         # sampling an action (symbol) from the state-action distribution at
         # curr_state
-        next_symbol = trans_dist.rvs(size=1)[0]
+        next_symbol_idx = trans_dist.rvs(size=1)[0]
+        next_symbol = self._convert_symbol_idxs(next_symbol_idx)
 
-        if next_symbol == self._final_transition_sym:
-            trans_probability = 1.0
-            return curr_state, next_symbol, trans_probability
-        else:
-            next_state, trans_probability = self._get_next_state(curr_state,
-                                                                 next_symbol)
-            return next_state, next_symbol, trans_probability
+        next_state, trans_probability = self._get_next_state(curr_state,
+                                                             next_symbol)
+        return next_state, next_symbol, trans_probability
 
     def _get_abbadingo_string(self, trace: List[int], trace_length: int,
                               is_pos_example: bool) -> str:
@@ -859,7 +810,7 @@ class PDFABuilder(Builder):
 
         graph_data and graph_data_format must match
 
-        :param      graph_data:         The object containing graph data
+        :param      graph_data:         The variable specifying graph data
         :type       graph_data:         {str, FDFA}
         :param      graph_data_format:  The graph data file format.
                                         (default 'yaml')
@@ -916,11 +867,16 @@ class PDFABuilder(Builder):
 
         if no_instance_loaded_yet or nodes_have_changed or edges_have_changed:
 
-            # nodes and edge_list must be in the format needed by:
+            # nodes and edges must be in the format needed by:
             #   - networkx.add_nodes_from()
             #   - networkx.add_edges_from()
-            states, edges = PDFA.convert_states_edges(config_data['nodes'],
-                                                      config_data['edges'])
+            final_transition_sym = config_data['final_transition_sym']
+            (symbol_display_map,
+             states,
+             edges) = Automaton._convert_states_edges(config_data['nodes'],
+                                                      config_data['edges'],
+                                                      final_transition_sym,
+                                                      is_stochastic=True)
 
             # saving these so we can just return initialized instances if the
             # underlying data has not changed
@@ -929,14 +885,13 @@ class PDFABuilder(Builder):
 
             self._instance = PDFA(
                 nodes=states,
-                edge_list=edges,
+                edges=edges,
+                symbol_display_map=symbol_display_map,
                 beta=config_data['beta'],
                 alphabet_size=config_data['alphabet_size'],
                 num_states=config_data['num_states'],
-                final_transition_sym=config_data['final_transition_sym'],
-                start_state=config_data['start_state'],
-                smooth_transitions=True,
-                is_stochastic=True)
+                final_transition_sym=final_transition_sym,
+                start_state=config_data['start_state'])
 
             return self._instance
 
@@ -960,7 +915,8 @@ class PDFABuilder(Builder):
 
         self._instance = PDFA(
             nodes=nodes,
-            edge_list=edges,
+            edges=edges,
+            symbol_display_map=fdfa._symbol_display_map,
             # just choose a default value, FDFAs have no notion of acceptance
             # this at the moment
             beta=0.95,
