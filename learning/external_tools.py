@@ -19,10 +19,8 @@ class FlexfringeInterface():
 
         :param      binary_location:   (absolute / relative) filepath to the
                                        flexfringe binary
-        :type       binary_location:   str
         :param      output_directory:  The output directory of the learned
                                        model
-        :type       output_directory:  str
         """
 
         self.binary_location = binary_location
@@ -37,13 +35,10 @@ class FlexfringeInterface():
         calls the flexfringe binary given the data in the training file
 
         :param      training_file:  The full filename path to the training data
-        :type       training_file:  filepath str
         :param      kwargs:         keyword arguments to pass to flexfringe
                                     controlling the learning process
-        :type       kwargs:         dictionary
 
         :returns:   string with the learned dot file or None if learning failed
-        :rtype:     str or None
         """
 
         cmd = self._get_command(kwargs)
@@ -76,7 +71,6 @@ class FlexfringeInterface():
         notebook
 
         :param      dot_file_data:  The learned model dot file data
-        :type       dot_file_data:  str
         """
         if dot_file_data == '':
             pass
@@ -99,7 +93,6 @@ class FlexfringeInterface():
         sets output_filepath and output_directory based on the given filepath
 
         :param      filepath:  The new filepath
-        :type       filepath:  str
         """
         (self._output_directory,
          self._output_base_filepath) = os.path.split(filepath)
@@ -111,7 +104,6 @@ class FlexfringeInterface():
         different from the inputted "output-dir"
 
         :returns:   The learned model filepath.
-        :rtype:     str
         """
 
         filepath = self.output_filepath
@@ -131,7 +123,6 @@ class FlexfringeInterface():
         sets the learned_model_filepath
 
         :param      filepath:  The new learned model filepath.
-        :type       filepath:  str
         """
 
         f_dir, full_fname = os.path.split(filepath)
@@ -150,10 +141,8 @@ class FlexfringeInterface():
         gets a list of popt commands to send the binary
 
         :param      kwargs:  The flexfringe tool keyword arguments
-        :type       kwargs:  dict
 
         :returns:   The list of commands.
-        :rtype:     list of strings
         """
 
         # default argument is to print the program's man page

@@ -7,13 +7,27 @@ from scipy.stats import rv_discrete
 from networkx.drawing.nx_pydot import to_pydot
 from IPython.display import display
 from pydot import Dot
-from typing import Hashable, List, Tuple
+from typing import Hashable, List, Tuple, Iterable
 from bidict import bidict
-from collections import Iterable
+import collections
 
 # define these type defs for method annotation type hints
 NXNodeList = List[Tuple[Hashable, dict]]
 NXEdgeList = List[Tuple[Hashable, Hashable, dict]]
+
+Node = Hashable
+Observation = Hashable
+Symbol = Hashable
+Weight = int
+Probability = float
+
+Nodes = Iterable[Node]
+Observations = Iterable[Observation]
+Symbols = Iterable[Symbol]
+Weights = Iterable[Weight]
+Probabilities = Iterable[Probability]
+
+Categorical_data = (Weights, Nodes, Symbols)
 
 
 class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
@@ -42,10 +56,10 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                  symbol_display_map: bidict,
                  alphabet_size: int,
                  num_states: int,
-                 start_state: str,
+                 start_state: Hashable,
                  smooth_transitions: bool,
                  is_stochastic: bool,
-                 final_transition_sym=-1,
+                 final_transition_sym: Hashable = -1,
                  final_weight_key: str = None,
                  state_observation_key: str = None,
                  can_have_accepting_nodes: bool = True,
@@ -310,7 +324,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                               can_have_accepting_nodes)
         self._set_edge_labels(edge_weight_key)
 
-    def _compute_node_data_properties(self, node: str) -> None:
+    def _compute_node_data_properties(self, node: Node) -> None:
         """
         Base method for calculating the properties for the given node.
 
@@ -352,7 +366,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         self._transition_map = {**self._transition_map,
                                 **new_trans_map_entries}
 
-    def _convert_symbol_idxs(self, integer_symbols: {List, int}) -> List:
+    def _convert_symbol_idxs(self, integer_symbols: {Symbols, int}) -> List:
         """
         Convert an iterable container of integer representations of automaton
         symbols to their readable, user-meaningful form.
@@ -368,7 +382,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         display_symbols = []
 
         # need to do type-checking / polymorphism handling here
-        if not isinstance(integer_symbols, Iterable):
+        if not isinstance(integer_symbols, collections.Iterable):
             if np.issubdtype(integer_symbols, np.integer):
                 return self._symbol_display_map.inv[integer_symbols]
             else:
@@ -389,7 +403,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         return display_symbols
 
     @abstractmethod
-    def _set_state_acceptance(self, curr_state: Hashable) -> None:
+    def _set_state_acceptance(self, curr_state: Node) -> None:
         """
         Sets the state acceptance property for the given state.
 
@@ -418,8 +432,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :type       graph:                     {None, nx.MultiDiGraph}
         :type       final_weight_key:          string
         :type       can_have_accepting_nodes:  boolean
-
-        :returns:   None
         """
 
         if graph is None:
@@ -465,10 +477,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         Sets each edge's label property for use in graphviz output
 
         :param      edge_weight_key:  The edge data's "weight" key
-        :type       edge_weight_key:  string
         :param      graph:            The graph to access. Default = None =>
                                       use instance (default None)
-        :type       graph:            {None, nx.MultiDiGraph}
         """
 
         if graph is None:
@@ -494,18 +504,15 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         nx.set_edge_attributes(graph, label_dict)
 
-    def _get_node_data(self, node_label: Hashable, data_key: str,
+    def _get_node_data(self, node_label: Node, data_key: str,
                        graph: {None, nx.MultiDiGraph}=None):
         """
         Gets the node's data_key data from the graph
 
         :param      node_label:  The node label
-        :type       node_label:  Hashable
         :param      data_key:    The desired node data's key name
-        :type       data_key:    string
         :param      graph:       The graph to access. Default = None => use
                                  instance (default None)
-        :type       graph:       {None, nx.MultiDiGraph}
 
         :returns:   The node data associated with the node_label and data_key
         :rtype:     type of self.nodes.data()[node_label][data_key]
@@ -518,20 +525,16 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return node_data[node_label][data_key]
 
-    def _set_node_data(self, node_label: Hashable, data_key: str, data,
+    def _set_node_data(self, node_label: Node, data_key: str, data,
                        graph: {None, nx.MultiDiGraph}=None) -> None:
         """
         Sets the node's data_key data from the graph
 
         :param      node_label:  The node label
-        :type       node_label:  Hashable
         :param      data_key:    The desired node data's key name
-        :type       data_key:    string
         :param      data:        The data to associate with data_key
-        :type       data:        whatever u want bro
         :param      graph:       The graph to access. Default = None => use
                                  instance (default None)
-        :type       graph:       {None, nx.MultiDiGraph}
         """
 
         if graph is None:
@@ -540,7 +543,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         node_data = graph.nodes.data()
         node_data[node_label][data_key] = data
 
-    def _set_state_transition_dist(self, curr_state: Hashable,
+    def _set_state_transition_dist(self, curr_state: Node,
                                    edges: NXEdgeList,
                                    stochastic: bool,
                                    smooth: bool) -> (rv_discrete, dict):
@@ -617,6 +620,61 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         transition_map = dict(zip(state_symbol_keys, edge_dests))
 
         return next_symbol_dist, transition_map
+
+    def _smooth_categorical(self, curr_state: Node,
+                            edge_probs: Probabilities,
+                            edge_symbols: Symbols,
+                            edge_dests: Nodes) -> Categorical_data:
+        """
+        Applies Laplace smoothing to the given categorical state-symbol
+        distribution
+
+        :param      curr_state:    The current state label for which to smooth
+                                   the distribution
+        :param      edge_probs:    The transition probability values for each
+                                   edge
+        :param      edge_symbols:  The emitted symbols for each edge
+        :param      edge_dests:    The labels of the destination states under
+                                   each symbol at the curr_state
+
+        :returns:   The smoothed version of edge_probs, edge_dests,
+                    and edge_symbols
+
+        """
+
+        all_possible_trans = [idx for idx, prob in enumerate(edge_probs) if
+                              prob > 0.0]
+        num_orig_samples = len(all_possible_trans)
+
+        # here we add in the missing transition probabilities as just very
+        # unlikely self-loops
+        num_of_missing_transitions = 0
+        new_edge_probs, new_edge_dests, new_edge_symbols = [], [], []
+        all_symbols_idxs = list(self._symbol_display_map.inv.keys())
+
+        for symbol in all_symbols_idxs:
+            if symbol not in edge_symbols:
+                num_of_missing_transitions += 1
+                new_edge_probs.append(self._smoothing_amount)
+                new_edge_dests.append(curr_state)
+                new_edge_symbols.append(symbol)
+
+        # now, we need to remove the smoothed probability mass from the
+        # original transition distribution
+        num_added_symbols = len(new_edge_symbols)
+        added_prob_mass = self._smoothing_amount * num_added_symbols
+        smoothing_per_orig_trans = added_prob_mass / num_orig_samples
+
+        for trans_idx in all_possible_trans:
+            edge_probs[trans_idx] -= smoothing_per_orig_trans
+
+        # combining the new transitions with the smoothed, original
+        # distribution to get the final smoothed distribution
+        edge_probs += new_edge_probs
+        edge_dests += new_edge_dests
+        edge_symbols += new_edge_symbols
+
+        return edge_probs, edge_dests, edge_symbols
 
 
 def edge_weight_to_string(weight: {int, float}) -> str:

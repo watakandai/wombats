@@ -4,14 +4,11 @@ from bidict import bidict
 
 # local packages
 from wombats.factory.builder import Builder
-from .base import Automaton
+from .base import (Automaton, NXNodeList, NXEdgeList, Node, Observation,
+                   Symbols)
 
 # define these type defs for method annotation type hints
-NXNodeList = List[Tuple[Hashable, dict]]
-NXEdgeList = List[Tuple[Hashable, Hashable, dict]]
-TSNode = str
-TSObs = str
-TransData = Tuple[TSNode, TSObs]
+TS_Trans_Data = Tuple[Node, Observation]
 
 
 class TransitionSystem(Automaton):
@@ -58,12 +55,17 @@ class TransitionSystem(Automaton):
         self._num_obs = num_states
         """number of state observations in TS obs. space"""
 
-    def transition(self, input_symbol: str) -> TransData:
+    def transition(self, curr_state, input_symbol: str) -> TS_Trans_Data:
 
-        trans_distribution = self._get_node_data(curr_state,
-                                                 'trans_distribution')
+        next_state = self._transition_map[(curr_state, input_symbol)]
+        observation = self._get_node_data(curr_state, 'observation')
 
-    def _set_state_acceptance(self, curr_state: Hashable) -> None:
+        return next_state, observation
+
+    def run(self, word: Symbols):
+        pass
+
+    def _set_state_acceptance(self, curr_state: Node) -> None:
         """
         Sets the state acceptance property for the given state.
 

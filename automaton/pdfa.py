@@ -11,12 +11,12 @@ from bidict import bidict
 
 # local packages
 from wombats.factory.builder import Builder
-from .base import Automaton, NXNodeList, NXEdgeList
+from .base import (Automaton, NXNodeList, NXEdgeList, Node, Symbol, Symbols,
+                   Probability, Probabilities)
 from .fdfa import FDFA
 
 # needed for pred_method type hint annotations
-Trans = (str, int, float)
-Categorical_data = (List[float], List[int], List[Hashable])
+PDFA_Trans_Data = (str, int, float)
 
 # needed for multi-threaded sampling routine
 NUM_CORES = multiprocessing.cpu_count()
@@ -92,7 +92,7 @@ class PDFA(Automaton):
                  start_state,
                  beta: float = 0.95,
                  smooth_transitions: bool = True,
-                 final_transition_sym: str = -1) -> 'PDFA':
+                 final_transition_sym: Hashable = -1) -> 'PDFA':
         """
         Constructs a new instance of a PDFA object.
 
@@ -172,20 +172,16 @@ class PDFA(Automaton):
 
         return samples, trace_lengths, trace_probs
 
-    def write_traces_to_file(self, traces: List[List[int]], num_samples: int,
+    def write_traces_to_file(self, traces: List[Symbols], num_samples: int,
                              trace_lengths: List[int], f_name: str) -> None:
         """
         Writes trace samples to a file in the abbadingo format for use in
         grammatical inference tools like flexfringe
 
         :param      traces:         The traces to write to a file
-        :type       traces:         List[List[int]]
         :param      num_samples:    The number sampled traces
-        :type       num_samples:    int
         :param      trace_lengths:  list of sampled trace lengths
-        :type       trace_lengths:  List[int]
         :param      f_name:         The file name to write to
-        :type       f_name:         str
         """
 
         # make sure the num_samples is an int, so you don't have to wrap shit
@@ -202,21 +198,18 @@ class PDFA(Automaton):
                 f.write(self._get_abbadingo_string(trace, trace_length,
                                                    is_pos_example=True))
 
-    def predict(self, symbols: List[int],
-                pred_method: str = 'max_prob') -> int:
+    def predict(self, symbols: Symbols,
+                pred_method: str = 'max_prob') -> Symbol:
         """
         predicts the next symbol conditioned on the given previous symbols
 
         :param      symbols:      The previously observed emitted symbols
-        :type       symbols:      list of symbols strings
-        :param      pred_method:  The method used to choose the next
-                                  state. see _choose_next_state for details on
-                                  how each pred_method is implemented.
+        :param      pred_method:  The method used to choose the next state. see
+                                  _choose_next_state for details on how each
+                                  pred_method is implemented.
                                   {'sample', 'max_prob'} (default 'max_prob')
-        :type       pred_method:  str
 
         :returns:   the most probable next symbol in the sequence
-        :rtype:     str
         """
 
         # simulating the state trajectory under the given sequence
@@ -232,26 +225,23 @@ class PDFA(Automaton):
 
         return next_symbol
 
-    def generate_trace(self, start_state: Hashable, N: int,
-                       random_state: RandomState = None) -> (List[int], int,
-                                                             float):
+    def generate_trace(self, start_state: Node, N: int,
+                       random_state: {None, int, Iterable}=None) -> (Symbols,
+                                                                     int,
+                                                                     Probability):
         """
         Generates a trace from the pdfa starting from start_state
 
         :param      start_state:   the state label to start sampling traces
                                    from
-        :type       start_state:   Hashable
         :param      N:             maximum length of trace
-        :type       N:             scalar integer
         :param      random_state:  The np.random.RandomState() seed parameter
                                    for sampling from the state transition
                                    distribution. Defaulting to None causes the
                                    seed to reset. (default None)
-        :type       random_state:  {None, int, array_like}
 
         :returns:   the sequence of symbols emitted, the length of the trace,
                     the probability of the trace in the language of the pdfa
-        :rtype:     tuple(List[int], integer, float)
         """
 
         curr_state = start_state
@@ -284,7 +274,7 @@ class PDFA(Automaton):
 
         return sampled_trace, length_of_trace, trace_prob
 
-    def plot_node_trans_dist(self, curr_state: Hashable) -> None:
+    def plot_node_trans_dist(self, curr_state: Node) -> None:
         """
         Plots the transition pmf at the given curr_state / node.
 
@@ -302,7 +292,7 @@ class PDFA(Automaton):
                   colors='r', lw=4)
         plt.show()
 
-    def score(self, trace: List[int]) -> float:
+    def score(self, trace: Symbols) -> float:
         """
         Calculates the given trace's probability in the language of the PDFA.
 
@@ -310,10 +300,8 @@ class PDFA(Automaton):
             ==> score = P_{PDFA LM}(trace)
 
         :param      trace:  The trace
-        :type       trace:  List[int]
 
         :returns:   The trace probability.
-        :rtype:     float
         """
 
         curr_state = self.start_state
@@ -328,26 +316,23 @@ class PDFA(Automaton):
 
         return trace_prob
 
-    def logscore(self, trace: List[int], base: float = 2.0) -> float:
+    def logscore(self, trace: Symbols, base: float = 2.0) -> float:
         """
         computes the log of the score (sequence probability) of the given trace
         in the language of the PDFA
 
         :param      trace:  The sequence of symbols to compute the log score of
-        :type       trace:  List[int]
         :param      base:   The log base. Commonly set to 2 in classic
                             information theory literature (default 2.0)
-        :type       base:   float
 
         :returns:   log of the probability - NOT log odds
-        :rtype:     float
         """
 
         score = self.score(trace)
 
         return np.asscalar(np.log(score) / np.log(base))
 
-    def cross_entropy_approx(self, trace: List[int],
+    def cross_entropy_approx(self, trace: Symbols,
                              base: float = 2.0) -> float:
         """
         computes approximate cross-entropy of the given trace in the language
@@ -378,20 +363,17 @@ class PDFA(Automaton):
         (https://web.stanford.edu/~jurafsky/slp3/3.pdf)
 
         :param      trace:  The sequence of symbols to evaluate
-        :type       trace:  List[int]
         :param      base:   The log base. Commonly set to 2 in classic
                             information theory literature (default 2.0)
-        :type       base:   float
 
         :returns:   the approximate cross-entropy of the given trace
-        :rtype:     float
         """
 
         N = len(trace)
 
         return (-1.0 / N) * self.logscore(trace, base)
 
-    def perplexity_approx(self, trace: List[int], base: float = 2.0) -> float:
+    def perplexity_approx(self, trace: Symbols, base: float = 2.0) -> float:
         """
         computes approximate perplexity of the given trace in the language of
         the PDFA
@@ -405,21 +387,18 @@ class PDFA(Automaton):
         (https://web.stanford.edu/~jurafsky/slp3/3.pdf)
 
         :param      trace:  The sequence of symbols to evaluate
-        :type       trace:  List[int]
         :param      base:   The log base used for log probability calculations
                             of the approximate cross-entropy underpinning the
                             perplexity. Commonly set to 2 in classic
                             information theory literature (default 2.0)
-        :type       base:   float
 
         :returns:   the approximate perplexity of the given trace
-        :rtype:     float
         """
 
         return base ** self.cross_entropy_approx(trace, base)
 
-    def cross_entropy(self, traces: List[List[int]],
-                      actual_trace_probs: List[float],
+    def cross_entropy(self, traces: List[Symbols],
+                      actual_trace_probs: Probabilities,
                       base: float = 2.0) -> float:
         """
         computes actual cross-entropy of the given traces in the language of
@@ -432,17 +411,13 @@ class PDFA(Automaton):
         :param      traces:              The list of sequence of symbols to
                                          evaluate the model's actual cross
                                          entropy on.
-        :type       traces:              List[int]
         :param      actual_trace_probs:  The actual probability of each trace
                                          in the target language distribution
-        :type       actual_trace_probs:  List[float]
         :param      base:                The log base. Commonly set to 2 in
                                          classic information theory literature
                                          (default 2.0)
-        :type       base:                float
 
         :returns:   the actual cross-entropy of the given trace
-        :rtype:     float
         """
 
         cross_entropy_sum = 0.0
@@ -454,8 +429,8 @@ class PDFA(Automaton):
 
         return (-1.0 / N) * cross_entropy_sum
 
-    def perplexity(self, traces: List[List[int]],
-                   actual_trace_probs: List[float],
+    def perplexity(self, traces: List[Symbols],
+                   actual_trace_probs: Probabilities,
                    base: float = 2.0) -> float:
         """
         computes actual perplexity of the given traces in the language of
@@ -468,37 +443,31 @@ class PDFA(Automaton):
         :param      traces:              The list of sequence of symbols to
                                          evaluate the model's actual cross
                                          entropy on.
-        :type       traces:              List[int]
         :param      actual_trace_probs:  The actual probability of each trace
                                          in the target language distribution
-        :type       actual_trace_probs:  List[float]
         :param      base:                The log base. Commonly set to 2 in
                                          classic information theory literature
                                          (default 2.0)
-        :type       base:                float
 
         :returns:   the actual cross-entropy of the given trace
-        :rtype:     float
         """
 
         return base ** self.cross_entropy(traces, actual_trace_probs, base)
 
-    def predictive_accuracy(self, test_traces: List[List[int]],
+    def predictive_accuracy(self, test_traces: List[Symbols],
                             pred_method: str = 'max_prob') -> float:
         """
         compares the model's predictions to the actual values of the next
         symbol and returns the ratio of correct predictions.
 
         :param      test_traces:  The traces to compute predictive accuracy for
-        :type       test_traces:  List
         :param      pred_method:  The method used to choose the next state.
                                   see _choose_next_state for details on how
                                   each pred_method is implemented.
                                   {'sample', 'max_prob'} (default 'max_prob')
-        :type       pred_method:       str
 
-        :returns:   predictive accuracy ratio of the model on the given traces
-        :rtype:     float from [0, 1]
+        :returns:   predictive accuracy ratio ([0 -> 1]) of the model on the
+                    given traces
         """
 
         N = len(test_traces)
@@ -583,18 +552,21 @@ class PDFA(Automaton):
 
         return pdfa_nodes, pdfa_edges
 
-    def _get_next_state(self, curr_state: Hashable,
-                        symbol: str) -> Tuple[Hashable, float]:
+    def _get_next_state(self, curr_state: Node,
+                        symbol: Symbol) -> Tuple[Node, Probability]:
         """
         Gets the next state given the current state and the "input" symbol.
 
         :param      curr_state:  The curr state
-        :type       curr_state:  Hashable
         :param      symbol:      The input symbol
-        :type       symbol:      str
 
         :returns:   (The next state label, the transition probability)
-        :rtype:     (Hashable, float)
+
+        :raises     ValueError:  symbol not in curr_state's transition function
+        :raises     ValueError:  duplicate symbol in curr_state's transition
+                                 function
+        :raises     ValueError:  symbol has 0 prob. in curr_state's transition
+                                 function
         """
 
         trans_distribution = self._get_node_data(curr_state,
@@ -629,17 +601,13 @@ class PDFA(Automaton):
 
         return next_state, symbol_probability
 
-    def _set_state_acceptance(self, curr_state: Hashable) -> None:
+    def _set_state_acceptance(self, curr_state: Node) -> None:
         """
         Sets the state acceptance property for the given state.
 
         If curr_state's final_probability >= self._beta, then the state accepts
 
         :param      curr_state:  The current state's node label
-        :type       curr_state:  Hashable
-        :param      beta:        The cut point final state probability
-                                 acceptance parameter for the PDFA
-        :type       beta:        float
         """
 
         curr_final_prob = self._get_node_data(curr_state, 'final_probability')
@@ -651,68 +619,9 @@ class PDFA(Automaton):
 
         self._set_node_data(curr_state, 'is_accepting', state_accepts)
 
-    def _smooth_categorical(self, curr_state: Hashable,
-                            edge_probs: List[float],
-                            edge_symbols: List[int],
-                            edge_dests: List[Hashable]) -> Categorical_data:
-        """
-        Applies Laplace smoothing to the given categorical state-symbol
-        distribution
-
-        :param      curr_state:    The current state label for which to smooth
-                                   the distribution
-        :type       curr_state:    Hashable
-        :param      edge_probs:    The transition probability values for each
-                                   edge
-        :type       edge_probs:    list of floats
-        :param      edge_symbols:  The emitted symbols for each edge
-        :type       edge_symbols:  list of integer symbols
-        :param      edge_dests:    The labels of the destination states under
-                                   each symbol at the curr_state
-        :type       edge_dests:    label
-
-        :returns:   The smoothed version of edge_probs, edge_symbols,
-                    edge_dests
-        :rtype:     Tuple(list(float), list(int), list(node_label_type))
-        """
-
-        all_possible_trans = [idx for idx, prob in enumerate(edge_probs) if
-                              prob > 0.0]
-        num_orig_samples = len(all_possible_trans)
-
-        # here we add in the missing transition probabilities as just very
-        # unlikely self-loops
-        num_of_missing_transitions = 0
-        new_edge_probs, new_edge_dests, new_edge_symbols = [], [], []
-        all_symbols_idxs = list(self._symbol_display_map.inv.keys())
-
-        for symbol in all_symbols_idxs:
-            if symbol not in edge_symbols:
-                num_of_missing_transitions += 1
-                new_edge_probs.append(self._smoothing_amount)
-                new_edge_dests.append(curr_state)
-                new_edge_symbols.append(symbol)
-
-        # now, we need to remove the smoothed probability mass from the
-        # original transition distribution
-        num_added_symbols = len(new_edge_symbols)
-        added_prob_mass = self._smoothing_amount * num_added_symbols
-        smoothing_per_orig_trans = added_prob_mass / num_orig_samples
-
-        for trans_idx in all_possible_trans:
-            edge_probs[trans_idx] -= smoothing_per_orig_trans
-
-        # combining the new transitions with the smoothed, original
-        # distribution to get the final smoothed distribution
-        edge_probs += new_edge_probs
-        edge_dests += new_edge_dests
-        edge_symbols += new_edge_symbols
-
-        return edge_probs, edge_dests, edge_symbols
-
-    def _choose_next_state(self, curr_state: Hashable,
+    def _choose_next_state(self, curr_state: Node,
                            random_state: {None, int, Iterable}=None,
-                           pred_method: str = 'sample') -> Trans:
+                           pred_method: str = 'sample') -> PDFA_Trans_Data:
         """
         Chooses the next state based on curr_state's transition distribution
 
@@ -722,7 +631,6 @@ class PDFA(Automaton):
                                    for sampling from the state transition
                                    distribution. Defaulting to None causes the
                                    seed to reset. (default None)
-        :type       random_state:  {None, int, Iterable}
         :param      pred_method:   The method used to choose the next state:
                                    'sample':
                                    sample from the transition
@@ -739,11 +647,9 @@ class PDFA(Automaton):
                                    s_{t+1} = argmax_{s'}P(s' | s_t, O_t)
                                    makes deterministic predictions.
                                    {'sample', 'max_prob'} (default 'max_prob')
-        :type       pred_method:        str
 
         :returns:   The next state's label, the symbol emitted by changing
                     states, the probability of this transition occurring
-        :rtype:     tuple(string, int, float)
         """
 
         trans_dist = self.nodes[curr_state]['trans_distribution']
@@ -762,22 +668,18 @@ class PDFA(Automaton):
                                                              next_symbol)
         return next_state, next_symbol, trans_probability
 
-    def _get_abbadingo_string(self, trace: List[int], trace_length: int,
+    def _get_abbadingo_string(self, trace: Symbols, trace_length: int,
                               is_pos_example: bool) -> str:
         """
         Returns the Abbadingo (sigh) formatted string given a trace string and
         the label for the trace
 
         :param      trace:           The trace string to represent in Abbadingo
-        :type       trace:           List[int]
         :param      trace_length:    The trace length
-        :type       trace_length:    integer
         :param      is_pos_example:  Indicates if the trace is a positive
                                      example of the pdfa
-        :type       is_pos_example:  boolean
 
         :returns:   The abbadingo formatted string for the given trace
-        :rtype:     string
         """
         trace = ' '.join(str(x) for x in trace)
 
@@ -811,14 +713,10 @@ class PDFABuilder(Builder):
         graph_data and graph_data_format must match
 
         :param      graph_data:         The variable specifying graph data
-        :type       graph_data:         {str, FDFA}
         :param      graph_data_format:  The graph data file format.
-                                        (default 'yaml')
                                         {'yaml', 'fdfa_object'}
-        :type       graph_data_format:  string
 
         :returns:   instance of an initialized PDFA object
-        :rtype:     PDFA
 
         :raises     ValueError:         checks if graph_data and
                                         graph_data_format have a
@@ -844,10 +742,8 @@ class PDFABuilder(Builder):
         object
 
         :param      graph_data_file:  The graph configuration file name
-        :type       graph_data_file:  filename path string
 
         :returns:   instance of an initialized PDFA object
-        :rtype:     PDFA
 
         :raises     ValueError:       checks if graph_data_file's ext is YAML
         """
@@ -900,10 +796,8 @@ class PDFABuilder(Builder):
         Returns an instance of a PDFA from an instance of FDFA
 
         :param      fdfa:  initialized fdfa instance to convert to a pdfa
-        :type       fdfa:  FDFA
 
         :returns:   instance of an initialized PDFA object
-        :rtype:     PDFA
         """
 
         nodes, edges = PDFA._fdfa_to_pdfa_data(fdfa)

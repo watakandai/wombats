@@ -1,5 +1,6 @@
 # local packages
 from wombats.factory.object_factory import ObjectFactory
+from wombats.automaton.base import Automaton
 
 
 class AutomatonCollection(ObjectFactory):
@@ -8,7 +9,7 @@ class AutomatonCollection(ObjectFactory):
     with a more readable interface to our generic factory class.
     """
 
-    def get(self, automaton_type: str, **config_data):
+    def get(self, automaton_type: str, **config_data) -> Automaton:
         """
         return an instance of an automaton given the automaton_type and the
         config_data.
@@ -18,14 +19,11 @@ class AutomatonCollection(ObjectFactory):
         it
 
         :param      automaton_type:  The automaton type
-        :type       automaton_type:  string
         :param      config_data:     The keywords arguments to pass to the
                                      specific automaton builder class
-        :type       config_data:     dictionary
 
         :returns:   an intialized / active reference to the desired type of
                     automaton object
-        :rtype:     specific instance of an automaton object
         """
 
         return self.create(automaton_type, **config_data)

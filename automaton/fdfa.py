@@ -1,6 +1,7 @@
 # 3rd-party packages
 import pygraphviz
 import re
+import networkx as nx
 from networkx.drawing.nx_pydot import read_dot
 from networkx.drawing import nx_agraph
 from typing import Hashable
@@ -8,7 +9,7 @@ from bidict import bidict
 
 # local packages
 from wombats.factory.builder import Builder
-from .base import Automaton, NXNodeList, NXEdgeList
+from .base import Automaton, NXNodeList, NXEdgeList, Node, Symbol
 
 
 class FDFA(Automaton):
@@ -82,7 +83,8 @@ class FDFA(Automaton):
                          edge_weight_key='frequency')
 
     @classmethod
-    def load_flexfringe_data(cls: 'FDFA', graph, final_transition_sym) -> dict:
+    def load_flexfringe_data(cls: 'FDFA', graph: nx.MultiDiGraph,
+                             final_transition_sym: Symbol) -> dict:
         """
         reads in graph configuration data from a flexfringe dot file
 
@@ -124,12 +126,9 @@ class FDFA(Automaton):
 
         :param      flexfringe_nodes:  The flexfringe node list mapping node
                                        labels to node attributes
-        :type       flexfringe_nodes:  dict of dicts
 
         :returns:   node list as expected by networkx.add_nodes_from(),
                     a dict mapping FF node IDs to FF state labels
-        :rtype:     list of tuples: (node label, node
-                    attribute dict), dict
 
         :raises     ValueError:        can't read in "blue" flexfringe nodes,
                                        as they are theoretically undefined for
@@ -166,7 +165,7 @@ class FDFA(Automaton):
 
     @staticmethod
     def convert_flexfringe_edges(flexfringeEdges: NXEdgeList,
-                                 final_transition_sym,
+                                 final_transition_sym: Symbol,
                                  node_ID_to_node_label: dict) -> (bidict,
                                                                   NXEdgeList,
                                                                   dict):
@@ -176,23 +175,16 @@ class FDFA(Automaton):
 
         :param      flexfringeEdges:        The flexfringe edge list mapping
                                             edges labels to edge attributes
-        :type       flexfringeEdges:        list of tuples of: (src_FF_node_ID,
-                                            src_FF_node_ID, edge_data)
         :param      final_transition_sym:   representation of the empty string
                                             / symbol (a.k.a. lambda)
         :param      node_ID_to_node_label:  mapping from FF node ID to FF node
                                             label
-        :type       node_ID_to_node_label:  dict
 
         :returns:   symbol_display_map - bidirectional mapping of hashable
                                          symbols, to a unique integer index in
                                          the symbol map.
                     edge list as expected by networkx.add_edges_from(),
                     dictionary of symbol counts
-        :rtype:     symbol_display_map - bidict
-                    edges - list of tuples: (src node label,
-                    dest node label, edge attribute dict),
-                    all_symbols - dict
         """
 
         edges = []
@@ -242,7 +234,7 @@ class FDFA(Automaton):
 
         return symbol_display_map, edges, all_symbols
 
-    def _set_state_acceptance(self, curr_state: Hashable) -> None:
+    def _set_state_acceptance(self, curr_state: Node) -> None:
         """
         Sets the state acceptance property for the given state.
 
@@ -250,7 +242,7 @@ class FDFA(Automaton):
         """
         pass
 
-    def _compute_node_data_properties(self, curr_node: str) -> None:
+    def _compute_node_data_properties(self, curr_node: Node) -> None:
         """
         Sets all state frequencies for each node in an initialized FDFA
 
@@ -310,17 +302,16 @@ class FDFA(Automaton):
         self._set_node_data(curr_node,
                             'out_frequency', number_trans_out)
 
-    def _compute_node_flow(self, curr_node: str, flow_type: str) -> (int, int):
+    def _compute_node_flow(self, curr_node: Node,
+                           flow_type: str) -> (int, int):
         """
         Calculates frequency (in/out)flow at the current node
 
         :param      curr_node:   The node to compute the flow at
-        :type       curr_node:   str
         :param      flow_type:   The flow type {'in', 'out'}
-        :type       flow_type:   str
+
 
         :returns:   The node's (in/out)flow, the node's self-transition flow
-        :rtype:     tuple of ints
 
         :raises     ValueError:  checks if flow_type is an supported setting
         """
@@ -387,14 +378,11 @@ class FDFABuilder(Builder):
 
         :param      graph_data:         The string containing graph data. Could
                                         be a filename or just the raw data
-        :type       graph_data:         string
         :param      graph_data_format:  The graph data file format.
                                         (default 'dot_file')
                                         {'dot_file', 'dot_string'}
-        :type       graph_data_format:  string
 
         :returns:   instance of an initialized FDFA object
-        :rtype:     FDFA
 
         :raises     ValueError:         checks if graph_data and
                                         graph_data_format have a
