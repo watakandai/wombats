@@ -53,7 +53,7 @@ class TransitionSystem(Automaton):
                          can_have_accepting_nodes=False,
                          edge_weight_key=None)
 
-        self._num_obs = num_states
+        self._num_obs = num_obs
         """number of state observations in TS obs. space"""
 
     def transition(self, curr_state, input_symbol: str) -> TS_Trans_Data:
