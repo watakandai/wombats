@@ -1,0 +1,93 @@
+# defines the final state probability needed for a state to be accepting
+beta: 0.90
+
+# number of symbols in pdfa alphabet
+alphabet_size: 2
+
+# number of states in pdfa state space
+num_states: 4
+
+# symbol to use as the transition to a final state
+final_transition_sym: -1
+
+# unique start state string label of pdfa
+start_state: 'q1'
+
+# define a list of node labels, where each label is a string identifier label
+# for a unique node, and the metadata properties for each node
+nodes:
+
+  'q1':
+    final_probability: 0.00
+    trans_distribution: null
+    is_accepting: null
+
+  'q2':
+    final_probability: 0.00
+    trans_distribution: null
+    is_accepting: null
+
+  'q3':
+    final_probability: 0.00
+    trans_distribution: null
+    is_accepting: null
+
+  'q4':
+    final_probability: 0.20
+    trans_distribution: null
+    is_accepting: null
+
+# define the edges of the graph
+edges:
+
+  'q1':
+
+    'q2':
+      symbols:
+        - 'a'
+      probabilities:
+        - 0.7
+
+    'q3':
+      symbols:
+        - 'b'
+      probabilities:
+        - 0.3
+
+  'q2':
+
+    'q2':
+      symbols:
+        - 'a'
+      probabilities:
+        - 0.1
+
+    'q4':
+      symbols:
+       - 'b'
+      probabilities:
+        - 0.9
+
+  'q3':
+
+    'q3':
+      symbols:
+        - 'b'
+      probabilities:
+        - 0.2
+
+    'q4':
+      symbols:
+        - 'a'
+      probabilities:
+        - 0.8
+
+  'q4':
+
+    'q3':
+      symbols:
+        - 'a'
+        - 'b'
+      probabilities:
+        - 0.4
+        - 0.4
