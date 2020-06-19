@@ -1,6 +1,6 @@
 import os
 import collections
-from typing import Hashable, List, Tuple
+from typing import Tuple
 from bidict import bidict
 
 # local packages
