@@ -65,18 +65,9 @@ class TransitionSystem(Automaton):
         :param      input_symbol:  The input TS symbol
 
         :returns:   the next TS state, and the obs
-
-        :raises     ValueError:  Catches and re-raises exceptions from
-                                 invalid symbol use
         """
 
-        try:
-            next_state = self._transition_map[(curr_state, input_symbol)]
-        except KeyError as e:
-            msg = f'input_symbol ({input_symbol}) is not a valid input ' + \
-                  f'symbol at the curr_state ({curr_state}).'
-            raise ValueError(msg) from e
-
+        next_state, _ = self._get_next_state(curr_state, input_symbol)
         observation = self._get_node_data(next_state, 'observation')
 
         return next_state, observation

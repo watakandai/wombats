@@ -1,25 +1,14 @@
 # 3rd-party packages
-import multiprocessing
 import numpy as np
 import os
-import matplotlib.pyplot as plt
-from numpy.random import RandomState
-from joblib import Parallel, delayed
-from collections.abc import Iterable
 from typing import List, Hashable, Tuple, Callable
 from bidict import bidict
 
 # local packages
 from wombats.factory.builder import Builder
 from .base import (Automaton, NXNodeList, NXEdgeList, Node, Symbol, Symbols,
-                   Probability, Probabilities)
+                   Probabilities)
 from .fdfa import FDFA
-
-# needed for pred_method type hint annotations
-PDFA_Trans_Data = (str, int, float)
-
-# needed for multi-threaded sampling routine
-NUM_CORES = multiprocessing.cpu_count()
 
 
 def check_predict_method(prediction_function: Callable):
@@ -141,37 +130,6 @@ class PDFA(Automaton):
                          can_have_accepting_nodes=True,
                          edge_weight_key='probability')
 
-    def generate_traces(self, num_samples: int, N: int) -> (List[List[int]],
-                                                            List[int],
-                                                            List[float]):
-        """
-        generates num_samples random traces from the pdfa
-
-        :param      num_samples:  The number of trace samples to generate
-        :type       num_samples:  scalar int
-        :param      N:            maximum length of trace
-        :type       N:            scalar integer
-
-        :returns:   list of sampled traces,
-                    list of the associated trace lengths,
-                    list of the associated trace probabilities
-        :rtype:     tuple(list(list(int)), list(int), list(float))
-        """
-
-        start_state = self.start_state
-
-        # make sure the num_samples is an int, so you don't have to wrap shit
-        # in an 'int()' every time...
-        num_samples = int(num_samples)
-
-        iters = range(0, num_samples)
-        results = Parallel(n_jobs=NUM_CORES, verbose=1)(
-            delayed(self.generate_trace)(start_state, N) for i in iters)
-
-        samples, trace_lengths, trace_probs = zip(*results)
-
-        return samples, trace_lengths, trace_probs
-
     def write_traces_to_file(self, traces: List[Symbols], num_samples: int,
                              trace_lengths: List[int], f_name: str) -> None:
         """
@@ -224,73 +182,6 @@ class PDFA(Automaton):
         _, next_symbol, _ = self._choose_next_state(state)
 
         return next_symbol
-
-    def generate_trace(self, start_state: Node, N: int,
-                       random_state: {None, int, Iterable}=None) -> (Symbols,
-                                                                     int,
-                                                                     Probability):
-        """
-        Generates a trace from the pdfa starting from start_state
-
-        :param      start_state:   the state label to start sampling traces
-                                   from
-        :param      N:             maximum length of trace
-        :param      random_state:  The np.random.RandomState() seed parameter
-                                   for sampling from the state transition
-                                   distribution. Defaulting to None causes the
-                                   seed to reset. (default None)
-
-        :returns:   the sequence of symbols emitted, the length of the trace,
-                    the probability of the trace in the language of the pdfa
-        """
-
-        curr_state = start_state
-        length_of_trace = 1
-        trace_prob = 1.0
-
-        (next_state,
-         next_symbol,
-         trans_probability) = self._choose_next_state(curr_state, random_state)
-
-        sampled_trace = [next_symbol]
-        curr_state = next_state
-        at_terminal_state = next_symbol == self._final_transition_sym
-        trace_prob *= trans_probability
-
-        while (not at_terminal_state and length_of_trace <= N):
-            (next_state,
-             next_symbol,
-             trans_probability) = self._choose_next_state(curr_state,
-                                                          random_state)
-
-            curr_state = next_state
-            trace_prob *= trans_probability
-
-            if next_symbol == self._final_transition_sym:
-                break
-
-            sampled_trace.append(next_symbol)
-            length_of_trace += 1
-
-        return sampled_trace, length_of_trace, trace_prob
-
-    def plot_node_trans_dist(self, curr_state: Node) -> None:
-        """
-        Plots the transition pmf at the given curr_state / node.
-
-        :param      curr_state:  state to display its transition distribution
-        :type       curr_state:  Hashable
-        """
-
-        trans_dist = self._get_node_data(curr_state, 'trans_distribution')
-        symbols = self._convert_symbol_idxs(trans_dist.xk)
-
-        fig, ax = plt.subplots(1, 1)
-        ax.plot(symbols, trans_dist.pmf(trans_dist.xk), 'ro',
-                ms=12, mec='r')
-        ax.vlines(symbols, 0, trans_dist.pmf(trans_dist.xk),
-                  colors='r', lw=4)
-        plt.show()
 
     def score(self, trace: Symbols) -> float:
         """
@@ -552,55 +443,6 @@ class PDFA(Automaton):
 
         return pdfa_nodes, pdfa_edges
 
-    def _get_next_state(self, curr_state: Node,
-                        symbol: Symbol) -> Tuple[Node, Probability]:
-        """
-        Gets the next state given the current state and the "input" symbol.
-
-        :param      curr_state:  The curr state
-        :param      symbol:      The input symbol
-
-        :returns:   (The next state label, the transition probability)
-
-        :raises     ValueError:  symbol not in curr_state's transition function
-        :raises     ValueError:  duplicate symbol in curr_state's transition
-                                 function
-        :raises     ValueError:  symbol has 0 prob. in curr_state's transition
-                                 function
-        """
-
-        trans_distribution = self._get_node_data(curr_state,
-                                                 'trans_distribution')
-        possible_symbols = self._convert_symbol_idxs(trans_distribution.xk)
-        probabilities = trans_distribution.pk
-
-        if symbol not in possible_symbols:
-            msg = ('given symbol ({}) is not found in the '
-                   'curr_state\'s ({}) '
-                   'transition distribution').format(symbol, curr_state)
-            raise ValueError(msg)
-
-        symbol_idx = [i for i, val in enumerate(possible_symbols)
-                      if val == symbol]
-        num_matched_symbols = len(symbol_idx)
-        if num_matched_symbols != 1:
-            msg = ('given symbol ({}) is found multiple times in '
-                   'curr_state\'s ({}) '
-                   'transition distribution').format(symbol, curr_state)
-            raise ValueError(msg)
-
-        # stored in numpy array, so we just want the float probability value
-        symbol_probability = np.asscalar(probabilities[symbol_idx])
-
-        if symbol_probability == 0.0:
-            msg = ('symbol ({}) has zero probability of transition in the '
-                   'pdfa from curr_state: {}').format(symbol, curr_state)
-            raise ValueError(msg)
-
-        next_state = self._transition_map[(curr_state, symbol)]
-
-        return next_state, symbol_probability
-
     def _set_state_acceptance(self, curr_state: Node) -> None:
         """
         Sets the state acceptance property for the given state.
@@ -618,55 +460,6 @@ class PDFA(Automaton):
             state_accepts = False
 
         self._set_node_data(curr_state, 'is_accepting', state_accepts)
-
-    def _choose_next_state(self, curr_state: Node,
-                           random_state: {None, int, Iterable}=None,
-                           pred_method: str = 'sample') -> PDFA_Trans_Data:
-        """
-        Chooses the next state based on curr_state's transition distribution
-
-        :param      curr_state:    The current state label
-        :type       curr_state:    Hashable
-        :param      random_state:  The np.random.RandomState() seed parameter
-                                   for sampling from the state transition
-                                   distribution. Defaulting to None causes the
-                                   seed to reset. (default None)
-        :param      pred_method:   The method used to choose the next state:
-                                   'sample':
-                                   sample from the transition
-                                   distribution of the casual state of the PDFA
-                                   (the state the machine is left in after the
-                                   sequence of observations). makes
-                                   non-deterministic predictions.
-                                   'max_prob':
-                                   like many language models, the selection of
-                                   the next state s_{t+1}, and thus the next
-                                   emitted symbol, conditioned on the set of
-                                   observation symbols O_t = {o_1, ..., o_t}
-                                   is:
-                                   s_{t+1} = argmax_{s'}P(s' | s_t, O_t)
-                                   makes deterministic predictions.
-                                   {'sample', 'max_prob'} (default 'max_prob')
-
-        :returns:   The next state's label, the symbol emitted by changing
-                    states, the probability of this transition occurring
-        """
-
-        trans_dist = self.nodes[curr_state]['trans_distribution']
-
-        # critical step for use with parallelized libraries. This must be reset
-        # before sampling, as otherwise each of the threads is using the same
-        # seed, and we get lots of duplicated strings
-        trans_dist.random_state = RandomState(random_state)
-
-        # sampling an action (symbol) from the state-action distribution at
-        # curr_state
-        next_symbol_idx = trans_dist.rvs(size=1)[0]
-        next_symbol = self._convert_symbol_idxs(next_symbol_idx)
-
-        next_state, trans_probability = self._get_next_state(curr_state,
-                                                             next_symbol)
-        return next_state, next_symbol, trans_probability
 
     def _get_abbadingo_string(self, trace: Symbols, trace_length: int,
                               is_pos_example: bool) -> str:
