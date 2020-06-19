@@ -366,7 +366,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         self._transition_map = {**self._transition_map,
                                 **new_trans_map_entries}
 
-    def _convert_symbol_idxs(self, integer_symbols: {Symbols, int}) -> List:
+    def _convert_symbol_idxs(self, integer_symbols: {List[int], int}) -> List:
         """
         Convert an iterable container of integer representations of automaton
         symbols to their readable, user-meaningful form.

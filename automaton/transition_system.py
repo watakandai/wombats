@@ -1,11 +1,12 @@
 import os
+import collections
 from typing import Hashable, List, Tuple
 from bidict import bidict
 
 # local packages
 from wombats.factory.builder import Builder
-from .base import (Automaton, NXNodeList, NXEdgeList, Node, Observation,
-                   Symbols)
+from .base import (Automaton, NXNodeList, NXEdgeList, Node, Nodes,
+                   Observation, Symbol, Symbols)
 
 # define these type defs for method annotation type hints
 TS_Trans_Data = Tuple[Node, Observation]
@@ -56,14 +57,65 @@ class TransitionSystem(Automaton):
         """number of state observations in TS obs. space"""
 
     def transition(self, curr_state, input_symbol: str) -> TS_Trans_Data:
+        """
+        transitions the TS given the current TS state and an input symbol, then
+        outputs the state observation
 
-        next_state = self._transition_map[(curr_state, input_symbol)]
-        observation = self._get_node_data(curr_state, 'observation')
+        :param      curr_state:    The current TS state
+        :param      input_symbol:  The input TS symbol
+
+        :returns:   the next TS state, and the obs
+
+        :raises     ValueError:  Catches and re-raises execeptions from
+                                 invalid symbol use
+        """
+
+        try:
+            next_state = self._transition_map[(curr_state, input_symbol)]
+        except KeyError as e:
+            msg = f'input_symbol ({input_symbol}) is not a valid input ' + \
+                  f'symbol at the curr_state ({curr_state}).'
+            raise ValueError(msg) from e
+
+        observation = self._get_node_data(next_state, 'observation')
 
         return next_state, observation
 
-    def run(self, word: Symbols):
-        pass
+    def run(self, word: {Symbol, Symbols}) -> Tuple[Symbols, Nodes]:
+        """
+        processes a input word and produces a output word & state sequence
+
+        :param      word:        The word to process
+
+        :returns:   output word (list of symbols), list of states visited
+
+        :raises     ValueError:  Catches and re-raises execeptions from
+                                 invalid symbol use
+        """
+
+        # need to do type-checking / polymorphism handling here
+        if isinstance(word, str) or not isinstance(word, collections.Iterable):
+            word = [word]
+
+        curr_state = self.start_state
+        output_word = [self._get_node_data(curr_state, 'observation')]
+        state_sequence = [curr_state]
+
+        for symbol in word:
+            try:
+                next_state, observation = self.transition(curr_state, symbol)
+            except ValueError as e:
+                msg = f'Invalid symbol encountered processesing ' + \
+                      f'word: {word}.\ncurrent output word: {output_word}' + \
+                      f' \ncurrent state sequence: {state_sequence}'
+                raise ValueError(msg) from e
+
+            output_word.append(observation)
+            state_sequence.append(next_state)
+
+            curr_state = next_state
+
+        return output_word, state_sequence
 
     def _set_state_acceptance(self, curr_state: Node) -> None:
         """
