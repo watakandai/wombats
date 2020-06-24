@@ -640,6 +640,54 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return next_symbol_dist, transition_map
 
+    def _complete_transition(self, curr_state: Node,
+                             edge_probs: Probabilities,
+                             edge_symbols: Symbols,
+                             prob_to_add: Probability = None,
+                             dest_state: Node = None) -> Categorical_data:
+        """
+        computes missing transitions from the current state
+
+        :param      curr_state:    The current state label for which to smooth
+                                   the distribution
+        :param      edge_probs:    The transition probability values for each
+                                   edge
+        :param      edge_symbols:  The emitted symbols for each edge
+        :param      prob_to_add:   The probability mass to add to each missing
+                                   symbol
+                                   (default self._smoothing_amount)
+        :param      dest_state:    The destination state label for the missing
+                                   transitions.
+                                   (default curr_state)
+
+        :returns:   Missing transitions added edge_probs, edge_dests, and
+                    edge_symbols
+        """
+
+        if prob_to_add is None:
+            prob_to_add = self._smoothing_amount
+
+        # here we add in the missing transition probabilities as just very
+        # unlikely self-loops
+        num_of_missing_transitions = 0
+        new_edge_probs, new_edge_dests, new_edge_symbols = [], [], []
+        all_symbols_idxs = list(self._symbol_display_map.inv.keys())
+
+        for symbol in all_symbols_idxs:
+            if symbol not in edge_symbols:
+
+                num_of_missing_transitions += 1
+                new_edge_probs.append(prob_to_add)
+
+                if dest_state is None:
+                    new_edge_dests.append(curr_state)
+                else:
+                    new_edge_dests.append(dest_state)
+
+                new_edge_symbols.append(symbol)
+
+        return new_edge_probs, new_edge_dests, new_edge_symbols
+
     def _smooth_categorical(self, curr_state: Node,
                             edge_probs: Probabilities,
                             edge_symbols: Symbols,
@@ -661,22 +709,15 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         """
 
+        (new_edge_probs,
+         new_edge_dests,
+         new_edge_symbols) = self._complete_transition(curr_state,
+                                                       edge_probs,
+                                                       edge_symbols)
+
         all_possible_trans = [idx for idx, prob in enumerate(edge_probs) if
                               prob > 0.0]
         num_orig_samples = len(all_possible_trans)
-
-        # here we add in the missing transition probabilities as just very
-        # unlikely self-loops
-        num_of_missing_transitions = 0
-        new_edge_probs, new_edge_dests, new_edge_symbols = [], [], []
-        all_symbols_idxs = list(self._symbol_display_map.inv.keys())
-
-        for symbol in all_symbols_idxs:
-            if symbol not in edge_symbols:
-                num_of_missing_transitions += 1
-                new_edge_probs.append(self._smoothing_amount)
-                new_edge_dests.append(curr_state)
-                new_edge_symbols.append(symbol)
 
         # now, we need to remove the smoothed probability mass from the
         # original transition distribution
@@ -788,7 +829,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                    'style': 'filled'}
 
             if state_observation_key is not None:
-                obs_label = node_data[state_observation_key]
+                obs_label = node_obs_to_str(node_data[state_observation_key])
                 external_label = '{' + obs_label + '}'
                 graphviz_node_label['xlabel'] = external_label
 
@@ -877,6 +918,22 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         node_data = graph.nodes.data()
         node_data[node_label][data_key] = data
+
+
+def node_obs_to_str(obs: Observation) -> str:
+    """
+    returns a node observation label as an appropriately formatted string
+
+    :param      obs:  The node observation label
+
+    :returns:   properly formatted observation label string
+    """
+    if isinstance(obs, int):
+        obs_str = '{obs:d}'.format(obs=obs)
+    elif isinstance(obs, str):
+        obs_str = obs
+
+    return obs_str
 
 
 def edge_weight_to_string(weight: {int, float}) -> str:
