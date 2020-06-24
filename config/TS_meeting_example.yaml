@@ -5,7 +5,7 @@ alphabet_size: 2
 num_states: 4
 
 # number of discrete state observations in TS obs. space
-num_obs: 2
+num_obs: 3
 
 # unique start state string label of TS
 start_state: 'x1'
@@ -18,16 +18,16 @@ final_transition_sym: -1
 nodes:
 
   'x1':
-    observation: 'a'
+    observation: 1
   
   'x2':
-    observation: 'a'
+    observation: 1
 
   'x3':
-    observation: 'b'
+    observation: 4
 
   'x4':
-    observation: 'a'
+    observation: 2
 
 
 # define the edges of the graph
@@ -35,11 +35,11 @@ edges:
 
   'x1':
 
-    'x2':
+    'x1':
       symbols:
         - 's1'
 
-    'x4':
+    'x2':
       symbols:
         - 's2'
 
@@ -47,4 +47,28 @@ edges:
 
     'x3':
       symbols:
+        - 's2'
+
+    'x4':
+      symbols:
         - 's1'
+
+  'x4':
+
+    'x4':
+      symbols:
+        - 's1'
+
+    'x3':
+      symbols:
+        - 's2'
+
+  'x3':
+
+    'x1':
+      symbols:
+        - 's1'
+
+    'x3':
+      symbols:
+        - 's2'
