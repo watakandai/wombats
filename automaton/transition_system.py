@@ -21,8 +21,9 @@ class TransitionSystem(Automaton):
                  alphabet_size: int,
                  num_states: int,
                  num_obs: int,
-                 start_state,
-                 final_transition_sym=-1) -> 'TransitionSystem':
+                 start_state: Node,
+                 final_transition_sym: {Symbol, None}=None,
+                 empty_transition_sym: {Symbol, None}=None) -> 'TransitionSystem':
         """
         Constructs a new instance of an Automaton object.
 
@@ -33,20 +34,26 @@ class TransitionSystem(Automaton):
                                            networkx.add_edges_from() (src node
                                            label, dest node label, edge
                                            attribute dict)
+        :param      symbol_display_map:    The symbol display map
         :param      alphabet_size:         number of symbols in system alphabet
         :param      num_states:            number of states in automaton state
                                            space
         :param      num_obs:               number of observation symbols
         :param      start_state:           unique start state string label of
                                            system
-        :param      final_transition_sym:  representation of the empty string /
-                                           symbol (a.k.a. lambda) (default -1)
+        :param      final_transition_sym:  representation of the termination
+                                           symbol. If not given, will default
+                                           to base class default.
+        :param      empty_transition_sym:  representation of the empty symbol
+                                           (a.k.a. lambda). If not given, will
+                                           default to base class default.
         """
 
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, symbol_display_map,
                          alphabet_size, num_states, start_state,
                          final_transition_sym=final_transition_sym,
+                         empty_transition_sym=empty_transition_sym,
                          smooth_transitions=False,
                          is_stochastic=False,
                          state_observation_key='observation',
@@ -172,11 +179,13 @@ class TSBuilder(Builder):
             #   - networkx.add_nodes_from()
             #   - networkx.add_edges_from()
             final_transition_sym = config_data['final_transition_sym']
+            empty_transition_sym = config_data['empty_transition_sym']
             (symbol_display_map,
              states,
              edges) = Automaton._convert_states_edges(config_data['nodes'],
                                                       config_data['edges'],
                                                       final_transition_sym,
+                                                      empty_transition_sym,
                                                       is_stochastic=False)
 
             # saving these so we can just return initialized instances if the

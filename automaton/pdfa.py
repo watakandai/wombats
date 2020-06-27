@@ -1,7 +1,7 @@
 # 3rd-party packages
 import numpy as np
 import os
-from typing import List, Hashable, Tuple, Callable
+from typing import List, Tuple, Callable
 from bidict import bidict
 
 # local packages
@@ -78,10 +78,11 @@ class PDFA(Automaton):
                  symbol_display_map: bidict,
                  alphabet_size: int,
                  num_states: int,
-                 start_state,
+                 start_state: Node,
+                 final_transition_sym: {Symbol, None}=None,
+                 empty_transition_sym: {Symbol, None}=None,
                  beta: float = 0.95,
-                 smooth_transitions: bool = True,
-                 final_transition_sym: Hashable = -1) -> 'PDFA':
+                 smooth_transitions: bool = True) -> 'PDFA':
         """
         Constructs a new instance of a PDFA object.
 
@@ -100,30 +101,32 @@ class PDFA(Automaton):
                                            transition distribution and the
                                            hashable representation which is
                                            meaningful to the user
-        :param      alphabet_size:         number of symbols in fdfa alphabet
+        :param      alphabet_size:         number of symbols in pdfa alphabet
         :param      num_states:            number of states in automaton state
                                            space
         :param      start_state:           unique start state string label of
-                                           fdfa
+                                           pdfa
+        :param      final_transition_sym:  representation of the termination
+                                           symbol. If not given, will default
+                                           to base class default.
+        :param      empty_transition_sym:  representation of the empty symbol
+                                           (a.k.a. lambda). If not given, will
+                                           default to base class default.
         :param      beta:                  the final state probability needed
                                            for a state to accept. Not used for
                                            PDFA (default None)
         :param      smooth_transitions:    whether to smooth the symbol
                                            transitions distributions
-        :param      final_transition_sym:  representation of the empty string /
-                                           symbol (a.k.a. lambda) (default -1)
         """
 
         self._beta = beta
         """the final state probability needed for a state to accept"""
 
-        self._smoothing_amount = 0.00001
-        """probability mass to re-assign to unseen symbols at each node"""
-
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, symbol_display_map,
                          alphabet_size, num_states, start_state,
                          final_transition_sym=final_transition_sym,
+                         empty_transition_sym=empty_transition_sym,
                          smooth_transitions=True,
                          is_stochastic=True,
                          final_weight_key='final_probability',
@@ -560,11 +563,13 @@ class PDFABuilder(Builder):
             #   - networkx.add_nodes_from()
             #   - networkx.add_edges_from()
             final_transition_sym = config_data['final_transition_sym']
+            empty_transition_sym = config_data['empty_transition_sym']
             (symbol_display_map,
              states,
              edges) = Automaton._convert_states_edges(config_data['nodes'],
                                                       config_data['edges'],
                                                       final_transition_sym,
+                                                      empty_transition_sym,
                                                       is_stochastic=True)
 
             # saving these so we can just return initialized instances if the
@@ -610,6 +615,7 @@ class PDFABuilder(Builder):
             alphabet_size=fdfa._alphabet_size,
             num_states=fdfa._num_states,
             final_transition_sym=fdfa._final_transition_sym,
+            empty_transition_sym=fdfa._empty_transition_sym,
             start_state=fdfa.start_state)
 
         return self._instance

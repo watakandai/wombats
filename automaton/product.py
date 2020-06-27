@@ -122,14 +122,19 @@ class ProductBuilder(Builder):
         :returns:   instance of an initialized Product automaton object
         """
 
-        
+        complete_specification = complete_specification(specification)
+        augmented_dyn_sys = augment_initial_state(dynamical_system)
+        initial_state = calculate_initial_state(augmented_dyn_sys,
+                                                complete_specification)
+        config_data = compute_product(initial_state, augmented_dyn_sys,
+                                      complete_specification)
 
         # saving these so we can just return initialized instances if the
         # underlying data has not changed
         self.nodes = nodes
         self.edges = edges
 
-        self._instance = PDFA(
+        self._instance = Product(
             nodes=nodes,
             edges=edges,
             symbol_display_map=fdfa._symbol_display_map,

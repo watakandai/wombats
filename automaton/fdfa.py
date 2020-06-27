@@ -43,8 +43,9 @@ class FDFA(Automaton):
                  symbol_display_map: bidict,
                  alphabet_size: int,
                  num_states: int,
-                 start_state: Hashable,
-                 final_transition_sym=-1) -> 'FDFA':
+                 start_state: Node,
+                 final_transition_sym: {Symbol, None}=None,
+                 empty_transition_sym: {Symbol, None}=None) -> 'FDFA':
         """
         Constructs a new instance of a FDFA object.
 
@@ -68,8 +69,12 @@ class FDFA(Automaton):
                                            space
         :param      start_state:           unique start state string label of
                                            fdfa
-        :param      final_transition_sym:  representation of the empty string /
-                                           symbol (a.k.a. lambda) (default -1)
+        :param      final_transition_sym:  representation of the termination
+                                           symbol. If not given, will default
+                                           to base class default.
+        :param      empty_transition_sym:  representation of the empty symbol
+                                           (a.k.a. lambda). If not given, will
+                                           default to base class default.
         """
 
         # need to start with a fully initialized automaton
@@ -84,7 +89,8 @@ class FDFA(Automaton):
 
     @classmethod
     def load_flexfringe_data(cls: 'FDFA', graph: nx.MultiDiGraph,
-                             final_transition_sym: Symbol) -> dict:
+                             final_transition_sym: Symbol,
+                             empty_transition_sym: Symbol) -> dict:
         """
         reads in graph configuration data from a flexfringe dot file
 
@@ -106,6 +112,7 @@ class FDFA(Automaton):
         (symbol_display_map,
          edges, symbols) = cls.convert_flexfringe_edges(ff_edges,
                                                         final_transition_sym,
+                                                        empty_transition_sym,
                                                         node_ID_to_node_label)
         root_node_label = '0'
         config_data = {
@@ -166,6 +173,7 @@ class FDFA(Automaton):
     @staticmethod
     def convert_flexfringe_edges(flexfringeEdges: NXEdgeList,
                                  final_transition_sym: Symbol,
+                                 empty_transition_sym: Symbol,
                                  node_ID_to_node_label: dict) -> (bidict,
                                                                   NXEdgeList,
                                                                   dict):
@@ -175,8 +183,10 @@ class FDFA(Automaton):
 
         :param      flexfringeEdges:        The flexfringe edge list mapping
                                             edges labels to edge attributes
-        :param      final_transition_sym:   representation of the empty string
-                                            / symbol (a.k.a. lambda)
+        :param      final_transition_sym:   representation of the termination
+                                            symbol
+        :param      empty_transition_sym:   representation of the empty symbol
+                                            (a.k.a. lambda).
         :param      node_ID_to_node_label:  mapping from FF node ID to FF node
                                             label
 
@@ -230,7 +240,11 @@ class FDFA(Automaton):
 
         # we need to add the empty / final symbol to the display map
         # for completeness
-        symbol_display_map[final_transition_sym] = final_transition_sym
+        symbol_count += 1
+        symbol_display_map[final_transition_sym] = symbol_count
+        if empty_transition_sym not in symbol_display_map.keys():
+            symbol_count += 1
+            symbol_display_map[empty_transition_sym] = symbol_count
 
         return symbol_display_map, edges, all_symbols
 
@@ -400,8 +414,10 @@ class FDFABuilder(Builder):
 
         # these are not things that are a part of flexfringe's automaton
         # data model, so give them default values
-        final_transition_sym = -1
-        config_data = FDFA.load_flexfringe_data(graph, final_transition_sym)
+        final_transition_sym = -1000
+        empty_transition_sym = -1
+        config_data = FDFA.load_flexfringe_data(graph, final_transition_sym,
+                                                empty_transition_sym)
 
         nodes_have_changed = (self.nodes != config_data['nodes'])
         edges_have_changed = (self.edges != config_data['edges'])
@@ -416,6 +432,7 @@ class FDFABuilder(Builder):
                 alphabet_size=config_data['alphabet_size'],
                 num_states=config_data['num_states'],
                 final_transition_sym=final_transition_sym,
+                empty_transition_sym=empty_transition_sym,
                 start_state=config_data['start_state'])
 
         return self._instance

@@ -12,7 +12,7 @@ from scipy.stats import rv_discrete
 from networkx.drawing.nx_pydot import to_pydot
 from IPython.display import display
 from pydot import Dot
-from typing import Hashable, List, Tuple, Iterable
+from typing import Hashable, List, Tuple, Iterable, Dict
 from bidict import bidict
 
 # needed for multi-threaded sampling routine
@@ -34,7 +34,7 @@ Symbols = Iterable[Symbol]
 Weights = Iterable[Weight]
 Probabilities = Iterable[Probability]
 
-Categorical_data = (Weights, Nodes, Symbols)
+Trans_data = (Weights, Nodes, Symbols)
 Sampled_Trans_Data = (Node, Symbol, Probability)
 
 
@@ -67,7 +67,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                  start_state: Hashable,
                  smooth_transitions: bool,
                  is_stochastic: bool,
-                 final_transition_sym: Hashable = -1,
+                 final_transition_sym: Hashable = -1000,
+                 empty_transition_sym: Hashable = -1,
                  final_weight_key: str = None,
                  state_observation_key: str = None,
                  can_have_accepting_nodes: bool = True,
@@ -99,35 +100,42 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                                going to assign a uniform
                                                distribution over all symbols
                                                for the purpose of generation
-        :param      final_transition_sym:      representation of the empty
-                                               string / symbol (a.k.a. lambda)
-                                               (default -1)
+        :param      final_transition_sym:      representation of the
+                                               termination symbol (default
+                                               -1000)
+        :param      empty_transition_sym:      representation of the empty
+                                               symbol (a.k.a. lambda) (default
+                                               -1)
         :param      final_weight_key:          key in the automaton's node data
                                                corresponding to the weight /
                                                probability of ending in that
-                                               node.
-                                               If None, don't include this info
-                                               in the display of the automaton.
-                                               (default None)
-        :param      state_observation_key:     The key in each node's data
-                                               dict for state observations.
-                                               If None, don't include this info
-                                               in the display of the automaton
+                                               node. If None, don't include
+                                               this info in the display of the
+                                               automaton. (default None)
+        :param      state_observation_key:     The key in each node's data dict
+                                               for state observations. If None,
+                                               don't include this info in the
+                                               display of the automaton
                                                (default None)
         :param      can_have_accepting_nodes:  Indicates if the automata can
-                                               have accepting nodes
-                                               (default True)
-        :param      edge_weight_key:           The key in each edge's data
-                                               dict for edge weight / prob.
-                                               If None, don't include this info
-                                               in the display of the automaton
+                                               have accepting nodes (default
+                                               True)
+        :param      edge_weight_key:           The key in each edge's data dict
+                                               for edge weight / prob. If None,
+                                               don't include this info in the
+                                               display of the automaton
                                                (default None)
         """
 
         self._transition_map = {}
         """keep a map of start state label and symbol to destination state"""
 
+        self._edge_key_map = dict()
+        """bidirectional mapping between all outgoing transitions and the
+        networkx adjacency dictionary keys."""
+
         self._symbol_display_map = symbol_display_map
+        """mapping from symbol labels to an int index in transition dists."""
 
         self._alphabet_size = alphabet_size
         """number of symbols in automaton alphabet"""
@@ -136,7 +144,10 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """number of states in automaton state space"""
 
         self._final_transition_sym = final_transition_sym
-        """representation of the empty string / symbol (a.k.a. lambda)"""
+        """representation of the termination symbol"""
+
+        self._empty_transition_sym = empty_transition_sym
+        """symbol to use as the empty (a.k.a. lambda) symbol"""
 
         self.start_state = start_state
         """unique start state string label of pdfa"""
@@ -146,6 +157,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         self._use_smoothing = smooth_transitions
         """whether or not to smooth the input transition distributions"""
+
+        self._smoothing_amount = 0.001
+        """probability mass to re-assign to unseen symbols at each node"""
 
         # need to start with a fully initialized networkx digraph
         super().__init__()
@@ -398,6 +412,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
     @staticmethod
     def _convert_states_edges(nodes: dict, edges: dict,
                               final_transition_sym,
+                              empty_transition_sym,
                               is_stochastic: bool) -> (bidict,
                                                        NXNodeList, NXEdgeList):
         """
@@ -408,8 +423,10 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         :param      nodes:                 dict of node objects to be converted
         :param      edges:                 dictionary adj. list to be converted
-        :param      final_transition_sym:  representation of the empty string /
-                                           symbol (a.k.a. lambda)
+        :param      final_transition_sym:  representation of the termination /
+                                           symbol
+        :param      empty_transition_sym:  representation of the empty
+                                           symbol (a.k.a. lambda) (default -1)
         :param      is_stochastic:         the transitions are
                                            non-probabilistic, so we are going
                                            to assign a uniform distribution
@@ -468,7 +485,11 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         # we need to add the empty / final symbol to the display map
         # for completeness
-        symbol_display_map[final_transition_sym] = final_transition_sym
+        symbol_count += 1
+        symbol_display_map[final_transition_sym] = symbol_count
+        if empty_transition_sym not in symbol_display_map.keys():
+            symbol_count += 1
+            symbol_display_map[empty_transition_sym] = symbol_count
 
         return symbol_display_map, converted_nodes, edge_list
 
@@ -538,12 +559,18 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         # acceptance property shouldn't change after load in
         self._set_state_acceptance(node)
 
+        # this edge key map is used to update all of the edges after
+        # distribution setting
+        self._edge_key_map.update(self._build_edge_key_map(node))
+
         # if we compute this once, we can sample from each distribution
+        use_smooth = self._use_smoothing
         (self.nodes[node]['trans_distribution'],
          new_trans_map_entries) = \
             self._set_state_transition_dist(node, self.edges,
+                                            edge_key_map=self._edge_key_map,
                                             stochastic=self._is_stochastic,
-                                            smooth=self._use_smoothing)
+                                            should_complete=use_smooth)
 
         # need to merge the newly computed transition map at node to the
         # existing map
@@ -564,35 +591,59 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
     def _set_state_transition_dist(self, curr_state: Node,
                                    edges: NXEdgeList,
+                                   edge_key_map: bidict,
                                    stochastic: bool,
-                                   smooth: bool) -> (rv_discrete, dict):
+                                   should_complete: bool,
+                                   violating_state_name: {str, None}=None,
+                                   complete: str = 'smooth') -> (rv_discrete,
+                                                                 dict):
         """
         Computes a static state transition distribution for given state
 
-        :param      curr_state:      The current state label
-        :param      edges:           The networkx edge list
-        :param      deterministic:   the transitions are non-probabilistic, so
-                                     we are going to assign a uniform
-                                     distribution over all symbols for the
-                                     purpose of generation
-        :param      smooth:          turn transition smoothing on / off
+        :param      curr_state:            The current state label
+        :param      edges:                 The networkx edge list
+        :param      edge_key_map:          mapping between all
+                                           outgoing transitions and the
+                                           networkx adjacency dictionary keys.
+        :param      stochastic:            the transitions are
+                                           non-probabilistic, so we are going
+                                           to assign a uniform distribution
+                                           over all symbols for the purpose of
+                                           generation
+        :param      should_complete:       Whether to try transition completion
+        :param      violating_state_name:  The violating state name
+        :param      complete:              Whether to ensure each transition is
+                                           alphabet-complete.
+                                           {'smooth', 'violate'}
+                                           (default 'smooth')
+                                           If 'smooth':
+                                           The completeness processing will
+                                           alter existing transition
+                                           probabilities
+                                           If 'violate':
+                                           All completed
+                                           states will be sent to the given
+                                           violating state and the existing
+                                           transition probability distributions
+                                           will NOT be altered.
 
         :returns:   (a function to sample the discrete state transition
-                    distribution, the mapping from (start state, symbol) ->
-                    edge_dests
+                    distribution,
+                    the mapping from (start state, symbol) -> edge_dests
         :rtype:     tuple(stats.rv_discrete object, dict)
         """
-
-        edge_data = edges([curr_state], data=True)
-
-        edge_dests = [edge[1] for edge in edge_data]
 
         # need to convert the hashable symbols to their integer indices for
         # creating the categorical distribution, which only works with
         # integers
+        edge_data = edges([curr_state], data=True)
+        edge_dests = [edge[1] for edge in edge_data]
+
         original_edge_symbols = [edge[2]['symbol'] for edge in edge_data]
         edge_symbols = [self._symbol_display_map[symbol] for symbol in
                         original_edge_symbols]
+        final_sym = self._final_transition_sym
+        final_trans_symbol_idx = self._symbol_display_map[final_sym]
 
         if stochastic:
             # need to add final state probability to discrete rv dist
@@ -605,17 +656,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             # distribution
             edge_probs.append(curr_final_state_prob)
             edge_dests.append(curr_state)
-            edge_symbols.append(self._final_transition_sym)
-
-            # need to smooth to better generalize and not have infinite
-            # perplexity on unknown symbols in the alphabet
-            if smooth:
-                (edge_probs,
-                 edge_dests,
-                 edge_symbols) = self._smooth_categorical(curr_state,
-                                                          edge_probs,
-                                                          edge_symbols,
-                                                          edge_dests)
+            edge_symbols.append(final_trans_symbol_idx)
         else:
             # using a uniform distribution to not bias the sampling of symbols
             # in a deterministic that does not actually have edge
@@ -625,9 +666,25 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             if is_final_state:
                 edge_probs = [1.0]
                 edge_dests.append(curr_state)
-                edge_symbols.append(self._final_transition_sym)
+                edge_symbols.append(final_trans_symbol_idx)
             else:
                 edge_probs = [1.0 / num_symbols for symbol in edge_symbols]
+
+        # need to smooth to better generalize and not have infinite
+        # perplexity on unknown symbols in the alphabet
+        if should_complete:
+            (edge_probs,
+             edge_dests,
+             edge_symbols) = self._complete_transitions(curr_state,
+                                                        edge_probs,
+                                                        edge_symbols,
+                                                        edge_dests,
+                                                        complete,
+                                                        violating_state_name)
+
+        new_disp_symbols = self._convert_symbol_idxs(edge_symbols)
+        self._update_edges_from_lists(curr_state, edge_probs, new_disp_symbols,
+                                      edge_dests, edge_key_map)
 
         next_symbol_dist = rv_discrete(name='transition',
                                        values=(edge_symbols, edge_probs))
@@ -640,61 +697,19 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return next_symbol_dist, transition_map
 
-    def _complete_transition(self, curr_state: Node,
-                             edge_probs: Probabilities,
-                             edge_symbols: Symbols,
-                             prob_to_add: Probability = None,
-                             dest_state: Node = None) -> Categorical_data:
+    def _complete_transitions(self, curr_state: Node,
+                              edge_probs: Probabilities,
+                              edge_symbols: Symbols,
+                              edge_dests: Nodes,
+                              complete: str = 'smooth',
+                              dest_state: {Node, None}=None) -> Trans_data:
         """
-        computes missing transitions from the current state
+        Computes missing transitions from the current state.
 
-        :param      curr_state:    The current state label for which to smooth
-                                   the distribution
-        :param      edge_probs:    The transition probability values for each
-                                   edge
-        :param      edge_symbols:  The emitted symbols for each edge
-        :param      prob_to_add:   The probability mass to add to each missing
-                                   symbol
-                                   (default self._smoothing_amount)
-        :param      dest_state:    The destination state label for the missing
-                                   transitions.
-                                   (default curr_state)
-
-        :returns:   Missing transitions added edge_probs, edge_dests, and
-                    edge_symbols
-        """
-
-        if prob_to_add is None:
-            prob_to_add = self._smoothing_amount
-
-        # here we add in the missing transition probabilities as just very
-        # unlikely self-loops
-        num_of_missing_transitions = 0
-        new_edge_probs, new_edge_dests, new_edge_symbols = [], [], []
-        all_symbols_idxs = list(self._symbol_display_map.inv.keys())
-
-        for symbol in all_symbols_idxs:
-            if symbol not in edge_symbols:
-
-                num_of_missing_transitions += 1
-                new_edge_probs.append(prob_to_add)
-
-                if dest_state is None:
-                    new_edge_dests.append(curr_state)
-                else:
-                    new_edge_dests.append(dest_state)
-
-                new_edge_symbols.append(symbol)
-
-        return new_edge_probs, new_edge_dests, new_edge_symbols
-
-    def _smooth_categorical(self, curr_state: Node,
-                            edge_probs: Probabilities,
-                            edge_symbols: Symbols,
-                            edge_dests: Nodes) -> Categorical_data:
-        """
-        Applies Laplace smoothing to the given categorical state-symbol
-        distribution
+        This function will either:
+        - apply Laplace smoothing to the given categorical state-symbol
+          distributions as unlikely self-loops
+        - add the missing transitions, but give the transitions no mass
 
         :param      curr_state:    The current state label for which to smooth
                                    the distribution
@@ -703,30 +718,92 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      edge_symbols:  The emitted symbols for each edge
         :param      edge_dests:    The labels of the destination states under
                                    each symbol at the curr_state
+        :param      complete:      Whether to ensure each transition is
+                                   alphabet-complete.
+                                   {'smooth', 'violate'}
+                                   (default 'smooth')
+                                   If 'smooth':
+                                   The completeness processing will alter
+                                   existing transition probabilities
+                                   If 'violate':
+                                   All completed states will be sent to the
+                                   given violating state and the existing
+                                   transition probability distributions will
+                                   NOT be altered.
+        :param      dest_state:    The destination state label for the missing
+                                   transitions. (default curr_state)
 
-        :returns:   The smoothed version of edge_probs, edge_dests,
+        :returns:   The smoothed / completed version of edge_probs, edge_dests,
                     and edge_symbols
 
+        :raises     ValueError:    Invalid setting of complete
+        :raises     ValueError:    using 'violate' completeness setting, but
+                                   no violating destination state name given
+        :raises     ValueError:    Too-large setting of self._smoothing_amount
+                                   results in laplace smoothing being
+                                   impossible
         """
 
-        (new_edge_probs,
-         new_edge_dests,
-         new_edge_symbols) = self._complete_transition(curr_state,
-                                                       edge_probs,
-                                                       edge_symbols)
+        # need to check and set completion algorithm
+        allowed_completion_algs = ['smooth', 'violate']
 
-        all_possible_trans = [idx for idx, prob in enumerate(edge_probs) if
-                              prob > 0.0]
-        num_orig_samples = len(all_possible_trans)
+        if complete not in allowed_completion_algs:
+            msg = f'given complete setting ({complete}) is not one: ' + \
+                  f'{allowed_completion_algs}'
+            raise ValueError(msg)
 
-        # now, we need to remove the smoothed probability mass from the
-        # original transition distribution
-        num_added_symbols = len(new_edge_symbols)
-        added_prob_mass = self._smoothing_amount * num_added_symbols
-        smoothing_per_orig_trans = added_prob_mass / num_orig_samples
+        if complete == 'violate' and not dest_state:
+            msg = f'if using the {complete} setting, you must provide ' + \
+                  f'a violating state label to send added transitions to.'
+            raise ValueError(msg)
+        elif complete == 'smooth' and not dest_state:
+            dest_state = curr_state
 
-        for trans_idx in all_possible_trans:
-            edge_probs[trans_idx] -= smoothing_per_orig_trans
+        # setting the amount of probability mass to add to completed
+        # transitions
+        if complete == 'smooth':
+            prob_to_add = self._smoothing_amount
+        elif complete == 'violate':
+            prob_to_add = 0.0
+
+        # here we add in the missing transition probabilities as just very
+        # unlikely self-loops ('smooth') or 0 probability transitions to the
+        # violating state ('violate')
+        num_of_missing_transitions = 0
+        new_edge_probs, new_edge_dests, new_edge_symbols = [], [], []
+        all_symbols_idxs = list(self._symbol_display_map.inv.keys())
+
+        # actually creating the completed transitions
+        for symbol in all_symbols_idxs:
+            if symbol not in edge_symbols:
+                num_of_missing_transitions += 1
+                new_edge_probs.append(prob_to_add)
+                new_edge_dests.append(dest_state)
+                new_edge_symbols.append(symbol)
+
+        # re-arranging probability mass in the case of needing smoothing
+        if complete == 'smooth':
+            all_possible_trans = [idx for idx, prob in enumerate(edge_probs) if
+                                  prob > 0.0]
+            num_orig_samples = len(all_possible_trans)
+
+            # now, we need to remove the smoothed probability mass from the
+            # original transition distribution
+            num_added_symbols = len(new_edge_symbols)
+            added_prob_mass = self._smoothing_amount * num_added_symbols
+            smoothing_per_orig_trans = added_prob_mass / num_orig_samples
+
+            for trans_idx in all_possible_trans:
+                if edge_probs[trans_idx] < smoothing_per_orig_trans:
+                    msg = f'smoothing failed: transition from state ' + \
+                          f'{curr_state} to state {edge_dests[trans_idx]} ' + \
+                          f'under symbol {edge_symbols[trans_idx]} has ' + \
+                          f'too little probability mass ' + \
+                          f'({edge_probs[trans_idx]}) to distribute the ' + \
+                          f'desired amount of per-symbol smoothing ' + \
+                          f'(self._smoothing_amount = {prob_to_add})'
+                    raise ValueError(msg)
+                edge_probs[trans_idx] -= smoothing_per_orig_trans
 
         # combining the new transitions with the smoothed, original
         # distribution to get the final smoothed distribution
@@ -787,6 +864,29 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         graph.set_ratio(1)
 
         return graph
+
+    def _build_edge_key_map(self, curr_state: Node) -> dict:
+        """
+        Builds a mapping between all outgoing transitions and the
+        networkx adjacency dictionary keys.
+
+        the mapping M maps:
+
+        (current node, symbol, destination node) -> edge key in current
+                                                    node's adj dict
+
+        :param      curr_state:  The node label to build the mapping at
+
+        :returns:   The edge key map.
+        """
+
+        trans_to_edge_key_map = dict()
+        for dest_state, edges in self[curr_state].items():
+            for edge_key, edge_data in edges.items():
+                trans = (curr_state, edge_data['symbol'], dest_state)
+                trans_to_edge_key_map[trans] = edge_key
+
+        return trans_to_edge_key_map
 
     def _set_node_labels(self, final_weight_key: str,
                          state_observation_key: str,
@@ -918,6 +1018,116 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         node_data = graph.nodes.data()
         node_data[node_label][data_key] = data
+
+    def _get_edge_data(self, src_node_label: Node, dest_node_label: Node,
+                       graph: {None, nx.MultiDiGraph}=None) -> dict:
+        """
+        Gets all edge between src and dest's data dicts from the graph
+
+        :param      src_node_label:   The edge's source node edge label
+        :param      dest_node_label:  The edge's destination node label
+        :param      graph:            The graph to access. Default = None =>
+                                      use instance (default None)
+
+        :returns:   The edge data dict associated with the src and dest labels
+                    and the desired data_key
+        """
+
+        if graph is None:
+            graph = self
+
+        edge_data = dict(graph[src_node_label][dest_node_label])
+
+        return edge_data
+
+    def _set_edge_data(self, src_node_label: Node, dest_node_label: Node,
+                       symbol: Symbol, data_key: str, data,
+                       graph: {None, nx.MultiDiGraph}=None) -> None:
+        """
+        Sets the edge's data_key with given data
+
+        :param      src_node_label:   The edge's source node edge label
+        :param      dest_node_label:  The edge's destination node label
+        :param      symbol:           The symbol
+        :param      data_key:         The desired edge data's key name
+        :param      data:             The data to associate with data_key
+        :param      graph:            The graph to access. Default = None =>
+                                      use instance (default None)
+        """
+
+        if graph is None:
+            graph = self
+
+        graph[src_node_label][dest_node_label][symbol][data_key] = data
+
+    def _update_edges(self, node_label: Node,
+                      new_edge_data: Dict[Node, Dict[Symbol, Dict]],
+                      graph: {None, nx.MultiDiGraph}=None) -> None:
+        """
+        Updates / adds any edges to the graph given new edge data at node
+
+        :example
+        new_edge_data = {dest_node_label: {'sym1': {'probability': 0.35},
+                                           'sym2': {'probability': 0.65}}}
+
+        :param      node_label:     The node label
+        :param      new_edge_data:  The labels of the destination states under
+                                    each symbol at the curr_state
+        :param      graph:            The graph to access. Default = None =>
+                                      use instance (default None)
+        """
+
+        if graph is None:
+            graph = self
+
+        adj = {node_label: new_edge_data}
+
+        e = [(u, v, ekey, d) for u, nbrs in adj.items()
+             for v, keydict in nbrs.items()
+             for ekey, d in keydict.items()]
+
+        graph.update(edges=e)
+
+    def _update_edges_from_lists(self, curr_state: Node,
+                                 edge_probs: Probabilities,
+                                 edge_symbols: Symbols,
+                                 edge_dests: Nodes,
+                                 edge_key_map: dict) -> None:
+        """
+        Updates edge data given lists of new edge attributes
+
+        :param      curr_state:    The current state label for which to smooth
+                                   the distribution
+        :param      edge_probs:    The transition probability values for each
+                                   edge
+        :param      edge_symbols:  The emitted symbols for each edge
+        :param      edge_dests:    The labels of the destination states under
+                                   each symbol at the curr_state
+        :param      edge_key_map:  mapping between all outgoing
+                                   transitions and the networkx adjacency
+                                   dictionary keys.
+        """
+
+        transitions = zip(edge_dests, edge_symbols, edge_probs)
+
+        new_edges = []
+        for dest_state, symbol, prob in transitions:
+
+            trans = (curr_state, symbol, dest_state)
+
+            # for some reason, MultiGraph dictionaries can't check any form of
+            # duplicate edges, so we have to manually check here :(
+            if trans in edge_key_map:
+                trans_key = edge_key_map[trans]
+                self.remove_edge(curr_state, dest_state, key=trans_key)
+
+            # final transitions are handled by the node's final probability,
+            # so don't manually add these transitions
+            if not symbol == self._final_transition_sym:
+                edge_data = {'symbol': symbol, 'probability': prob}
+                new_edges.append((curr_state, dest_state, edge_data))
+
+        self.add_edges_from(new_edges)
 
 
 def node_obs_to_str(obs: Observation) -> str:

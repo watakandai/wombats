@@ -11,7 +11,10 @@ num_obs: 3
 start_state: 'x1'
 
 # symbol to use as the transition to a final state
-final_transition_sym: -1
+final_transition_sym: -1000
+
+# symbol to use as the empty (a.k.a. lambda) symbol
+empty_transition_sym: -1
 
 # define a list of node labels, where each label is a string identifier label
 # for a unique node, and the metadata properties for each node
