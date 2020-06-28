@@ -1,3 +1,4 @@
+import copy
 from typing import Tuple
 from bidict import bidict
 
@@ -122,17 +123,20 @@ class ProductBuilder(Builder):
         :returns:   instance of an initialized Product automaton object
         """
 
-        complete_specification = complete_specification(specification)
-        augmented_dyn_sys = augment_initial_state(dynamical_system)
-        initial_state = calculate_initial_state(augmented_dyn_sys,
-                                                complete_specification)
-        config_data = compute_product(initial_state, augmented_dyn_sys,
-                                      complete_specification)
+        internal_spec = copy.deepcopy(specification)
+        internal_dyn_sys = copy.deepcopy(dynamical_system)
+
+        complete_specification = self.complete_specification(internal_spec)
+        augmented_dyn_sys = self.augment_initial_state(internal_dyn_sys)
+        initial_state = self.calculate_initial_state(augmented_dyn_sys,
+                                                     complete_specification)
+        config_data = self.compute_product(initial_state, augmented_dyn_sys,
+                                           complete_specification)
 
         # saving these so we can just return initialized instances if the
         # underlying data has not changed
-        self.nodes = nodes
-        self.edges = edges
+        self.nodes = config_data['nodes']
+        self.edges = config_data['edges']
 
         self._instance = Product(
             nodes=nodes,

@@ -536,6 +536,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                                If None, don't include this info
                                                in the display of the automaton
                                                (default None)
+
         """
 
         # do batch computations at initialization, as these shouldn't
@@ -547,16 +548,42 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                               can_have_accepting_nodes)
         self._set_edge_labels(edge_weight_key)
 
-    def _compute_node_data_properties(self, node: Node) -> None:
+    def _compute_node_data_properties(self, node: Node,
+                                      stochastic: {bool, None}=None,
+                                      should_complete: {bool, None}=None,
+                                      violating_state: {str, None}=None,
+                                      complete: str = 'smooth') -> None:
         """
         Base method for calculating the properties for the given node.
 
-        currently calculated properties:
-            - 'is_accepting'
-            - 'trans_distribution'
+        :param      node:             The node to calculate properties for
+        :param      stochastic:       the transitions are non-probabilistic, so
+                                      we are going to assign a uniform
+                                      distribution over all symbols for the
+                                      purpose of generation
+        :param      should_complete:  Whether to try transition completion
+        :param      violating_state:  The violating state name
+        :param      complete:         Whether to ensure each transition is
+                                      alphabet-complete.
+                                      {'smooth', 'violate'}
+                                      (default 'smooth')
+                                      If 'smooth':
+                                      The completeness processing will alter
+                                      existing transition probabilities
+                                      If 'violate':
+                                      All completed states will be
+                                      sent to the given violating state and the
+                                      existing transition probability
+                                      distributions will NOT be altered.
 
-        :param      node:        The node to calculate properties for
+        :returns:   The node data properties.
         """
+
+        # using class defaults if not given
+        if stochastic is None:
+            stochastic = self._is_stochastic
+        if should_complete is None:
+            should_complete = self._use_smoothing
 
         # acceptance property shouldn't change after load in
         self._set_state_acceptance(node)
@@ -566,32 +593,30 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         self._edge_key_map.update(self._build_edge_key_map(node))
 
         # if we compute this once, we can sample from each distribution
-        use_smooth = self._use_smoothing
-        self._set_state_transition_dist(node,
-                                        edge_key_map=self._edge_key_map,
-                                        stochastic=self._is_stochastic,
-                                        should_complete=use_smooth)
+        (edge_probs,
+         edge_dests,
+         edge_symbols) = \
+            self._set_state_transition_dist(node,
+                                            edge_key_map=self._edge_key_map,
+                                            stochastic=stochastic,
+                                            should_complete=should_complete,
+                                            violating_state=violating_state,
+                                            complete=complete)
 
-        self._set_trans_map(node)
+        self._set_trans_map(node, edge_symbols, edge_dests)
 
-    def _set_trans_map(self, curr_state):
+    def _set_trans_map(self, curr_state: Node,
+                       edge_symbols: Symbols, edge_dests: Nodes) -> None:
         """
         Sets the map of start state label and symbol to destination state
 
         :param      curr_state:  The current state label
+        :param      edge_symbols:  The emitted symbols for each edge
+        :param      edge_dests:    The labels of the destination states under
+                                   each symbol at the curr_state
 
         :raises     ValueError:  checks for non-deterministic transitions
         """
-
-        # need to convert the hashable symbols to their integer indices for
-        # creating the categorical distribution, which only works with
-        # integers
-        edge_data = self.edges([curr_state], data=True)
-        edge_dests = [edge[1] for edge in edge_data]
-
-        original_edge_symbols = [edge[2]['symbol'] for edge in edge_data]
-        edge_symbols = [self._symbol_display_map[symbol] for symbol in
-                        original_edge_symbols]
 
         # creating the mapping from (start state, symbol) -> edge_dests
         disp_edge_symbols = self._convert_symbol_idxs(edge_symbols)
@@ -617,39 +642,39 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                 **new_trans_map_entries}
 
     def _set_state_transition_dist(self, curr_state: Node,
-                                   edge_key_map: bidict,
+                                   edge_key_map: dict,
                                    stochastic: bool,
                                    should_complete: bool,
-                                   violating_state_name: {str, None}=None,
-                                   complete: str = 'smooth') -> None:
+                                   violating_state: {str, None}=None,
+                                   complete: str = 'smooth') -> Trans_data:
         """
-        Sets the static state transition distribution for given state
+        Sets the static state transition distribution for given state.
 
-        :param      curr_state:            The current state label
-        :param      edge_key_map:          mapping between all
-                                           outgoing transitions and the
-                                           networkx adjacency dictionary keys.
-        :param      stochastic:            the transitions are
-                                           non-probabilistic, so we are going
-                                           to assign a uniform distribution
-                                           over all symbols for the purpose of
-                                           generation
-        :param      should_complete:       Whether to try transition completion
-        :param      violating_state_name:  The violating state name
-        :param      complete:              Whether to ensure each transition is
-                                           alphabet-complete.
-                                           {'smooth', 'violate'}
-                                           (default 'smooth')
-                                           If 'smooth':
-                                           The completeness processing will
-                                           alter existing transition
-                                           probabilities
-                                           If 'violate':
-                                           All completed
-                                           states will be sent to the given
-                                           violating state and the existing
-                                           transition probability distributions
-                                           will NOT be altered.
+        :param      curr_state:       The current state label
+        :param      edge_key_map:     mapping between all outgoing transitions
+                                      and the networkx adjacency dictionary
+                                      keys.
+        :param      stochastic:       the transitions are non-probabilistic, so
+                                      we are going to assign a uniform
+                                      distribution over all symbols for the
+                                      purpose of generation
+        :param      should_complete:  Whether to try transition completion
+        :param      violating_state:  The violating state name
+        :param      complete:         Whether to ensure each transition is
+                                      alphabet-complete.
+                                      {'smooth', 'violate'}
+                                      (default 'smooth')
+                                      If 'smooth':
+                                      The completeness processing will alter
+                                      existing transition probabilities
+                                      If 'violate':
+                                      All completed states will be
+                                      sent to the given violating state and the
+                                      existing transition probability
+                                      distributions will NOT be altered.
+
+        :returns:   The new edge_probs, edge_dests, and edge_symbols added to
+                    the underlying graph
         """
 
         # need to convert the hashable symbols to their integer indices for
@@ -688,8 +713,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             else:
                 edge_probs = [1.0 / num_symbols for symbol in edge_symbols]
 
-        # need to smooth to better generalize and not have infinite
-        # perplexity on unknown symbols in the alphabet
         if should_complete:
             (edge_probs,
              edge_dests,
@@ -698,18 +721,19 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                                         edge_symbols,
                                                         edge_dests,
                                                         complete,
-                                                        violating_state_name)
+                                                        violating_state)
 
-        else:
-            # completing transitions handles edge updates internally
-            new_disp_symbols = self._convert_symbol_idxs(edge_symbols)
-            self._update_edges_from_lists(curr_state, edge_probs,
-                                          new_disp_symbols,
-                                          edge_dests, edge_key_map)
+        # completing transitions handles edge updates internally
+        new_disp_symbols = self._convert_symbol_idxs(edge_symbols)
+        self._update_edges_from_lists(curr_state, edge_probs,
+                                      new_disp_symbols,
+                                      edge_dests, edge_key_map)
 
         next_symbol_dist = rv_discrete(name='transition',
                                        values=(edge_symbols, edge_probs))
         self.nodes[curr_state]['trans_distribution'] = next_symbol_dist
+
+        return edge_probs, edge_dests, edge_symbols
 
     def _complete_transitions(self, curr_state: Node,
                               edge_probs: Probabilities,
@@ -826,12 +850,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         edge_probs += new_edge_probs
         edge_dests += new_edge_dests
         edge_symbols += new_edge_symbols
-
-        # after making all these changes to edges, the graph 
-        new_disp_symbols = self._convert_symbol_idxs(edge_symbols)
-        self._update_edges_from_lists(curr_state, edge_probs,
-                                      new_disp_symbols,
-                                      edge_dests, edge_key_map)
 
         return edge_probs, edge_dests, edge_symbols
 
