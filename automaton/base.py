@@ -134,7 +134,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """
 
         self._transition_map = {}
-        """keep a map of start state label and symbol to destination state"""
+        """a map of start state label and symbol to destination state"""
 
         self._edge_key_map = dict()
         """bidirectional mapping between all outgoing transitions and the
@@ -556,10 +556,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             - 'trans_distribution'
 
         :param      node:        The node to calculate properties for
-
-        :returns:   Nothing
-
-        :raises     ValueError:  checks for non-deterministic transitions
         """
 
         # acceptance property shouldn't change after load in
@@ -571,12 +567,37 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         # if we compute this once, we can sample from each distribution
         use_smooth = self._use_smoothing
-        (self.nodes[node]['trans_distribution'],
-         new_trans_map_entries) = \
-            self._set_state_transition_dist(node, self.edges,
-                                            edge_key_map=self._edge_key_map,
-                                            stochastic=self._is_stochastic,
-                                            should_complete=use_smooth)
+        self._set_state_transition_dist(node,
+                                        edge_key_map=self._edge_key_map,
+                                        stochastic=self._is_stochastic,
+                                        should_complete=use_smooth)
+
+        self._set_trans_map(node)
+
+    def _set_trans_map(self, curr_state):
+        """
+        Sets the map of start state label and symbol to destination state
+
+        :param      curr_state:  The current state label
+
+        :raises     ValueError:  checks for non-deterministic transitions
+        """
+
+        # need to convert the hashable symbols to their integer indices for
+        # creating the categorical distribution, which only works with
+        # integers
+        edge_data = self.edges([curr_state], data=True)
+        edge_dests = [edge[1] for edge in edge_data]
+
+        original_edge_symbols = [edge[2]['symbol'] for edge in edge_data]
+        edge_symbols = [self._symbol_display_map[symbol] for symbol in
+                        original_edge_symbols]
+
+        # creating the mapping from (start state, symbol) -> edge_dests
+        disp_edge_symbols = self._convert_symbol_idxs(edge_symbols)
+        state_symbol_keys = list(zip([curr_state] * len(disp_edge_symbols),
+                                     disp_edge_symbols))
+        new_trans_map_entries = dict(zip(state_symbol_keys, edge_dests))
 
         # need to merge the newly computed transition map at node to the
         # existing map
@@ -596,18 +617,15 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                 **new_trans_map_entries}
 
     def _set_state_transition_dist(self, curr_state: Node,
-                                   edges: NXEdgeList,
                                    edge_key_map: bidict,
                                    stochastic: bool,
                                    should_complete: bool,
                                    violating_state_name: {str, None}=None,
-                                   complete: str = 'smooth') -> (rv_discrete,
-                                                                 dict):
+                                   complete: str = 'smooth') -> None:
         """
-        Computes a static state transition distribution for given state
+        Sets the static state transition distribution for given state
 
         :param      curr_state:            The current state label
-        :param      edges:                 The networkx edge list
         :param      edge_key_map:          mapping between all
                                            outgoing transitions and the
                                            networkx adjacency dictionary keys.
@@ -632,17 +650,12 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                            violating state and the existing
                                            transition probability distributions
                                            will NOT be altered.
-
-        :returns:   (a function to sample the discrete state transition
-                    distribution,
-                    the mapping from (start state, symbol) -> edge_dests
-        :rtype:     tuple(stats.rv_discrete object, dict)
         """
 
         # need to convert the hashable symbols to their integer indices for
         # creating the categorical distribution, which only works with
         # integers
-        edge_data = edges([curr_state], data=True)
+        edge_data = self.edges([curr_state], data=True)
         edge_dests = [edge[1] for edge in edge_data]
 
         original_edge_symbols = [edge[2]['symbol'] for edge in edge_data]
@@ -652,9 +665,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         final_trans_symbol_idx = self._symbol_display_map[final_sym]
 
         if stochastic:
-            # need to add final state probability to discrete rv dist
+            # need to add final state probability to trans dist
             edge_probs = [edge[2]['probability'] for edge in edge_data]
-
             curr_final_state_prob = self._get_node_data(curr_state,
                                                         'final_probability')
 
@@ -688,20 +700,16 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                                         complete,
                                                         violating_state_name)
 
-        new_disp_symbols = self._convert_symbol_idxs(edge_symbols)
-        self._update_edges_from_lists(curr_state, edge_probs, new_disp_symbols,
-                                      edge_dests, edge_key_map)
+        else:
+            # completing transitions handles edge updates internally
+            new_disp_symbols = self._convert_symbol_idxs(edge_symbols)
+            self._update_edges_from_lists(curr_state, edge_probs,
+                                          new_disp_symbols,
+                                          edge_dests, edge_key_map)
 
         next_symbol_dist = rv_discrete(name='transition',
                                        values=(edge_symbols, edge_probs))
-
-        # creating the mapping from (start state, symbol) -> edge_dests
-        disp_edge_symbols = self._convert_symbol_idxs(edge_symbols)
-        state_symbol_keys = list(zip([curr_state] * len(disp_edge_symbols),
-                                     disp_edge_symbols))
-        transition_map = dict(zip(state_symbol_keys, edge_dests))
-
-        return next_symbol_dist, transition_map
+        self.nodes[curr_state]['trans_distribution'] = next_symbol_dist
 
     def _complete_transitions(self, curr_state: Node,
                               edge_probs: Probabilities,
@@ -800,6 +808,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             smoothing_per_orig_trans = added_prob_mass / num_orig_samples
 
             for trans_idx in all_possible_trans:
+
                 if edge_probs[trans_idx] < smoothing_per_orig_trans:
                     msg = f'smoothing failed: transition from state ' + \
                           f'{curr_state} to state {edge_dests[trans_idx]} ' + \
@@ -809,6 +818,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                           f'desired amount of per-symbol smoothing ' + \
                           f'(self._smoothing_amount = {prob_to_add})'
                     raise ValueError(msg)
+
                 edge_probs[trans_idx] -= smoothing_per_orig_trans
 
         # combining the new transitions with the smoothed, original
@@ -816,6 +826,12 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         edge_probs += new_edge_probs
         edge_dests += new_edge_dests
         edge_symbols += new_edge_symbols
+
+        # after making all these changes to edges, the graph 
+        new_disp_symbols = self._convert_symbol_idxs(edge_symbols)
+        self._update_edges_from_lists(curr_state, edge_probs,
+                                      new_disp_symbols,
+                                      edge_dests, edge_key_map)
 
         return edge_probs, edge_dests, edge_symbols
 
