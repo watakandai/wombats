@@ -14,6 +14,30 @@ TS_Trans_Data = Tuple[Node, Observation]
 
 
 class TransitionSystem(Automaton):
+    """
+    A representation of a transition system automaton (a.k.a. moore machine)
+
+    :param      nodes:                 node list as expected by
+                                       networkx.add_nodes_from() (node
+                                       label, node attribute dict)
+    :param      edges:                 edge list as expected by
+                                       networkx.add_edges_from() (src node
+                                       label, dest node label, edge
+                                       attribute dict)
+    :param      symbol_display_map:    The symbol display map
+    :param      alphabet_size:         number of symbols in system alphabet
+    :param      num_states:            number of states in automaton state
+                                       space
+    :param      num_obs:               number of observation symbols
+    :param      start_state:           unique start state string label of
+                                       system
+    :param      final_transition_sym:  representation of the termination
+                                       symbol. If not given, will default
+                                       to base class default.
+    :param      empty_transition_sym:  representation of the empty symbol
+                                       (a.k.a. lambda). If not given, will
+                                       default to base class default.
+    """
 
     def __init__(self,
                  nodes: NXNodeList,
@@ -25,30 +49,6 @@ class TransitionSystem(Automaton):
                  start_state: Node,
                  final_transition_sym: {Symbol, None}=None,
                  empty_transition_sym: {Symbol, None}=None) -> 'TransitionSystem':
-        """
-        Constructs a new instance of an Automaton object.
-
-        :param      nodes:                 node list as expected by
-                                           networkx.add_nodes_from() (node
-                                           label, node attribute dict)
-        :param      edges:                 edge list as expected by
-                                           networkx.add_edges_from() (src node
-                                           label, dest node label, edge
-                                           attribute dict)
-        :param      symbol_display_map:    The symbol display map
-        :param      alphabet_size:         number of symbols in system alphabet
-        :param      num_states:            number of states in automaton state
-                                           space
-        :param      num_obs:               number of observation symbols
-        :param      start_state:           unique start state string label of
-                                           system
-        :param      final_transition_sym:  representation of the termination
-                                           symbol. If not given, will default
-                                           to base class default.
-        :param      empty_transition_sym:  representation of the empty symbol
-                                           (a.k.a. lambda). If not given, will
-                                           default to base class default.
-        """
 
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, symbol_display_map,

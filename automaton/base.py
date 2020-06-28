@@ -46,7 +46,7 @@ DEFAULT_EMPTY_TRANS_SYMBOL = -1
 
 class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
     """
-    This class describes a automaton with stochastic transition
+    This class describes a automaton with (possibly) stochastic transitions
 
     built on networkx, so inherits node and edge data structure definitions
 
@@ -62,6 +62,53 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
     -----------------
         - symbol: the symbol value emitted when the edge is traversed
         - probability: the probability of selecting this edge for traversal
+
+    :param      nodes:                     node list as expected by
+                                           networkx.add_nodes_from()
+    :param      edge_list:                 edge list as expected by
+                                           networkx.add_edges_from()
+    :param      symbol_display_map:        bidirectional mapping of
+                                           hashable symbols, to a unique
+                                           integer index in the symbol map.
+                                           Needed to translate between the
+                                           indices in the transition
+                                           distribution and the hashable
+                                           representation which is
+                                           meaningful to the user
+    :param      alphabet_size:             number of symbols in automaton
+    :param      num_states:                number of states in automaton
+                                           state space
+    :param      start_state:               unique start state string label
+                                           of automaton
+    :param      smooth_transitions:        whether to smooth the symbol
+                                           transitions distributions
+    :param      is_stochastic:             the transitions are
+                                           non-probabilistic, so we are
+                                           going to assign a uniform
+                                           distribution over all symbols
+                                           for the purpose of generation
+    :param      final_transition_sym:      representation of the
+                                           termination symbol
+    :param      empty_transition_sym:      representation of the empty
+                                           symbol (a.k.a. lambda)
+    :param      final_weight_key:          key in the automaton's node data
+                                           corresponding to the weight /
+                                           probability of ending in that
+                                           node. If None, don't include
+                                           this info in the display of the
+                                           automaton.
+    :param      state_observation_key:     The key in each node's data dict
+                                           for state observations. If None,
+                                           don't include this info in the
+                                           display of the automaton
+    :param      can_have_accepting_nodes:  Indicates if the automata can
+                                           have accepting nodes
+    :param      edge_weight_key:           The key in each edge's data dict
+                                           for edge weight / prob. If None,
+                                           don't include this info in the
+                                           display of the automaton
+    :param      smoothing_amount:          probability mass to re-assign to
+                                           unseen symbols at each node
     """
 
     def __init__(self,
@@ -80,56 +127,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                  can_have_accepting_nodes: bool = True,
                  edge_weight_key: str = None,
                  smoothing_amount: float = SMOOTHING_AMOUNT) -> 'Automaton':
-        """
-        Constructs a new instance of an Automaton object.
-
-        :param      nodes:                     node list as expected by
-                                               networkx.add_nodes_from()
-        :param      edge_list:                 edge list as expected by
-                                               networkx.add_edges_from()
-        :param      symbol_display_map:        bidirectional mapping of
-                                               hashable symbols, to a unique
-                                               integer index in the symbol map.
-                                               Needed to translate between the
-                                               indices in the transition
-                                               distribution and the hashable
-                                               representation which is
-                                               meaningful to the user
-        :param      alphabet_size:             number of symbols in automaton
-        :param      num_states:                number of states in automaton
-                                               state space
-        :param      start_state:               unique start state string label
-                                               of automaton
-        :param      smooth_transitions:        whether to smooth the symbol
-                                               transitions distributions
-        :param      is_stochastic:             the transitions are
-                                               non-probabilistic, so we are
-                                               going to assign a uniform
-                                               distribution over all symbols
-                                               for the purpose of generation
-        :param      final_transition_sym:      representation of the
-                                               termination symbol
-        :param      empty_transition_sym:      representation of the empty
-                                               symbol (a.k.a. lambda)
-        :param      final_weight_key:          key in the automaton's node data
-                                               corresponding to the weight /
-                                               probability of ending in that
-                                               node. If None, don't include
-                                               this info in the display of the
-                                               automaton.
-        :param      state_observation_key:     The key in each node's data dict
-                                               for state observations. If None,
-                                               don't include this info in the
-                                               display of the automaton
-        :param      can_have_accepting_nodes:  Indicates if the automata can
-                                               have accepting nodes
-        :param      edge_weight_key:           The key in each edge's data dict
-                                               for edge weight / prob. If None,
-                                               don't include this info in the
-                                               display of the automaton
-        :param      smoothing_amount:          probability mass to re-assign to
-                                               unseen symbols at each node
-        """
 
         self._transition_map = {}
         """a map of start state label and symbol to destination state"""
@@ -975,6 +972,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         trans_to_edge_key_map = dict()
         for dest_state, edges in self[curr_state].items():
             for edge_key, edge_data in edges.items():
+                print(curr_state, edge_data, dest_state)
                 trans = (curr_state, edge_data['symbol'], dest_state)
                 trans_to_edge_key_map[trans] = edge_key
 
@@ -1233,6 +1231,9 @@ def node_obs_to_str(obs: Observation) -> str:
         obs_str = '{obs:d}'.format(obs=obs)
     elif isinstance(obs, str):
         obs_str = obs
+    else:
+        msg = f'obs ({obs} of type ({type(obs)}) must be of type: int, str)'
+        raise ValueError(msg)
 
     return obs_str
 

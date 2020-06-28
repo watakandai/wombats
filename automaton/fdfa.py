@@ -35,6 +35,33 @@ class FDFA(Automaton):
     -----------------
         - symbol: the symbol value emitted when the edge is traversed
         - frequency: the number of times the edge was traversed
+
+    :param      nodes:                 node list as expected by
+                                       networkx.add_nodes_from() list of
+                                       tuples: (node label, node, attribute
+                                       dict)
+    :param      edges:                 edge list as expected by
+                                       networkx.add_edges_from() list of
+                                       tuples: (src node label, dest node
+                                       label, edge attribute dict)
+    :param      symbol_display_map:    bidirectional mapping of hashable
+                                       symbols, to a unique integer index
+                                       in the symbol map. Needed to
+                                       translate between the indices in the
+                                       transition distribution and the
+                                       hashable representation which is
+                                       meaningful to the user
+    :param      alphabet_size:         number of symbols in fdfa alphabet
+    :param      num_states:            number of states in automaton state
+                                       space
+    :param      start_state:           unique start state string label of
+                                       fdfa
+    :param      final_transition_sym:  representation of the termination
+                                       symbol. If not given, will default
+                                       to base class default.
+    :param      empty_transition_sym:  representation of the empty symbol
+                                       (a.k.a. lambda). If not given, will
+                                       default to base class default.
     """
 
     def __init__(self, nodes: NXNodeList,
@@ -45,36 +72,6 @@ class FDFA(Automaton):
                  start_state: Node,
                  final_transition_sym: {Symbol, None}=None,
                  empty_transition_sym: {Symbol, None}=None) -> 'FDFA':
-        """
-        Constructs a new instance of a FDFA object.
-
-        :param      nodes:                 node list as expected by
-                                           networkx.add_nodes_from() list of
-                                           tuples: (node label, node, attribute
-                                           dict)
-        :param      edges:                 edge list as expected by
-                                           networkx.add_edges_from() list of
-                                           tuples: (src node label, dest node
-                                           label, edge attribute dict)
-        :param      symbol_display_map:    bidirectional mapping of hashable
-                                           symbols, to a unique integer index
-                                           in the symbol map. Needed to
-                                           translate between the indices in the
-                                           transition distribution and the
-                                           hashable representation which is
-                                           meaningful to the user
-        :param      alphabet_size:         number of symbols in fdfa alphabet
-        :param      num_states:            number of states in automaton state
-                                           space
-        :param      start_state:           unique start state string label of
-                                           fdfa
-        :param      final_transition_sym:  representation of the termination
-                                           symbol. If not given, will default
-                                           to base class default.
-        :param      empty_transition_sym:  representation of the empty symbol
-                                           (a.k.a. lambda). If not given, will
-                                           default to base class default.
-        """
 
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, symbol_display_map,

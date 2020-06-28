@@ -70,6 +70,39 @@ class PDFA(Automaton):
     -----------------
         - symbol: the symbol value emitted when the edge is traversed
         - probability: the probability of selecting this edge for traversal
+
+    :param      nodes:                 node list as expected by
+                                       networkx.add_nodes_from() list of
+                                       tuples: (node label, node, attribute
+                                       dict)
+    :param      edges:                 edge list as expected by
+                                       networkx.add_edges_from() list of
+                                       tuples: (src node label, dest node
+                                       label, edge attribute dict)
+    :param      symbol_display_map:    bidirectional mapping of hashable
+                                       symbols, to a unique integer index
+                                       in the symbol map. Needed to
+                                       translate between the indices in the
+                                       transition distribution and the
+                                       hashable representation which is
+                                       meaningful to the user
+    :param      alphabet_size:         number of symbols in pdfa alphabet
+    :param      num_states:            number of states in automaton state
+                                       space
+    :param      start_state:           unique start state string label of
+                                       pdfa
+    :param      smooth_transitions:    whether to smooth the symbol
+                                       transitions distributions
+    :param      smoothing_amount:      probability mass to re-assign to
+                                       unseen symbols at each node
+    :param      final_transition_sym:  representation of the termination
+                                       symbol. If not given, will default
+                                       to base class default.
+    :param      empty_transition_sym:  representation of the empty symbol
+                                       (a.k.a. lambda). If not given, will
+                                       default to base class default.
+    :param      beta:                  the final state probability needed
+                                       for a state to accept.
     """
 
     def __init__(self,
@@ -84,42 +117,6 @@ class PDFA(Automaton):
                  final_transition_sym: {Symbol, None}=None,
                  empty_transition_sym: {Symbol, None}=None,
                  beta: float = 0.95) -> 'PDFA':
-        """
-        Constructs a new instance of a PDFA object.
-
-        :param      nodes:                 node list as expected by
-                                           networkx.add_nodes_from() list of
-                                           tuples: (node label, node, attribute
-                                           dict)
-        :param      edges:                 edge list as expected by
-                                           networkx.add_edges_from() list of
-                                           tuples: (src node label, dest node
-                                           label, edge attribute dict)
-        :param      symbol_display_map:    bidirectional mapping of hashable
-                                           symbols, to a unique integer index
-                                           in the symbol map. Needed to
-                                           translate between the indices in the
-                                           transition distribution and the
-                                           hashable representation which is
-                                           meaningful to the user
-        :param      alphabet_size:         number of symbols in pdfa alphabet
-        :param      num_states:            number of states in automaton state
-                                           space
-        :param      start_state:           unique start state string label of
-                                           pdfa
-        :param      smooth_transitions:    whether to smooth the symbol
-                                           transitions distributions
-        :param      smoothing_amount:      probability mass to re-assign to
-                                           unseen symbols at each node
-        :param      final_transition_sym:  representation of the termination
-                                           symbol. If not given, will default
-                                           to base class default.
-        :param      empty_transition_sym:  representation of the empty symbol
-                                           (a.k.a. lambda). If not given, will
-                                           default to base class default.
-        :param      beta:                  the final state probability needed
-                                           for a state to accept.
-        """
 
         self._beta = beta
         """the final state probability needed for a state to accept"""
@@ -588,6 +585,7 @@ class PDFABuilder(Builder):
                 alphabet_size=config_data['alphabet_size'],
                 num_states=config_data['num_states'],
                 final_transition_sym=final_transition_sym,
+                empty_transition_sym=empty_transition_sym,
                 start_state=config_data['start_state'],
                 smooth_transitions=config_data['smooth_transitions'])
 

@@ -15,6 +15,30 @@ TS_Trans_Data = Tuple[Node, Observation]
 
 class Product(Automaton):
 
+    """
+    Describes a product automaton between a specification automaton
+    and a dynamics automaton.
+
+    You can use this class to compose the two automaton together and then find
+    a controller for the dynamical system that satisfies the specification
+
+    :param      nodes:                 node list as expected by
+                                       networkx.add_nodes_from() (node
+                                       label, node attribute dict)
+    :param      edges:                 edge list as expected by
+                                       networkx.add_edges_from() (src node
+                                       label, dest node label, edge
+                                       attribute dict)
+    :param      alphabet_size:         number of symbols in system alphabet
+    :param      num_states:            number of states in automaton state
+                                       space
+    :param      num_obs:               number of observation symbols
+    :param      start_state:           unique start state string label of
+                                       system
+    :param      final_transition_sym:  representation of the empty string /
+                                       symbol (a.k.a. lambda) (default -1)
+    """
+
     def __init__(self,
                  nodes: NXNodeList,
                  edges: NXEdgeList,
@@ -27,21 +51,7 @@ class Product(Automaton):
         """
         Constructs a new instance of an Product automaton object.
 
-        :param      nodes:                 node list as expected by
-                                           networkx.add_nodes_from() (node
-                                           label, node attribute dict)
-        :param      edges:                 edge list as expected by
-                                           networkx.add_edges_from() (src node
-                                           label, dest node label, edge
-                                           attribute dict)
-        :param      alphabet_size:         number of symbols in system alphabet
-        :param      num_states:            number of states in automaton state
-                                           space
-        :param      num_obs:               number of observation symbols
-        :param      start_state:           unique start state string label of
-                                           system
-        :param      final_transition_sym:  representation of the empty string /
-                                           symbol (a.k.a. lambda) (default -1)
+
         """
 
         # need to start with a fully initialized automaton
@@ -92,16 +102,30 @@ class Product(Automaton):
                                specification: PDFA) -> TransitionSystem:
 
         initialization_state = 'x_init'
+
         spec_empty_symbol = specification._empty_transition_sym
         initialization_state_props = {'observation': spec_empty_symbol}
+        if spec_empty_symbol not in dynamical_system.observations:
+            dynamical_system.observations.add(spec_empty_symbol)
+            dynamical_system._num_obs += 1
+
         dynamical_system.add_node(initialization_state,
                                   **initialization_state_props)
 
+        # can choose any symbol to be the initialization symbol, doesn't matter
+        initialization_symbol = list(dynamical_system.symbols)[0]
+        initialization_edge_props = {'symbol': initialization_symbol,
+                                     'probability': 1.00}
         dynamical_system.add_edge(initialization_state,
-                                  dynamical_system.start_state)
-        
+                                  dynamical_system.start_state,
+                                  **initialization_edge_props)
 
+        dynamical_system._initialize_node_edge_properties(
+            can_have_accepting_nodes=False,
+            state_observation_key='observation',
+            should_complete=False)
 
+        return dynamical_system
 
     def _set_state_acceptance(self, curr_state: Node) -> None:
         """
@@ -172,13 +196,18 @@ class ProductBuilder(Builder):
         :returns:   instance of an initialized Product automaton object
         """
 
-        # don't want to destroy the specification when we pre-process it
+        # don't want to destroy the automaton when we pre-process them
         internal_spec = copy.deepcopy(specification)
+        internal_dyn_sys = copy.deepcopy(dynamical_system)
 
         complete_specification = Product._complete_specification(internal_spec)
         complete_specification.draw_IPython()
 
-        augmented_dyn_sys = Product._augment_initial_state(dynamical_system)
+        augmented_dyn_sys = Product._augment_initial_state(
+            internal_dyn_sys,
+            complete_specification)
+        augmented_dyn_sys.draw_IPython()
+
         init_state = Product._calculate_initial_state(augmented_dyn_sys,
                                                       complete_specification)
         config_data = Product._compute_product(init_state,
