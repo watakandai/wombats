@@ -1,4 +1,5 @@
 import copy
+import itertools
 from typing import Tuple
 from bidict import bidict
 
@@ -6,11 +7,13 @@ from bidict import bidict
 from wombats.factory.builder import Builder
 from .transition_system import TransitionSystem
 from .pdfa import PDFA
-from .base import (Automaton, NXNodeList, NXEdgeList, Node,
-                   Observation)
+from .base import (Automaton, NXNodeList, NXEdgeList, Node, Probability,
+                   Observation, Symbol)
 
 # define these type defs for method annotation type hints
 TS_Trans_Data = Tuple[Node, Observation]
+
+SPEC_VIOLATING_STATE = 'q_v'
 
 
 class Product(Automaton):
@@ -81,7 +84,7 @@ class Product(Automaton):
 
         # first need to define and add the "violating" state to the
         # specification's underlying graph
-        violating_state = 'q_v'
+        violating_state = SPEC_VIOLATING_STATE
         violating_state_props = {'final_probability': 0.00,
                                  'trans_distribution': None,
                                  'is_accepting': None}
@@ -135,6 +138,208 @@ class Product(Automaton):
             should_complete=False)
 
         return dynamical_system
+
+    @classmethod
+    def _compute_product(cls, dynamical_system: TransitionSystem,
+                         specification: PDFA) -> dict:
+        """
+        Calculates the product automaton given pre-processed automata
+
+        :param      dynamical_system:  The dynamical system
+        :param      specification:     The specification
+
+        :returns:   The initialized product automaton configuration data
+        """
+
+        # naming to follow written algorithm
+        T = dynamical_system
+        A = specification
+        X = dynamical_system.state_labels
+        Sigma = dynamical_system.symbols
+        Q = specification.state_labels
+
+        # set of all POSSIBLE product states
+        P = itertools.product(X, Q)
+        all_possible_prod_trans = itertools.product(P, Sigma)
+
+        nodes = {}
+        edges = {}
+        # non_viol_state_out_prob_mass = {}
+        # gateway_states_to_violating = set()
+
+        for ((x, q), sigma) in all_possible_prod_trans:
+
+            dyn_trans = (x, sigma)
+            dynamically_compatible = dyn_trans in T._transition_map
+
+            if dynamically_compatible:
+                x_prime = T._transition_map[dyn_trans]
+                o_x_prime = T.observe(x_prime)
+                spec_trans = (q, o_x_prime)
+                specification_compatible = spec_trans in A._transition_map
+
+                if specification_compatible:
+                    # violating SCC has uniform transition probability over all
+                    # possible control symbols
+                    in_violating_SCC = q == SPEC_VIOLATING_STATE
+                    if in_violating_SCC:
+                        q_prime, _ = A._get_next_state(q, o_x_prime)
+                        trans_prob = 1.0 / T._alphabet_size
+                    else:
+                        q_prime, trans_prob = A._get_next_state(q, o_x_prime)
+
+                    q_final_prob = A._get_next_state(q,
+                                                     A._final_transition_sym)
+                    q_prime_final_prob = A._get_next_state(
+                        q_prime,
+                        A._final_transition_sym)
+                    o_x = T.observe(x)
+
+                    (nodes,
+                     edges,
+                     prod_src_state,
+                     proc_dest_state) = \
+                        cls._add_product_edge(
+                            nodes, edges,
+                            x_src=x, x_dest=x_prime,
+                            q_src=q, q_dest=q_prime,
+                            q_src_final_prob=q_final_prob,
+                            q_dest_final_prob=q_prime_final_prob,
+                            observation_src=o_x,
+                            observation_dest=o_x_prime,
+                            sigma=sigma,
+                            trans_prob=trans_prob)
+
+        #             # we want to keep track of the valid outgoing probability
+        #             # mass of pre(violating states) so we can uniformly
+        #             # distribute the violating mass over the remaining
+        #             # available symbols
+        #             if q_prime != SPEC_VIOLATING_STATE:
+        #                 key = (prod_src_state, sigma, proc_dest_state)
+        #                 value = trans_prob
+        #                 if key not in non_viol_state_out_prob_mass:
+        #                     non_viol_state_out_prob_mass[key] = value
+        #                 else:
+        #                     non_viol_state_out_prob_mass[key] += value
+        #             else:
+        #                 gateway_states_to_violating.add(prod_src_state)
+
+        # edges = cls._adjust_violating_prob_mass(edges,
+        #                                         gateway_states_to_violating,
+        #                                         non_viol_state_out_prob_mass)
+
+    @classmethod
+    def _get_product_state_label(cls, dynamical_system_state: Node,
+                                 specification_state: Node) -> Node:
+        """
+        Computes the combined product state label
+
+        :param      dynamical_system_state:  The dynamical system state label
+        :param      specification_state:     The specification state label
+
+        :returns:   The product state label.
+        """
+
+        if type(dynamical_system_state) != str:
+            dynamical_system_state = str(dynamical_system_state)
+
+        if type(specification_state) != str:
+            specification_state = str(specification_state)
+
+        return dynamical_system_state + specification_state
+
+    @classmethod
+    def _add_product_node(cls, nodes: dict, x: Node, q: Node,
+                          q_final_prob: Probability,
+                          observation: Observation) -> Tuple[dict, Node]:
+        """
+        Adds a newly identified product state to the nodes dict w/ needed data
+
+        :param      nodes:         dict of nodes to build the product out of.
+                                   must be in the format needed by
+                                   networkx.add_nodes_from()
+        :param      x:             state label in the dynamical system
+        :param      q:             state label in the specification
+        :param      q_final_prob:  the probability of terminating at q in the
+                                   specification
+        :param      observation:   The observation emitted by the dynamical
+                                   system / product at the dynamical
+                                   system state (x)
+
+        :returns:   nodes dict populated with all of the given data, and
+                    the label of the newly added product state
+        """
+
+        prod_state_data = {'final_probability': q_final_prob,
+                           'trans_distribution': None,
+                           'is_accepting': None,
+                           'observation': observation}
+        prod_state = cls._get_product_state_label(x, q)
+        nodes[prod_state] = prod_state_data
+
+        return nodes, prod_state
+
+    @classmethod
+    def _add_product_edge(cls, nodes: dict, edges: dict,
+                          x_src: Node, x_dest: Node,
+                          q_src: Node, q_dest: Node,
+                          q_src_final_prob: Probability,
+                          q_dest_final_prob: Probability,
+                          observation_src: Observation,
+                          observation_dest: Observation,
+                          sigma: Symbol,
+                          trans_prob: Probability) -> Tuple[dict, dict,
+                                                            Node, Node]:
+        """
+        Adds a newly identified product edge to the nodes & edges dicts
+
+        :param      nodes:              dict of nodes to build the product out
+                                        of. Must be in the format needed by
+                                        networkx.add_nodes_from()
+        :param      edges:              dict of edges to build the product out
+                                        of. Must be in the format needed by
+                                        networkx.add_edges_from()
+        :param      x_src:              source product edge's dynamical system
+                                        state
+        :param      x_dest:             dest. product edge's dynamical system
+                                        state
+        :param      q_src:              source product edge's specification
+                                        state
+        :param      q_dest:             dest. product edge's specification
+                                        state
+        :param      q_src_final_prob:   the probability of terminating at q_src
+                                        in the specification
+        :param      q_dest_final_prob:  the probability of terminating at
+                                        q_dest in the specification
+        :param      observation_src:    The observation emitted by the
+                                        dynamical system / product at the
+                                        source dynamical system state (x_src)
+        :param      observation_dest:   The observation emitted by the
+                                        dynamical system / product at the
+                                        dest. dynamical system state (x_dest)
+        :param      sigma:              dynamical system control input symbol
+                                        enabling the product edge
+        :param      trans_prob:         The product edge's transition prob.
+
+        :returns:   nodes dict populated w/ all the given data for src & dest
+                    edges dict populated w/ all the given data,
+                    the label of the newly added source product state,
+                    the label of the newly added product state
+        """
+
+        nodes, prod_src = cls._add_product_node(nodes, x_src, q_src,
+                                                q_src_final_prob,
+                                                observation_src)
+        nodes, prod_dest = cls._add_product_node(nodes, x_dest, q_dest,
+                                                 q_dest_final_prob,
+                                                 observation_dest)
+
+        prod_edge_data = {'symbols': [sigma],
+                          'probabilities': [trans_prob]}
+        prod_edge = {prod_dest: prod_edge_data}
+        edges[prod_src] = prod_edge
+
+        return nodes, edges, prod_src, prod_dest
 
     def _set_state_acceptance(self, curr_state: Node) -> None:
         """

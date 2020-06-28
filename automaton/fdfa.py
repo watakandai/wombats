@@ -81,7 +81,8 @@ class FDFA(Automaton):
                          final_transition_sym=final_transition_sym,
                          final_weight_key='final_frequency',
                          can_have_accepting_nodes=False,
-                         edge_weight_key='frequency')
+                         edge_weight_key='frequency',
+                         is_sampleable=True)
 
     @classmethod
     def load_flexfringe_data(cls: 'FDFA', graph: nx.MultiDiGraph,

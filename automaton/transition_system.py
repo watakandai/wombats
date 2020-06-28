@@ -59,7 +59,8 @@ class TransitionSystem(Automaton):
                          is_stochastic=False,
                          state_observation_key='observation',
                          can_have_accepting_nodes=False,
-                         edge_weight_key=None)
+                         edge_weight_key=None,
+                         is_sampleable=True)
 
         self._num_obs = num_obs
         """number of state observations in TS obs. space"""
@@ -68,7 +69,7 @@ class TransitionSystem(Automaton):
         """the set of all possible state output symbols (observations)"""
 
         for state in self.state_labels:
-            self.observations.add(self._get_node_data(state, 'observation'))
+            self.observations.add(self.observe(state))
 
         N_actual_obs = len(self.observations)
         if N_actual_obs != num_obs:
@@ -80,7 +81,7 @@ class TransitionSystem(Automaton):
 
         self._num_obs = N_actual_obs
 
-    def transition(self, curr_state, input_symbol: str) -> TS_Trans_Data:
+    def transition(self, curr_state: Node, input_symbol: str) -> TS_Trans_Data:
         """
         transitions the TS given the current TS state and an input symbol, then
         outputs the state observation
@@ -92,9 +93,20 @@ class TransitionSystem(Automaton):
         """
 
         next_state, _ = self._get_next_state(curr_state, input_symbol)
-        observation = self._get_node_data(next_state, 'observation')
+        observation = self.observe(next_state)
 
         return next_state, observation
+
+    def observe(self, curr_state: Node) -> Observation:
+        """
+        Returns the given state's observation symbol
+
+        :param      curr_state:  The current TS state
+
+        :returns:   observation symbol emitted at curr_state
+        """
+
+        return self._get_node_data(curr_state, 'observation')
 
     def run(self, word: {Symbol, Symbols}) -> Tuple[Symbols, Nodes]:
         """
@@ -113,7 +125,7 @@ class TransitionSystem(Automaton):
             word = [word]
 
         curr_state = self.start_state
-        output_word = [self._get_node_data(curr_state, 'observation')]
+        output_word = [self.observe(curr_state)]
         state_sequence = [curr_state]
 
         for symbol in word:

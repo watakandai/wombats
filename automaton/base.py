@@ -109,6 +109,10 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                            display of the automaton
     :param      smoothing_amount:          probability mass to re-assign to
                                            unseen symbols at each node
+    :param      is_sampleable:             will formalize / create probability
+                                           distributions for each state's
+                                           transitions to allow for sampling of
+                                           runs from the machine
     """
 
     def __init__(self,
@@ -120,6 +124,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                  start_state: Hashable,
                  smooth_transitions: bool,
                  is_stochastic: bool,
+                 is_sampleable: bool,
                  final_transition_sym: Hashable = DEFAULT_FINAL_TRANS_SYMBOL,
                  empty_transition_sym: Hashable = DEFAULT_EMPTY_TRANS_SYMBOL,
                  final_weight_key: str = None,
@@ -132,7 +137,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """a map of start state label and symbol to destination state"""
 
         self._edge_key_map = dict()
-        """bidirectional mapping between all outgoing transitions and the
+        """mapping between all outgoing transitions and the
         networkx adjacency dictionary keys."""
 
         self._symbol_display_map = symbol_display_map
@@ -161,6 +166,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         self._smoothing_amount = smoothing_amount
         """probability mass to re-assign to unseen symbols at each node"""
+
+        self._is_sampleable = is_sampleable
+        """transitions will have pre-computed, well-formed distributions"""
 
         self.symbols = set()
         """set of all symbols used by the automaton"""
@@ -396,7 +404,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                     states, the probability of this transition occurring
         """
 
-        trans_dist = self.nodes[curr_state]['trans_distribution']
+        trans_dist = self._get_node_data(curr_state, 'trans_distribution')
 
         # critical step for use with parallelized libraries. This must be reset
         # before sampling, as otherwise each of the threads is using the same
@@ -417,7 +425,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """
         Gets the next state given the current state and the "input" symbol.
 
-        :param      curr_state:  The curr state
+        :param      curr_state:  The current state
         :param      symbol:      The input symbol
 
         :returns:   (The next state label, the transition probability)
@@ -425,14 +433,10 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :raises     ValueError:  symbol not in curr_state's transition function
         :raises     ValueError:  duplicate symbol in curr_state's transition
                                  function
-        :raises     ValueError:  symbol has 0 prob. in curr_state's transition
-                                 function
         """
 
-        trans_distribution = self._get_node_data(curr_state,
-                                                 'trans_distribution')
-        possible_symbols = self._convert_symbol_idxs(trans_distribution.xk)
-        probabilities = trans_distribution.pk
+        (possible_symbols,
+         probabilities) = self._get_trans_probabilities(curr_state)
 
         if symbol not in possible_symbols:
             msg = ('given symbol ({}) is not found in the '
@@ -451,12 +455,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         # stored in numpy array, so we just want the float probability value
         symbol_probability = np.asscalar(probabilities[symbol_idx])
-
-        if symbol_probability == 0.0:
-            msg = ('symbol ({}) has zero probability of transition in the '
-                   'pdfa from curr_state: {}').format(symbol, curr_state)
-            raise ValueError(msg)
-
         next_state = self._transition_map[(curr_state, symbol)]
 
         return next_state, symbol_probability
@@ -742,17 +740,21 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             edge_dests.append(curr_state)
             edge_symbols.append(final_trans_symbol_idx)
         else:
-            # using a uniform distribution to not bias the sampling of symbols
-            # in a deterministic that does not actually have edge
-            # probabilities
-            num_symbols = len(edge_symbols)
-            is_final_state = num_symbols == 0
-            if is_final_state:
-                edge_probs = [1.0]
-                edge_dests.append(curr_state)
-                edge_symbols.append(final_trans_symbol_idx)
+
+            if self._is_sampleable:
+                # using a uniform distribution to not bias the sampling of
+                # symbols in a deterministic that does not actually have edge
+                # probabilities
+                num_symbols = len(edge_symbols)
+                is_final_state = num_symbols == 0
+                if is_final_state:
+                    edge_probs = [1.0]
+                    edge_dests.append(curr_state)
+                    edge_symbols.append(final_trans_symbol_idx)
+                else:
+                    edge_probs = [1.0 / num_symbols for symbol in edge_symbols]
             else:
-                edge_probs = [1.0 / num_symbols for symbol in edge_symbols]
+                edge_probs = None
 
         if should_complete:
             (edge_probs,
@@ -770,9 +772,12 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                       new_disp_symbols,
                                       edge_dests, edge_key_map)
 
-        next_symbol_dist = rv_discrete(name='transition',
-                                       values=(edge_symbols, edge_probs))
-        self.nodes[curr_state]['trans_distribution'] = next_symbol_dist
+        if self._is_sampleable:
+            next_sym_dist = rv_discrete(name='transition',
+                                        values=(edge_symbols, edge_probs))
+        else:
+            next_sym_dist = None
+        self._set_node_data(curr_state, 'trans_distribution', next_sym_dist)
 
         return edge_probs, edge_dests, edge_symbols
 
@@ -977,6 +982,25 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return trans_to_edge_key_map
 
+    def _get_trans_probabilities(self,
+                                 curr_state: Node) -> Tuple[Symbols,
+                                                            Probabilities]:
+        """
+        Extracts the transition probabilities and associated symbols at the
+        current state.
+
+        :param      curr_state:  The curr state
+
+        :returns:   The transition probabilities and associated symbols
+        """
+
+        trans_distribution = self._get_node_data(curr_state,
+                                                 'trans_distribution')
+        possible_symbols = self._convert_symbol_idxs(trans_distribution.xk)
+        probabilities = trans_distribution.pk
+
+        return possible_symbols, probabilities
+
     def _set_node_labels(self, final_weight_key: str,
                          state_observation_key: str,
                          can_have_accepting_nodes: bool,
@@ -1086,6 +1110,11 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             graph = self
 
         node_data = graph.nodes.data()
+
+        if not self._is_sampleable and data_key == 'trans_distribution':
+            msg = 'automaton is not sampleable and thus does not have ' + \
+                  'transition distributions'
+            raise TypeError(msg)
 
         return node_data[node_label][data_key]
 
