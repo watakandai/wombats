@@ -1,5 +1,6 @@
 import os
 import collections
+import warnings
 from typing import Tuple
 from bidict import bidict
 
@@ -62,6 +63,22 @@ class TransitionSystem(Automaton):
 
         self._num_obs = num_obs
         """number of state observations in TS obs. space"""
+
+        self.observations = set()
+        """the set of all possible state output symbols (observations)"""
+
+        for state in self.state_labels:
+            self.observations.add(self._get_node_data(state, 'observation'))
+
+        N_actual_obs = len(self.observations)
+        if N_actual_obs != num_obs:
+            msg = f'given num_obs ({num_obs}) ' + \
+                  f'is different than the actual number of unique ' + \
+                  f'observations seen ({N_actual_obs}) in the given graph ' + \
+                  f'data. proceeding using self._num_obs = {N_actual_obs}.'
+            warnings.warn(msg, RuntimeWarning)
+
+        self._num_obs = N_actual_obs
 
     def transition(self, curr_state, input_symbol: str) -> TS_Trans_Data:
         """
