@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import collections
 import multiprocessing
+import warnings
 from numpy.random import RandomState
 from joblib import Parallel, delayed
 from abc import ABCMeta, abstractmethod
@@ -512,37 +513,67 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
     def _initialize_node_edge_properties(self, final_weight_key: str = None,
                                          state_observation_key: str = None,
                                          can_have_accepting_nodes: bool = True,
-                                         edge_weight_key: str = None) -> None:
+                                         edge_weight_key: str = None,
+                                         stochastic: {bool, None}=None,
+                                         should_complete: {bool, None}=None,
+                                         violating_state: {str, None}=None,
+                                         complete: str = 'smooth') -> None:
         """
         Initializes the node and edge data properties correctly for a pdfa.
 
         :param      final_weight_key:          key in the automaton's node data
                                                corresponding to the weight /
                                                probability of ending in that
-                                               node.
-                                               If None, don't include this info
-                                               in the display of the automaton.
+                                               node. If None, don't include
+                                               this info in the display of the
+                                               automaton.
                                                (default None)
-        :param      state_observation_key:     The key in each node's data
-                                               dict for state observations.
-                                               If None, don't include this info
-                                               in the display of the automaton
+        :param      state_observation_key:     The key in each node's data dict
+                                               for state observations. If None,
+                                               don't include this info in the
+                                               display of the automaton
                                                (default None)
         :param      can_have_accepting_nodes:  Indicates if the automata can
                                                have accepting nodes
                                                (default True)
-        :param      edge_weight_key:           The key in each edge's data
-                                               dict for edge weight / prob.
-                                               If None, don't include this info
-                                               in the display of the automaton
+        :param      edge_weight_key:           The key in each edge's data dict
+                                               for edge weight / prob. If None,
+                                               don't include this info in the
+                                               display of the automaton
                                                (default None)
-
+        :param      stochastic:                the transitions are
+                                               non-probabilistic, so we are
+                                               going to assign a uniform
+                                               distribution over all symbols
+                                               for the purpose of generation
+        :param      should_complete:           Whether to try transition
+                                               completion
+        :param      violating_state:           The violating state name
+        :param      complete:                  Whether to ensure each
+                                               transition is alphabet-complete.
+                                               {'smooth', 'violate'}
+                                               (default 'smooth')
+                                               If 'smooth':
+                                               The completeness processing will
+                                               alter existing transition
+                                               probabilities
+                                               If 'violate':
+                                               All completed states will be
+                                               sent to the given violating
+                                               state and the existing
+                                               transition probability
+                                               distributions will NOT be
+                                               altered.
         """
 
         # do batch computations at initialization, as these shouldn't
         # frequently change
         for node in self.nodes:
-            self._compute_node_data_properties(node)
+            self._compute_node_data_properties(node,
+                                               stochastic=stochastic,
+                                               should_complete=should_complete,
+                                               violating_state=violating_state,
+                                               complete=complete)
 
         self._set_node_labels(final_weight_key, state_observation_key,
                               can_have_accepting_nodes)
@@ -629,14 +660,22 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         #
         # for a automaton, a given start state and symbol must have a
         # deterministic transition
-        for key in new_trans_map_entries.keys():
+        for key, dest_state in new_trans_map_entries.items():
+            start_state = key[0]
+            symbol = key[1]
             if key in self._transition_map:
-                curr_state = key[0]
-                symbol = key[1]
-                msg = ('duplicate transition from state {} '
-                       'under symbol {} found - transition must be '
-                       'deterministic').format(curr_state, symbol)
-                raise ValueError(msg)
+                new_dest_state = dest_state != self._transition_map[key]
+                same_start_state = key in self._transition_map
+                non_deterministic_trans = same_start_state and new_dest_state
+                if non_deterministic_trans:
+                    msg = ('duplicate transition from state {} '
+                           'under symbol {} found - transition must be '
+                           'deterministic').format(start_state, symbol)
+                    raise ValueError(msg)
+                elif same_start_state and not new_dest_state:
+                    msg = ('updating existing transition from state {} '
+                           'under symbol {}').format(start_state, symbol)
+                    warnings.warn(msg, RuntimeWarning)
 
         self._transition_map = {**self._transition_map,
                                 **new_trans_map_entries}
@@ -802,7 +841,15 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         if complete == 'smooth':
             prob_to_add = self._smoothing_amount
         elif complete == 'violate':
-            prob_to_add = 0.0
+
+            # no probability of transition to the violating state,
+            # but the violating state must have a uniform self-transition
+            # distribution over all possible symbols, except for the
+            # "termination" symbol - violating state never terminates.
+            if dest_state == curr_state:
+                prob_to_add = 1.0 / self._alphabet_size
+            else:
+                prob_to_add = 0.0
 
         # here we add in the missing transition probabilities as just very
         # unlikely self-loops ('smooth') or 0 probability transitions to the

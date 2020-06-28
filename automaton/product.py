@@ -54,6 +54,39 @@ class Product(Automaton):
                          can_have_accepting_nodes=False,
                          edge_weight_key=None)
 
+    @classmethod
+    def _complete_specification(self, specification: PDFA) -> PDFA:
+        """
+        processes the automaton and makes sure each state has a transition for
+        each symbol
+
+        completed nodes will be sent to "violating", cyclic state with
+        uniform probability over all symbols, as producing the missing symbols
+        is impossible given the language defined by the specification
+
+        :param      specification:  The specification to complete
+
+        :returns:   the completed version of the PDFA
+        """
+
+        # first need to define and add the "violating" state to the
+        # specification's underlying graph
+        violating_state = 'q_v'
+        violating_state_props = {'final_probability': 0.00,
+                                 'trans_distribution': None,
+                                 'is_accepting': None}
+        specification.add_node(violating_state, **violating_state_props)
+
+        specification._initialize_node_edge_properties(
+            can_have_accepting_nodes=True,
+            final_weight_key='final_probability',
+            edge_weight_key='probability',
+            should_complete=True,
+            violating_state=violating_state,
+            complete='violate')
+
+        return specification
+
     def _set_state_acceptance(self, curr_state: Node) -> None:
         """
         Sets the state acceptance property for the given state.
@@ -126,12 +159,14 @@ class ProductBuilder(Builder):
         internal_spec = copy.deepcopy(specification)
         internal_dyn_sys = copy.deepcopy(dynamical_system)
 
-        complete_specification = self.complete_specification(internal_spec)
-        augmented_dyn_sys = self.augment_initial_state(internal_dyn_sys)
-        initial_state = self.calculate_initial_state(augmented_dyn_sys,
-                                                     complete_specification)
-        config_data = self.compute_product(initial_state, augmented_dyn_sys,
-                                           complete_specification)
+        complete_specification = Product._complete_specification(internal_spec)
+        complete_specification.draw_IPython()
+        augmented_dyn_sys = Product._augment_initial_state(internal_dyn_sys)
+        init_state = Product._calculate_initial_state(augmented_dyn_sys,
+                                                      complete_specification)
+        config_data = Product._compute_product(init_state,
+                                               augmented_dyn_sys,
+                                               complete_specification)
 
         # saving these so we can just return initialized instances if the
         # underlying data has not changed
