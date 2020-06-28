@@ -118,8 +118,7 @@ class PDFA(Automaton):
                                            (a.k.a. lambda). If not given, will
                                            default to base class default.
         :param      beta:                  the final state probability needed
-                                           for a state to accept. Not used for
-                                           PDFA (default None)
+                                           for a state to accept.
         """
 
         self._beta = beta
@@ -172,7 +171,7 @@ class PDFA(Automaton):
         :param      pred_method:  The method used to choose the next state. see
                                   _choose_next_state for details on how each
                                   pred_method is implemented.
-                                  {'sample', 'max_prob'} (default 'max_prob')
+                                  {'sample', 'max_prob'}
 
         :returns:   the most probable next symbol in the sequence
         """
@@ -221,7 +220,7 @@ class PDFA(Automaton):
 
         :param      trace:  The sequence of symbols to compute the log score of
         :param      base:   The log base. Commonly set to 2 in classic
-                            information theory literature (default 2.0)
+                            information theory literature
 
         :returns:   log of the probability - NOT log odds
         """
@@ -262,7 +261,7 @@ class PDFA(Automaton):
 
         :param      trace:  The sequence of symbols to evaluate
         :param      base:   The log base. Commonly set to 2 in classic
-                            information theory literature (default 2.0)
+                            information theory literature
 
         :returns:   the approximate cross-entropy of the given trace
         """
@@ -288,7 +287,7 @@ class PDFA(Automaton):
         :param      base:   The log base used for log probability calculations
                             of the approximate cross-entropy underpinning the
                             perplexity. Commonly set to 2 in classic
-                            information theory literature (default 2.0)
+                            information theory literature
 
         :returns:   the approximate perplexity of the given trace
         """
@@ -313,7 +312,6 @@ class PDFA(Automaton):
                                          in the target language distribution
         :param      base:                The log base. Commonly set to 2 in
                                          classic information theory literature
-                                         (default 2.0)
 
         :returns:   the actual cross-entropy of the given trace
         """
@@ -345,7 +343,6 @@ class PDFA(Automaton):
                                          in the target language distribution
         :param      base:                The log base. Commonly set to 2 in
                                          classic information theory literature
-                                         (default 2.0)
 
         :returns:   the actual cross-entropy of the given trace
         """
@@ -362,7 +359,7 @@ class PDFA(Automaton):
         :param      pred_method:  The method used to choose the next state.
                                   see _choose_next_state for details on how
                                   each pred_method is implemented.
-                                  {'sample', 'max_prob'} (default 'max_prob')
+                                  {'sample', 'max_prob'}
 
         :returns:   predictive accuracy ratio ([0 -> 1]) of the model on the
                     given traces

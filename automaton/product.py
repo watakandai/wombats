@@ -6,8 +6,8 @@ from bidict import bidict
 from wombats.factory.builder import Builder
 from .transition_system import TransitionSystem
 from .pdfa import PDFA
-from .base import (Automaton, NXNodeList, NXEdgeList, Node, Nodes,
-                   Observation, Symbol, Symbols)
+from .base import (Automaton, NXNodeList, NXEdgeList, Node,
+                   Observation)
 
 # define these type defs for method annotation type hints
 TS_Trans_Data = Tuple[Node, Observation]
@@ -55,7 +55,7 @@ class Product(Automaton):
                          edge_weight_key=None)
 
     @classmethod
-    def _complete_specification(self, specification: PDFA) -> PDFA:
+    def _complete_specification(cls, specification: PDFA) -> PDFA:
         """
         processes the automaton and makes sure each state has a transition for
         each symbol
@@ -66,7 +66,7 @@ class Product(Automaton):
 
         :param      specification:  The specification to complete
 
-        :returns:   the completed version of the PDFA
+        :returns:   the completed version of the specification
         """
 
         # first need to define and add the "violating" state to the
@@ -86,6 +86,22 @@ class Product(Automaton):
             complete='violate')
 
         return specification
+
+    @classmethod
+    def _augment_initial_state(cls, dynamical_system: TransitionSystem,
+                               specification: PDFA) -> TransitionSystem:
+
+        initialization_state = 'x_init'
+        spec_empty_symbol = specification._empty_transition_sym
+        initialization_state_props = {'observation': spec_empty_symbol}
+        dynamical_system.add_node(initialization_state,
+                                  **initialization_state_props)
+
+        dynamical_system.add_edge(initialization_state,
+                                  dynamical_system.start_state)
+        
+
+
 
     def _set_state_acceptance(self, curr_state: Node) -> None:
         """
@@ -156,12 +172,13 @@ class ProductBuilder(Builder):
         :returns:   instance of an initialized Product automaton object
         """
 
+        # don't want to destroy the specification when we pre-process it
         internal_spec = copy.deepcopy(specification)
-        internal_dyn_sys = copy.deepcopy(dynamical_system)
 
         complete_specification = Product._complete_specification(internal_spec)
         complete_specification.draw_IPython()
-        augmented_dyn_sys = Product._augment_initial_state(internal_dyn_sys)
+
+        augmented_dyn_sys = Product._augment_initial_state(dynamical_system)
         init_state = Product._calculate_initial_state(augmented_dyn_sys,
                                                       complete_specification)
         config_data = Product._compute_product(init_state,

@@ -40,6 +40,8 @@ Sampled_Trans_Data = (Node, Symbol, Probability)
 
 # constants
 SMOOTHING_AMOUNT = 0.0001
+DEFAULT_FINAL_TRANS_SYMBOL = -1000
+DEFAULT_EMPTY_TRANS_SYMBOL = -1
 
 
 class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
@@ -71,8 +73,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                  start_state: Hashable,
                  smooth_transitions: bool,
                  is_stochastic: bool,
-                 final_transition_sym: Hashable = -1000,
-                 empty_transition_sym: Hashable = -1,
+                 final_transition_sym: Hashable = DEFAULT_FINAL_TRANS_SYMBOL,
+                 empty_transition_sym: Hashable = DEFAULT_EMPTY_TRANS_SYMBOL,
                  final_weight_key: str = None,
                  state_observation_key: str = None,
                  can_have_accepting_nodes: bool = True,
@@ -106,30 +108,25 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                                distribution over all symbols
                                                for the purpose of generation
         :param      final_transition_sym:      representation of the
-                                               termination symbol (default
-                                               -1000)
+                                               termination symbol
         :param      empty_transition_sym:      representation of the empty
-                                               symbol (a.k.a. lambda) (default
-                                               -1)
+                                               symbol (a.k.a. lambda)
         :param      final_weight_key:          key in the automaton's node data
                                                corresponding to the weight /
                                                probability of ending in that
                                                node. If None, don't include
                                                this info in the display of the
-                                               automaton. (default None)
+                                               automaton.
         :param      state_observation_key:     The key in each node's data dict
                                                for state observations. If None,
                                                don't include this info in the
                                                display of the automaton
-                                               (default None)
         :param      can_have_accepting_nodes:  Indicates if the automata can
-                                               have accepting nodes (default
-                                               True)
+                                               have accepting nodes
         :param      edge_weight_key:           The key in each edge's data dict
                                                for edge weight / prob. If None,
                                                don't include this info in the
                                                display of the automaton
-                                               (default None)
         :param      smoothing_amount:          probability mass to re-assign to
                                                unseen symbols at each node
         """
@@ -167,6 +164,12 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         self._smoothing_amount = smoothing_amount
         """probability mass to re-assign to unseen symbols at each node"""
+
+        self.symbols = set()
+        """set of all symbols used by the automaton"""
+
+        self.state_labels = set()
+        """set of all states in the automaton"""
 
         # need to start with a fully initialized networkx digraph
         super().__init__()
@@ -282,7 +285,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      random_state:  The np.random.RandomState() seed parameter
                                    for sampling from the state transition
                                    distribution. Defaulting to None causes the
-                                   seed to reset. (default None)
+                                   seed to reset.
 
         :returns:   the sequence of symbols emitted, the length of the trace,
                     the probability of the trace in the language of the pdfa
@@ -318,6 +321,51 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return sampled_trace, length_of_trace, trace_prob
 
+    def add_node(self, node_for_adding, **attr):
+        """
+        Add a single node `node_for_adding` and update node attributes.
+
+        Parameters
+        ----------
+        node_for_adding : node
+            A node can be any hashable Python object except None.
+        attr : keyword arguments, optional
+            Set or change node attributes using key=value.
+
+        See Also
+        --------
+        add_nodes_from
+
+        Examples
+        --------
+        >>> G = nx.Graph()   # or DiGraph, MultiGraph, MultiDiGraph, etc
+        >>> G.add_node(1)
+        >>> G.add_node('Hello')
+        >>> K3 = nx.Graph([(0, 1), (1, 2), (2, 0)])
+        >>> G.add_node(K3)
+        >>> G.number_of_nodes()
+        3
+
+        Use keywords set/change node attributes:
+
+        >>> G.add_node(1, size=10)
+        >>> G.add_node(3, weight=0.4, UTM=('13S', 382871, 3972649))
+
+        Notes
+        -----
+        A hashable object is one that can be used as a key in a Python
+        dictionary. This includes strings, numbers, tuples of strings
+        and numbers, etc.
+
+        On many platforms hashable items also include mutables such as
+        NetworkX Graphs, though one should be careful that the hash
+        doesn't change on mutables.
+        """
+
+        self._num_states += 1
+
+        return super(nx.MultiDiGraph, self).add_node(node_for_adding, **attr)
+
     def _choose_next_state(self, curr_state: Node,
                            random_state: {None, int, Iterable}=None,
                            pred_method: str = 'sample') -> Sampled_Trans_Data:
@@ -329,7 +377,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      random_state:  The np.random.RandomState() seed parameter
                                    for sampling from the state transition
                                    distribution. Defaulting to None causes the
-                                   seed to reset. (default None)
+                                   seed to reset.
         :param      pred_method:   The method used to choose the next state:
                                    'sample':
                                    sample from the transition
@@ -345,7 +393,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                    is:
                                    s_{t+1} = argmax_{s'}P(s' | s_t, O_t)
                                    makes deterministic predictions.
-                                   {'sample', 'max_prob'} (default 'max_prob')
+                                   {'sample', 'max_prob'}
 
         :returns:   The next state's label, the symbol emitted by changing
                     states, the probability of this transition occurring
@@ -433,7 +481,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      final_transition_sym:  representation of the termination /
                                            symbol
         :param      empty_transition_sym:  representation of the empty
-                                           symbol (a.k.a. lambda) (default -1)
+                                           symbol (a.k.a. lambda)
         :param      is_stochastic:         the transitions are
                                            non-probabilistic, so we are going
                                            to assign a uniform distribution
@@ -514,10 +562,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                          state_observation_key: str = None,
                                          can_have_accepting_nodes: bool = True,
                                          edge_weight_key: str = None,
-                                         stochastic: {bool, None}=None,
-                                         should_complete: {bool, None}=None,
-                                         violating_state: {str, None}=None,
-                                         complete: str = 'smooth') -> None:
+                                         **node_data_args: dict) -> None:
         """
         Initializes the node and edge data properties correctly for a pdfa.
 
@@ -527,94 +572,52 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                                node. If None, don't include
                                                this info in the display of the
                                                automaton.
-                                               (default None)
         :param      state_observation_key:     The key in each node's data dict
                                                for state observations. If None,
                                                don't include this info in the
                                                display of the automaton
-                                               (default None)
         :param      can_have_accepting_nodes:  Indicates if the automata can
                                                have accepting nodes
-                                               (default True)
         :param      edge_weight_key:           The key in each edge's data dict
                                                for edge weight / prob. If None,
                                                don't include this info in the
                                                display of the automaton
-                                               (default None)
-        :param      stochastic:                the transitions are
-                                               non-probabilistic, so we are
-                                               going to assign a uniform
-                                               distribution over all symbols
-                                               for the purpose of generation
-        :param      should_complete:           Whether to try transition
-                                               completion
-        :param      violating_state:           The violating state name
-        :param      complete:                  Whether to ensure each
-                                               transition is alphabet-complete.
-                                               {'smooth', 'violate'}
-                                               (default 'smooth')
-                                               If 'smooth':
-                                               The completeness processing will
-                                               alter existing transition
-                                               probabilities
-                                               If 'violate':
-                                               All completed states will be
-                                               sent to the given violating
-                                               state and the existing
-                                               transition probability
-                                               distributions will NOT be
-                                               altered.
+        :param      node_data_args:            keyword arguments to pass to
+                                               _compute_node_data_properties()
         """
 
         # do batch computations at initialization, as these shouldn't
         # frequently change
         for node in self.nodes:
-            self._compute_node_data_properties(node,
-                                               stochastic=stochastic,
-                                               should_complete=should_complete,
-                                               violating_state=violating_state,
-                                               complete=complete)
+            self._compute_node_data_properties(node, **node_data_args)
 
         self._set_node_labels(final_weight_key, state_observation_key,
                               can_have_accepting_nodes)
         self._set_edge_labels(edge_weight_key)
 
+        for state, symbol in self._transition_map.keys():
+            self.symbols.add(symbol)
+            self.state_labels.add(state)
+
+        # _final_transition_sym is just an internal not user-facing symbol
+        if self._final_transition_sym in self.symbols:
+            self.symbols.remove(self._final_transition_sym)
+
+        # if we used smoothing, these might be larger, so we should expand them
+        self._alphabet_size = len(self.symbols)
+        self._num_states = len(self.state_labels)
+
     def _compute_node_data_properties(self, node: Node,
-                                      stochastic: {bool, None}=None,
-                                      should_complete: {bool, None}=None,
-                                      violating_state: {str, None}=None,
-                                      complete: str = 'smooth') -> None:
+                                      **node_data_args: dict) -> None:
         """
         Base method for calculating the properties for the given node.
 
-        :param      node:             The node to calculate properties for
-        :param      stochastic:       the transitions are non-probabilistic, so
-                                      we are going to assign a uniform
-                                      distribution over all symbols for the
-                                      purpose of generation
-        :param      should_complete:  Whether to try transition completion
-        :param      violating_state:  The violating state name
-        :param      complete:         Whether to ensure each transition is
-                                      alphabet-complete.
-                                      {'smooth', 'violate'}
-                                      (default 'smooth')
-                                      If 'smooth':
-                                      The completeness processing will alter
-                                      existing transition probabilities
-                                      If 'violate':
-                                      All completed states will be
-                                      sent to the given violating state and the
-                                      existing transition probability
-                                      distributions will NOT be altered.
+        :param      node:            The node to calculate properties for
+        :param      node_data_args:  keyword arguments to
+                                     _set_state_transition_dist
 
         :returns:   The node data properties.
         """
-
-        # using class defaults if not given
-        if stochastic is None:
-            stochastic = self._is_stochastic
-        if should_complete is None:
-            should_complete = self._use_smoothing
 
         # acceptance property shouldn't change after load in
         self._set_state_acceptance(node)
@@ -629,10 +632,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
          edge_symbols) = \
             self._set_state_transition_dist(node,
                                             edge_key_map=self._edge_key_map,
-                                            stochastic=stochastic,
-                                            should_complete=should_complete,
-                                            violating_state=violating_state,
-                                            complete=complete)
+                                            **node_data_args)
 
         self._set_trans_map(node, edge_symbols, edge_dests)
 
@@ -682,8 +682,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
     def _set_state_transition_dist(self, curr_state: Node,
                                    edge_key_map: dict,
-                                   stochastic: bool,
-                                   should_complete: bool,
+                                   stochastic: {bool, None}=None,
+                                   should_complete: {bool, None}=None,
                                    violating_state: {str, None}=None,
                                    complete: str = 'smooth') -> Trans_data:
         """
@@ -702,7 +702,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      complete:         Whether to ensure each transition is
                                       alphabet-complete.
                                       {'smooth', 'violate'}
-                                      (default 'smooth')
                                       If 'smooth':
                                       The completeness processing will alter
                                       existing transition probabilities
@@ -715,6 +714,12 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :returns:   The new edge_probs, edge_dests, and edge_symbols added to
                     the underlying graph
         """
+
+        # using class defaults if not given
+        if stochastic is None:
+            stochastic = self._is_stochastic
+        if should_complete is None:
+            should_complete = self._use_smoothing
 
         # need to convert the hashable symbols to their integer indices for
         # creating the categorical distribution, which only works with
@@ -798,7 +803,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      complete:      Whether to ensure each transition is
                                    alphabet-complete.
                                    {'smooth', 'violate'}
-                                   (default 'smooth')
                                    If 'smooth':
                                    The completeness processing will alter
                                    existing transition probabilities
@@ -808,7 +812,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                    transition probability distributions will
                                    NOT be altered.
         :param      dest_state:    The destination state label for the missing
-                                   transitions. (default curr_state)
+                                   transitions.
+                                   (default curr_state)
 
         :returns:   The smoothed / completed version of edge_probs, edge_dests,
                     and edge_symbols
@@ -989,9 +994,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      state_observation_key:     The state observation key
         :param      can_have_accepting_nodes:  Indicates if the automata can
                                                have accepting nodes
-        :param      graph:                     The graph to access. Default =
-                                               None => use instance (default
-                                               None)
+        :param      graph:                     The graph to access.
+                                               Default = None => use instance
         :type       graph:                     {None, nx.MultiDiGraph}
         :type       final_weight_key:          string
         :type       can_have_accepting_nodes:  boolean
@@ -1040,8 +1044,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         Sets each edge's label property for use in graphviz output
 
         :param      edge_weight_key:  The edge data's "weight" key
-        :param      graph:            The graph to access. Default = None =>
-                                      use instance (default None)
+        :param      graph:            The graph to access.
+                                      Default = None => use instance
         """
 
         if graph is None:
@@ -1075,7 +1079,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      node_label:  The node label
         :param      data_key:    The desired node data's key name
         :param      graph:       The graph to access. Default = None => use
-                                 instance (default None)
+                                 instance
 
         :returns:   The node data associated with the node_label and data_key
         :rtype:     type of self.nodes.data()[node_label][data_key]
@@ -1096,8 +1100,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      node_label:  The node label
         :param      data_key:    The desired node data's key name
         :param      data:        The data to associate with data_key
-        :param      graph:       The graph to access. Default = None => use
-                                 instance (default None)
+        :param      graph:       The graph to access.
+                                 Default = None => use instance
         """
 
         if graph is None:
@@ -1113,8 +1117,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         :param      src_node_label:   The edge's source node edge label
         :param      dest_node_label:  The edge's destination node label
-        :param      graph:            The graph to access. Default = None =>
-                                      use instance (default None)
+        :param      graph:            The graph to access.
+                                      Default = None => use instance
 
         :returns:   The edge data dict associated with the src and dest labels
                     and the desired data_key
@@ -1138,8 +1142,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      symbol:           The symbol
         :param      data_key:         The desired edge data's key name
         :param      data:             The data to associate with data_key
-        :param      graph:            The graph to access. Default = None =>
-                                      use instance (default None)
+        :param      graph:            The graph to access.
+                                      Default = None => use instance
         """
 
         if graph is None:
@@ -1160,8 +1164,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      node_label:     The node label
         :param      new_edge_data:  The labels of the destination states under
                                     each symbol at the curr_state
-        :param      graph:            The graph to access. Default = None =>
-                                      use instance (default None)
+        :param      graph:          The graph to access.
+                                    Default = None => use instance
         """
 
         if graph is None:

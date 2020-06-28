@@ -4,7 +4,6 @@ import re
 import networkx as nx
 from networkx.drawing.nx_pydot import read_dot
 from networkx.drawing import nx_agraph
-from typing import Hashable
 from bidict import bidict
 
 # local packages
@@ -99,7 +98,7 @@ class FDFA(Automaton):
         :param      graph:                 The nx graph with the flexfringe
                                            fdfa model loaded in
         :param      final_transition_sym:  representation of the empty string /
-                                           symbol (a.k.a. lambda) (default -1)
+                                           symbol (a.k.a. lambda)
 
         :returns:   configuration data dictionary for the fdfa
         :rtype:     dictionary
@@ -256,7 +255,8 @@ class FDFA(Automaton):
         """
         pass
 
-    def _compute_node_data_properties(self, curr_node: Node) -> None:
+    def _compute_node_data_properties(self, curr_node: Node,
+                                      **node_data_args) -> None:
         """
         Sets all state frequencies for each node in an initialized FDFA
 
@@ -315,6 +315,15 @@ class FDFA(Automaton):
                             'in_frequency', number_trans_in)
         self._set_node_data(curr_node,
                             'out_frequency', number_trans_out)
+
+        # need to compute the transition map
+        edge_data = self.edges([curr_node], data=True)
+        edge_dests = [edge[1] for edge in edge_data]
+
+        original_edge_symbols = [edge[2]['symbol'] for edge in edge_data]
+        edge_symbols = [self._symbol_display_map[symbol] for symbol in
+                        original_edge_symbols]
+        self._set_trans_map(curr_node, edge_symbols, edge_dests)
 
     def _compute_node_flow(self, curr_node: Node,
                            flow_type: str) -> (int, int):
@@ -393,7 +402,6 @@ class FDFABuilder(Builder):
         :param      graph_data:         The string containing graph data. Could
                                         be a filename or just the raw data
         :param      graph_data_format:  The graph data file format.
-                                        (default 'dot_file')
                                         {'dot_file', 'dot_string'}
 
         :returns:   instance of an initialized FDFA object

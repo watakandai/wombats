@@ -150,8 +150,8 @@ class TSBuilder(Builder):
         graph_data and graph_data_format must match
 
         :param      graph_data:         The graph configuration file name
-        :param      graph_data_format:  The graph data file format. (default
-                                        'yaml') {'yaml'}
+        :param      graph_data_format:  The graph data file format.
+                                        {'yaml'}
 
         :returns:   instance of an initialized TransitionSystem object
 
