@@ -972,7 +972,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         trans_to_edge_key_map = dict()
         for dest_state, edges in self[curr_state].items():
             for edge_key, edge_data in edges.items():
-                print(curr_state, edge_data, dest_state)
                 trans = (curr_state, edge_data['symbol'], dest_state)
                 trans_to_edge_key_map[trans] = edge_key
 

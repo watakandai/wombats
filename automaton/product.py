@@ -100,6 +100,15 @@ class Product(Automaton):
     @classmethod
     def _augment_initial_state(cls, dynamical_system: TransitionSystem,
                                specification: PDFA) -> TransitionSystem:
+        """
+        Adds an initialization state to the dynamical system to maintain
+        language distributional similarity with the specification
+
+        :param      dynamical_system:  The dynamical system to augment
+        :param      specification:     The specification to take a product with
+
+        :returns:   The transition system with a new initialization state added
+        """
 
         initialization_state = 'x_init'
 
@@ -208,10 +217,7 @@ class ProductBuilder(Builder):
             complete_specification)
         augmented_dyn_sys.draw_IPython()
 
-        init_state = Product._calculate_initial_state(augmented_dyn_sys,
-                                                      complete_specification)
-        config_data = Product._compute_product(init_state,
-                                               augmented_dyn_sys,
+        config_data = Product._compute_product(augmented_dyn_sys,
                                                complete_specification)
 
         # saving these so we can just return initialized instances if the
