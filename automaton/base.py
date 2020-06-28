@@ -37,6 +37,9 @@ Probabilities = Iterable[Probability]
 Trans_data = (Weights, Nodes, Symbols)
 Sampled_Trans_Data = (Node, Symbol, Probability)
 
+# constants
+SMOOTHING_AMOUNT = 0.0001
+
 
 class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
     """
@@ -72,7 +75,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                  final_weight_key: str = None,
                  state_observation_key: str = None,
                  can_have_accepting_nodes: bool = True,
-                 edge_weight_key: str = None) -> 'Automaton':
+                 edge_weight_key: str = None,
+                 smoothing_amount: float = SMOOTHING_AMOUNT) -> 'Automaton':
         """
         Constructs a new instance of an Automaton object.
 
@@ -125,6 +129,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                                don't include this info in the
                                                display of the automaton
                                                (default None)
+        :param      smoothing_amount:          probability mass to re-assign to
+                                               unseen symbols at each node
         """
 
         self._transition_map = {}
@@ -156,9 +162,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """whether symbol probabilities are given for string generation"""
 
         self._use_smoothing = smooth_transitions
-        """whether or not to smooth the input transition distributions"""
+        """whether or not to smooth the input sym. transition distributions"""
 
-        self._smoothing_amount = 0.001
+        self._smoothing_amount = smoothing_amount
         """probability mass to re-assign to unseen symbols at each node"""
 
         # need to start with a fully initialized networkx digraph

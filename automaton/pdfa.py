@@ -7,7 +7,7 @@ from bidict import bidict
 # local packages
 from wombats.factory.builder import Builder
 from .base import (Automaton, NXNodeList, NXEdgeList, Node, Symbol, Symbols,
-                   Probabilities)
+                   Probabilities, SMOOTHING_AMOUNT)
 from .fdfa import FDFA
 
 
@@ -79,10 +79,11 @@ class PDFA(Automaton):
                  alphabet_size: int,
                  num_states: int,
                  start_state: Node,
+                 smooth_transitions: bool,
+                 smoothing_amount: float = SMOOTHING_AMOUNT,
                  final_transition_sym: {Symbol, None}=None,
                  empty_transition_sym: {Symbol, None}=None,
-                 beta: float = 0.95,
-                 smooth_transitions: bool = True) -> 'PDFA':
+                 beta: float = 0.95) -> 'PDFA':
         """
         Constructs a new instance of a PDFA object.
 
@@ -106,6 +107,10 @@ class PDFA(Automaton):
                                            space
         :param      start_state:           unique start state string label of
                                            pdfa
+        :param      smooth_transitions:    whether to smooth the symbol
+                                           transitions distributions
+        :param      smoothing_amount:      probability mass to re-assign to
+                                           unseen symbols at each node
         :param      final_transition_sym:  representation of the termination
                                            symbol. If not given, will default
                                            to base class default.
@@ -115,8 +120,6 @@ class PDFA(Automaton):
         :param      beta:                  the final state probability needed
                                            for a state to accept. Not used for
                                            PDFA (default None)
-        :param      smooth_transitions:    whether to smooth the symbol
-                                           transitions distributions
         """
 
         self._beta = beta
@@ -127,7 +130,8 @@ class PDFA(Automaton):
                          alphabet_size, num_states, start_state,
                          final_transition_sym=final_transition_sym,
                          empty_transition_sym=empty_transition_sym,
-                         smooth_transitions=True,
+                         smooth_transitions=smooth_transitions,
+                         smoothing_amount=smoothing_amount,
                          is_stochastic=True,
                          final_weight_key='final_probability',
                          can_have_accepting_nodes=True,
@@ -502,7 +506,8 @@ class PDFABuilder(Builder):
         self.edges = None
 
     def __call__(self, graph_data: {str, FDFA},
-                 graph_data_format: str = 'yaml') -> PDFA:
+                 graph_data_format: str = 'yaml',
+                 **kwargs) -> PDFA:
         """
         Returns an initialized PDFA instance given the graph_data
 
@@ -511,18 +516,19 @@ class PDFABuilder(Builder):
         :param      graph_data:         The variable specifying graph data
         :param      graph_data_format:  The graph data file format.
                                         {'yaml', 'fdfa_object'}
+        :param      kwargs:             The keywords arguments
 
         :returns:   instance of an initialized PDFA object
 
         :raises     ValueError:         checks if graph_data and
-                                        graph_data_format have a
-                                        compatible data loader
+                                        graph_data_format have a compatible
+                                        data loader
         """
 
         if graph_data_format == 'yaml':
             self._instance = self._from_yaml(graph_data)
         elif graph_data_format == 'fdfa_object':
-            self._instance = self._from_fdfa(graph_data)
+            self._instance = self._from_fdfa(graph_data, **kwargs)
         else:
             msg = 'graph_data_format ({}) must be one of: "yaml", ' + \
                   '"fdfa_object"'.format(graph_data_format)
@@ -585,15 +591,23 @@ class PDFABuilder(Builder):
                 alphabet_size=config_data['alphabet_size'],
                 num_states=config_data['num_states'],
                 final_transition_sym=final_transition_sym,
-                start_state=config_data['start_state'])
+                start_state=config_data['start_state'],
+                smooth_transitions=config_data['smooth_transitions'])
 
             return self._instance
 
-    def _from_fdfa(self, fdfa: FDFA) -> PDFA:
+    def _from_fdfa(self, fdfa: FDFA,
+                   smooth_transitions: bool = False,
+                   smoothing_amount: float = SMOOTHING_AMOUNT) -> PDFA:
         """
         Returns an instance of a PDFA from an instance of FDFA
 
-        :param      fdfa:  initialized fdfa instance to convert to a pdfa
+        :param      fdfa:                initialized fdfa instance to convert
+                                         to a pdfa
+        :param      smooth_transitions:  whether or not to smooth the input
+                                         sym. transition distributions
+        :param      smoothing_amount:    probability mass to re-assign to
+                                         unseen symbols at each node
 
         :returns:   instance of an initialized PDFA object
         """
@@ -616,6 +630,8 @@ class PDFABuilder(Builder):
             num_states=fdfa._num_states,
             final_transition_sym=fdfa._final_transition_sym,
             empty_transition_sym=fdfa._empty_transition_sym,
-            start_state=fdfa.start_state)
+            start_state=fdfa.start_state,
+            smooth_transitions=smooth_transitions,
+            smoothing_amount=smoothing_amount)
 
         return self._instance

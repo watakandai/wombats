@@ -16,6 +16,9 @@ empty_transition_sym: -1
 # unique start state string label of pdfa
 start_state: 'q1'
 
+# whether or not to smooth the input sym. transition distributions
+smooth_transitions: False
+
 # define a list of node labels, where each label is a string identifier label
 # for a unique node, and the metadata properties for each node
 nodes:
