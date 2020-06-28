@@ -87,6 +87,11 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                            going to assign a uniform
                                            distribution over all symbols
                                            for the purpose of generation
+    :param      is_sampleable:             will formalize / create probability
+                                           distributions for each state's
+                                           transitions to allow for sampling of
+                                           runs from the machine
+    :param      num_obs:                   number of observation symbols
     :param      final_transition_sym:      representation of the
                                            termination symbol
     :param      empty_transition_sym:      representation of the empty
@@ -109,10 +114,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                            display of the automaton
     :param      smoothing_amount:          probability mass to re-assign to
                                            unseen symbols at each node
-    :param      is_sampleable:             will formalize / create probability
-                                           distributions for each state's
-                                           transitions to allow for sampling of
-                                           runs from the machine
     """
 
     def __init__(self,
@@ -125,6 +126,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                  smooth_transitions: bool,
                  is_stochastic: bool,
                  is_sampleable: bool,
+                 num_obs: {int, None}=None,
                  final_transition_sym: Hashable = DEFAULT_FINAL_TRANS_SYMBOL,
                  empty_transition_sym: Hashable = DEFAULT_EMPTY_TRANS_SYMBOL,
                  final_weight_key: str = None,
@@ -148,6 +150,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         self._num_states = num_states
         """number of states in automaton state space"""
+
+        self._num_obs = num_obs
+        """number of state observations in TS obs. space"""
 
         self._final_transition_sym = final_transition_sym
         """representation of the termination symbol"""
@@ -175,6 +180,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         self.state_labels = set()
         """set of all states in the automaton"""
+
+        self.observations = set()
+        """the set of all possible state output symbols (observations)"""
 
         # need to start with a fully initialized networkx digraph
         super().__init__()
@@ -326,6 +334,17 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return sampled_trace, length_of_trace, trace_prob
 
+    def observe(self, curr_state: Node) -> Observation:
+        """
+        Returns the given state's observation symbol
+
+        :param      curr_state:  The current TS state
+
+        :returns:   observation symbol emitted at curr_state
+        """
+
+        raise NotImplementedError
+
     def add_node(self, node_for_adding, **attr):
         """
         Add a single node `node_for_adding` and update node attributes.
@@ -453,8 +472,13 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                    'transition distribution').format(symbol, curr_state)
             raise ValueError(msg)
 
-        # stored in numpy array, so we just want the float probability value
-        symbol_probability = np.asscalar(probabilities[symbol_idx])
+        if self._is_sampleable:
+            # stored in numpy array, so we just want the float probability
+            # value
+            symbol_probability = np.asscalar(probabilities[symbol_idx])
+        else:
+            symbol_probability = probabilities[symbol_idx[0]]
+
         next_state = self._transition_map[(curr_state, symbol)]
 
         return next_state, symbol_probability
@@ -601,6 +625,23 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         # if we used smoothing, these might be larger, so we should expand them
         self._alphabet_size = len(self.symbols)
         self._num_states = len(self.state_labels)
+
+        # not all automaton have observations, and this needs to be computed
+        # after self.state_labels exists
+        if self._num_obs is not None:
+
+            for state in self.state_labels:
+                self.observations.add(self.observe(state))
+
+            N_actual_obs = len(self.observations)
+            if N_actual_obs != self._num_obs:
+                msg = f'given num_obs ({self._num_obs}) ' + \
+                      f'is different than the actual number of unique ' + \
+                      f'observations seen ({N_actual_obs}) in the given ' + \
+                      f'graph data. proceeding using ' + \
+                      f'self._num_obs = {N_actual_obs}.'
+                warnings.warn(msg, RuntimeWarning)
+            self._num_obs = N_actual_obs
 
     def _compute_node_data_properties(self, node: Node,
                                       **node_data_args: dict) -> None:
@@ -754,7 +795,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                 else:
                     edge_probs = [1.0 / num_symbols for symbol in edge_symbols]
             else:
-                edge_probs = None
+                edge_probs = [None]
 
         if should_complete:
             (edge_probs,
@@ -994,10 +1035,16 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :returns:   The transition probabilities and associated symbols
         """
 
-        trans_distribution = self._get_node_data(curr_state,
-                                                 'trans_distribution')
-        possible_symbols = self._convert_symbol_idxs(trans_distribution.xk)
-        probabilities = trans_distribution.pk
+        if self._is_sampleable:
+            trans_distribution = self._get_node_data(curr_state,
+                                                     'trans_distribution')
+            possible_symbols = self._convert_symbol_idxs(trans_distribution.xk)
+            probabilities = trans_distribution.pk
+        else:
+            possible_symbols = [symbol for (state, symbol)
+                                in self._transition_map.keys()
+                                if state == curr_state]
+            probabilities = [None for i in range(len(possible_symbols))]
 
         return possible_symbols, probabilities
 

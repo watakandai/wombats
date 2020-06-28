@@ -164,8 +164,6 @@ class Product(Automaton):
 
         nodes = {}
         edges = {}
-        # non_viol_state_out_prob_mass = {}
-        # gateway_states_to_violating = set()
 
         for ((x, q), sigma) in all_possible_prod_trans:
 
@@ -209,24 +207,6 @@ class Product(Automaton):
                             observation_dest=o_x_prime,
                             sigma=sigma,
                             trans_prob=trans_prob)
-
-        #             # we want to keep track of the valid outgoing probability
-        #             # mass of pre(violating states) so we can uniformly
-        #             # distribute the violating mass over the remaining
-        #             # available symbols
-        #             if q_prime != SPEC_VIOLATING_STATE:
-        #                 key = (prod_src_state, sigma, proc_dest_state)
-        #                 value = trans_prob
-        #                 if key not in non_viol_state_out_prob_mass:
-        #                     non_viol_state_out_prob_mass[key] = value
-        #                 else:
-        #                     non_viol_state_out_prob_mass[key] += value
-        #             else:
-        #                 gateway_states_to_violating.add(prod_src_state)
-
-        # edges = cls._adjust_violating_prob_mass(edges,
-        #                                         gateway_states_to_violating,
-        #                                         non_viol_state_out_prob_mass)
 
     @classmethod
     def _get_product_state_label(cls, dynamical_system_state: Node,

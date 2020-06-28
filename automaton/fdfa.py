@@ -76,6 +76,7 @@ class FDFA(Automaton):
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, symbol_display_map,
                          alphabet_size, num_states, start_state,
+                         num_obs=None,
                          smooth_transitions=False,
                          is_stochastic=False,
                          final_transition_sym=final_transition_sym,

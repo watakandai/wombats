@@ -124,6 +124,7 @@ class PDFA(Automaton):
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, symbol_display_map,
                          alphabet_size, num_states, start_state,
+                         num_obs=None,
                          final_transition_sym=final_transition_sym,
                          empty_transition_sym=empty_transition_sym,
                          smooth_transitions=smooth_transitions,

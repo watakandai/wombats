@@ -53,6 +53,7 @@ class TransitionSystem(Automaton):
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, symbol_display_map,
                          alphabet_size, num_states, start_state,
+                         num_obs=num_obs,
                          final_transition_sym=final_transition_sym,
                          empty_transition_sym=empty_transition_sym,
                          smooth_transitions=False,
@@ -61,25 +62,6 @@ class TransitionSystem(Automaton):
                          can_have_accepting_nodes=False,
                          edge_weight_key=None,
                          is_sampleable=True)
-
-        self._num_obs = num_obs
-        """number of state observations in TS obs. space"""
-
-        self.observations = set()
-        """the set of all possible state output symbols (observations)"""
-
-        for state in self.state_labels:
-            self.observations.add(self.observe(state))
-
-        N_actual_obs = len(self.observations)
-        if N_actual_obs != num_obs:
-            msg = f'given num_obs ({num_obs}) ' + \
-                  f'is different than the actual number of unique ' + \
-                  f'observations seen ({N_actual_obs}) in the given graph ' + \
-                  f'data. proceeding using self._num_obs = {N_actual_obs}.'
-            warnings.warn(msg, RuntimeWarning)
-
-        self._num_obs = N_actual_obs
 
     def transition(self, curr_state: Node, input_symbol: str) -> TS_Trans_Data:
         """
