@@ -13,8 +13,8 @@ from .base import (Automaton, NXNodeList, NXEdgeList, Node, Probability,
 # define these type defs for method annotation type hints
 TS_Trans_Data = Tuple[Node, Observation]
 
+IS_STOCHASTIC = True
 SPEC_VIOLATING_STATE = 'q_v'
-
 
 class Product(Automaton):
 
@@ -32,14 +32,26 @@ class Product(Automaton):
                                        networkx.add_edges_from() (src node
                                        label, dest node label, edge
                                        attribute dict)
+    :param      symbol_display_map:    bidirectional mapping of
+                                       hashable symbols, to a unique
+                                       integer index in the symbol map.
+                                       Needed to translate between the
+                                       indices in the transition
+                                       distribution and the hashable
+                                       representation which is
+                                       meaningful to the user
     :param      alphabet_size:         number of symbols in system alphabet
     :param      num_states:            number of states in automaton state
                                        space
     :param      num_obs:               number of observation symbols
     :param      start_state:           unique start state string label of
                                        system
-    :param      final_transition_sym:  representation of the empty string /
-                                       symbol (a.k.a. lambda) (default -1)
+    :param      final_transition_sym:  representation of the termination
+                                       symbol. If not given, will default
+                                       to base class default.
+    :param      empty_transition_sym:  representation of the empty symbol
+                                       (a.k.a. lambda). If not given, will
+                                       default to base class default.
     """
 
     def __init__(self,
@@ -48,24 +60,57 @@ class Product(Automaton):
                  symbol_display_map: bidict,
                  alphabet_size: int,
                  num_states: int,
+                 start_state: Node,
                  num_obs: int,
-                 start_state,
-                 final_transition_sym=-1) -> 'Product':
+                 final_transition_sym: Symbol,
+                 empty_transition_sym: Symbol) -> 'Product':
         """
         Constructs a new instance of an Product automaton object.
-
-
         """
 
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, symbol_display_map,
                          alphabet_size, num_states, start_state,
-                         final_transition_sym=final_transition_sym,
                          smooth_transitions=False,
-                         is_stochastic=False,
+                         is_stochastic=IS_STOCHASTIC,
+                         is_sampleable=False,
+                         num_obs=num_obs,
+                         final_transition_sym=final_transition_sym,
+                         empty_transition_sym=empty_transition_sym,
+                         final_weight_key='final_probability',
                          state_observation_key='observation',
-                         can_have_accepting_nodes=False,
-                         edge_weight_key=None)
+                         can_have_accepting_nodes=True,
+                         edge_weight_key='probability')
+
+    def observe(self, curr_state: Node) -> Observation:
+        """
+        Returns the given state's observation symbol
+
+        :param      curr_state:  The current product state
+
+        :returns:   observation symbol emitted at curr_state
+        """
+
+        return self._get_node_data(curr_state, 'observation')
+
+    def _set_state_acceptance(self, curr_state: Node) -> None:
+        """
+        Sets the state acceptance property for the given state.
+
+        If curr_state's final_probability == 1.00 then the state is guaranteed
+        to be final
+
+        :param      curr_state:  The current state's node label
+        """
+
+        curr_final_prob = self._get_node_data(curr_state, 'final_probability')
+
+        if curr_final_prob >= 1.00:
+            state_accepts = True
+        else:
+            state_accepts = False
+
+        self._set_node_data(curr_state, 'is_accepting', state_accepts)
 
     @classmethod
     def _complete_specification(cls, specification: PDFA) -> PDFA:
@@ -123,13 +168,15 @@ class Product(Automaton):
 
         dynamical_system.add_node(initialization_state,
                                   **initialization_state_props)
+        old_start_state = dynamical_system.start_state
+        dynamical_system.start_state = initialization_state
 
         # can choose any symbol to be the initialization symbol, doesn't matter
         initialization_symbol = list(dynamical_system.symbols)[0]
         initialization_edge_props = {'symbol': initialization_symbol,
                                      'probability': 1.00}
         dynamical_system.add_edge(initialization_state,
-                                  dynamical_system.start_state,
+                                  old_start_state,
                                   **initialization_edge_props)
 
         dynamical_system._initialize_node_edge_properties(
@@ -162,6 +209,10 @@ class Product(Automaton):
         P = itertools.product(X, Q)
         all_possible_prod_trans = itertools.product(P, Sigma)
 
+        x_init = T.start_state
+        q_init = A.start_state
+        init_prod_state = cls._get_product_state_label(x_init, q_init)
+
         nodes = {}
         edges = {}
 
@@ -186,11 +237,9 @@ class Product(Automaton):
                     else:
                         q_prime, trans_prob = A._get_next_state(q, o_x_prime)
 
-                    q_final_prob = A._get_next_state(q,
-                                                     A._final_transition_sym)
-                    q_prime_final_prob = A._get_next_state(
-                        q_prime,
-                        A._final_transition_sym)
+                    q_final_prob = A._get_node_data(q, 'final_probability')
+                    q_prime_final_prob = A._get_node_data(q_prime,
+                                                          'final_probability')
                     o_x = T.observe(x)
 
                     (nodes,
@@ -207,6 +256,8 @@ class Product(Automaton):
                             observation_dest=o_x_prime,
                             sigma=sigma,
                             trans_prob=trans_prob)
+
+        return cls._package_data(T, nodes, edges, init_prod_state)
 
     @classmethod
     def _get_product_state_label(cls, dynamical_system_state: Node,
@@ -226,7 +277,7 @@ class Product(Automaton):
         if type(specification_state) != str:
             specification_state = str(specification_state)
 
-        return dynamical_system_state + specification_state
+        return dynamical_system_state + ', ' + specification_state
 
     @classmethod
     def _add_product_node(cls, nodes: dict, x: Node, q: Node,
@@ -250,12 +301,16 @@ class Product(Automaton):
                     the label of the newly added product state
         """
 
-        prod_state_data = {'final_probability': q_final_prob,
-                           'trans_distribution': None,
-                           'is_accepting': None,
-                           'observation': observation}
         prod_state = cls._get_product_state_label(x, q)
-        nodes[prod_state] = prod_state_data
+        is_violating = q == SPEC_VIOLATING_STATE
+
+        if prod_state not in nodes:
+            prod_state_data = {'final_probability': q_final_prob,
+                               'trans_distribution': None,
+                               'is_violating': is_violating,
+                               'is_accepting': None,
+                               'observation': observation}
+            nodes[prod_state] = prod_state_data
 
         return nodes, prod_state
 
@@ -317,17 +372,59 @@ class Product(Automaton):
         prod_edge_data = {'symbols': [sigma],
                           'probabilities': [trans_prob]}
         prod_edge = {prod_dest: prod_edge_data}
-        edges[prod_src] = prod_edge
+
+        if prod_src in edges:
+            edges[prod_src].update(prod_edge)
+        else:
+            edges[prod_src] = prod_edge
 
         return nodes, edges, prod_src, prod_dest
 
-    def _set_state_acceptance(self, curr_state: Node) -> None:
-        """
-        Sets the state acceptance property for the given state.
+    @classmethod
+    def _package_data(cls, dynamical_system: TransitionSystem,
+                      nodes: NXNodeList, edges: NXEdgeList,
+                      init_prod_state: Node) -> dict:
 
-        TS doesn't accept anything, so this just passes
-        """
-        pass
+        config_data = {}
+
+        final_sym = dynamical_system._final_transition_sym
+        config_data['final_transition_sym'] = final_sym
+        empty_sym = dynamical_system._empty_transition_sym
+        config_data['empty_transition_sym'] = empty_sym
+
+        # can directly compute these from the graph data
+        symbols = set()
+        state_labels = set()
+        observations = set()
+        for state, edge in edges.items():
+            for _, edge_data in edge.items():
+                edge_symbols = edge_data['symbols']
+                symbols.add(symbol for symbol in edge_symbols)
+                state_labels.add(state)
+                observation = nodes[state]['observation']
+                observations.add(observation)
+
+        alphabet_size = len(symbols)
+        num_states = len(state_labels)
+        num_obs = len(observations)
+
+        config_data['alphabet_size'] = alphabet_size
+        config_data['num_states'] = num_states
+        config_data['num_obs'] = num_obs
+
+        (symbol_display_map,
+         nodes,
+         edges) = Automaton._convert_states_edges(nodes,
+                                                  edges,
+                                                  final_sym,
+                                                  empty_sym,
+                                                  is_stochastic=IS_STOCHASTIC)
+        config_data['nodes'] = nodes
+        config_data['edges'] = edges
+        config_data['start_state'] = init_prod_state
+        config_data['symbol_display_map'] = symbol_display_map
+
+        return config_data
 
 
 class ProductBuilder(Builder):
@@ -410,16 +507,6 @@ class ProductBuilder(Builder):
         self.nodes = config_data['nodes']
         self.edges = config_data['edges']
 
-        self._instance = Product(
-            nodes=nodes,
-            edges=edges,
-            symbol_display_map=fdfa._symbol_display_map,
-            # just choose a default value, FDFAs have no notion of acceptance
-            # this at the moment
-            beta=0.95,
-            alphabet_size=fdfa._alphabet_size,
-            num_states=fdfa._num_states,
-            final_transition_sym=fdfa._final_transition_sym,
-            start_state=fdfa.start_state)
+        self._instance = Product(**config_data)
 
         return self._instance

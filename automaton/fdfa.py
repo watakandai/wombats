@@ -76,14 +76,14 @@ class FDFA(Automaton):
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, symbol_display_map,
                          alphabet_size, num_states, start_state,
-                         num_obs=None,
                          smooth_transitions=False,
                          is_stochastic=False,
+                         is_sampleable=True,
+                         num_obs=None,
                          final_transition_sym=final_transition_sym,
                          final_weight_key='final_frequency',
                          can_have_accepting_nodes=False,
-                         edge_weight_key='frequency',
-                         is_sampleable=True)
+                         edge_weight_key='frequency')
 
     @classmethod
     def load_flexfringe_data(cls: 'FDFA', graph: nx.MultiDiGraph,

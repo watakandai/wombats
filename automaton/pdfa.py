@@ -124,16 +124,16 @@ class PDFA(Automaton):
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, symbol_display_map,
                          alphabet_size, num_states, start_state,
+                         smooth_transitions=smooth_transitions,
+                         is_stochastic=True,
+                         is_sampleable=True,
                          num_obs=None,
                          final_transition_sym=final_transition_sym,
                          empty_transition_sym=empty_transition_sym,
-                         smooth_transitions=smooth_transitions,
-                         smoothing_amount=smoothing_amount,
-                         is_stochastic=True,
                          final_weight_key='final_probability',
                          can_have_accepting_nodes=True,
                          edge_weight_key='probability',
-                         is_sampleable=True)
+                         smoothing_amount=smoothing_amount)
 
     def write_traces_to_file(self, traces: List[Symbols], num_samples: int,
                              trace_lengths: List[int], f_name: str) -> None:
@@ -573,8 +573,7 @@ class PDFABuilder(Builder):
                                                       final_transition_sym,
                                                       empty_transition_sym,
                                                       is_stochastic=True)
-            print(config_data['nodes'])
-            print(config_data['edges'])
+
             # saving these so we can just return initialized instances if the
             # underlying data has not changed
             self.nodes = states

@@ -143,7 +143,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         networkx adjacency dictionary keys."""
 
         self._symbol_display_map = symbol_display_map
-        """mapping from symbol labels to an int index in transition dists."""
+        """bidirectional mapping from symbol labels to an int index in
+           transition dists."""
 
         self._alphabet_size = alphabet_size
         """number of symbols in automaton alphabet"""
@@ -1044,7 +1045,15 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             possible_symbols = [symbol for (state, symbol)
                                 in self._transition_map.keys()
                                 if state == curr_state]
-            probabilities = [None for i in range(len(possible_symbols))]
+            possible_symbols = [edge['symbol']
+                                for state, edges in self[curr_state].items()
+                                for key, edge in edges.items()]
+            if self._is_stochastic:
+                probabilities = [edge['probability']
+                                 for state, edges in self[curr_state].items()
+                                 for key, edge in edges.items()]
+            else:
+                probabilities = [None for i in range(len(possible_symbols))]
 
         return possible_symbols, probabilities
 
@@ -1094,9 +1103,15 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
             is_start_state = (node_name == self.start_state)
 
+            # colors are ranked in increasing importance
+            if 'is_violating' in node_data and node_data['is_violating']:
+                graphviz_node_label.update({'shape': 'diamond'})
+                graphviz_node_label.update({'fillcolor': 'tomato1'})
+
             if can_have_accepting_nodes and node_data['is_accepting']:
                 graphviz_node_label.update({'peripheries': 2})
-                graphviz_node_label.update({'fillcolor': 'tomato1'})
+                graphviz_node_label.update({'shape': 'doubleoctagon'})
+                graphviz_node_label.update({'fillcolor': 'lawngreen'})
 
             if is_start_state:
                 graphviz_node_label.update({'shape': 'box'})

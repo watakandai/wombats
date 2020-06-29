@@ -1,6 +1,5 @@
 import os
 import collections
-import warnings
 from typing import Tuple
 from bidict import bidict
 
@@ -24,7 +23,14 @@ class TransitionSystem(Automaton):
                                        networkx.add_edges_from() (src node
                                        label, dest node label, edge
                                        attribute dict)
-    :param      symbol_display_map:    The symbol display map
+    :param      symbol_display_map:    bidirectional mapping of
+                                       hashable symbols, to a unique
+                                       integer index in the symbol map.
+                                       Needed to translate between the
+                                       indices in the transition
+                                       distribution and the hashable
+                                       representation which is
+                                       meaningful to the user
     :param      alphabet_size:         number of symbols in system alphabet
     :param      num_states:            number of states in automaton state
                                        space
@@ -45,23 +51,23 @@ class TransitionSystem(Automaton):
                  symbol_display_map: bidict,
                  alphabet_size: int,
                  num_states: int,
-                 num_obs: int,
                  start_state: Node,
+                 num_obs: int,
                  final_transition_sym: {Symbol, None}=None,
                  empty_transition_sym: {Symbol, None}=None) -> 'TransitionSystem':
 
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, symbol_display_map,
                          alphabet_size, num_states, start_state,
+                         smooth_transitions=False,
+                         is_stochastic=False,
+                         is_sampleable=True,
                          num_obs=num_obs,
                          final_transition_sym=final_transition_sym,
                          empty_transition_sym=empty_transition_sym,
-                         smooth_transitions=False,
-                         is_stochastic=False,
                          state_observation_key='observation',
                          can_have_accepting_nodes=False,
-                         edge_weight_key=None,
-                         is_sampleable=True)
+                         edge_weight_key=None)
 
     def transition(self, curr_state: Node, input_symbol: str) -> TS_Trans_Data:
         """
