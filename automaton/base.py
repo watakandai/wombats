@@ -7,6 +7,7 @@ import collections
 import multiprocessing
 import warnings
 import os
+import copy
 from pathlib import Path
 from numpy.random import RandomState
 from joblib import Parallel, delayed
@@ -187,6 +188,24 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         self.observations = set()
         """the set of all possible state output symbols (observations)"""
+
+        self._transition_matrices = dict()
+        """a dict (keyed on symbol) of (_num_states x _num_states)
+           probabilistic transition matrix
+           (NOT always a proper stochastic mat)"""
+
+        self._node_index_map = dict()
+        """a mapping from node label to it's index in the vectorized
+           representation of the automaton"""
+
+        self._initial_state_distribution: np.ndarray
+        """a (1 x _num_states) ndarray containing the pmf for the initial
+           starting state. For most machines, this simply the indicator
+           function with a one at the index of the state"""
+
+        self._final_state_distribution: np.ndarray
+        """a (_num_states x 1) ndarray containing the pmf for terminating
+           at each state's index."""
 
         # need to start with a fully initialized networkx digraph
         super().__init__()
@@ -656,6 +675,18 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                 warnings.warn(msg, RuntimeWarning)
             self._num_obs = N_actual_obs
 
+        # wait until all node computations are done to make the vectorized rep.
+        if self._is_stochastic:
+            self._node_index_map = {state: index
+                                    for index, state
+                                    in enumerate(self.nodes())}
+            self._initial_state_distribution = self._make_initial_state_dist(
+                self._node_index_map)
+            self._final_state_distribution = self._make_final_state_dist(
+                self._node_index_map)
+            self._transition_matrices = self._make_transition_matrices(
+                self._node_index_map)
+
     def _compute_node_data_properties(self, node: Node,
                                       **node_data_args: dict) -> None:
         """
@@ -960,6 +991,94 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         edge_symbols += new_edge_symbols
 
         return edge_probs, edge_dests, edge_symbols
+
+    def _make_initial_state_dist(self, node_index_map: dict) -> np.ndarray:
+        """
+        Creates the pmf for the initial state distribution as a numpy array.
+
+        :param      node_index_map:  The mapping from state label to index in
+                                     vectorized representation of the
+                                     distribution
+
+        :returns:   (1 x num_states) numpy array containing the probability
+                    distribution of starting at each state's index
+        """
+
+        start_state_index = node_index_map[self.start_state]
+        initial_state_distribution = np.zeros(shape=(1, self._num_states))
+        initial_state_distribution[0, start_state_index] = 1.0
+
+        return initial_state_distribution
+
+    def _make_final_state_dist(self, node_index_map: dict) -> np.ndarray:
+        """
+        Creates the pmf for the final state distribution as a numpy array.
+
+        :param      node_index_map:  The mapping from state label to index in
+                                     vectorized representation of the
+                                     distribution
+
+        :returns:   (num_states x 1) numpy array containing the probability
+                    distribution of terminating at each state's index
+        """
+
+        final_state_distribution = np.zeros(shape=(self._num_states, 1))
+
+        for node, node_index in node_index_map.items():
+            final_prob = self._get_node_data(node, 'final_probability')
+            final_state_distribution[node_index, 0] = final_prob
+
+        return final_state_distribution
+
+    def _make_transition_matrices(self, node_index_map: dict) -> dict:
+        """
+        Creates the mapping from a symbol to the state transition matrix under
+        the given symbol.
+
+        Not necessarily a proper stochastic matrix, especially in the case of
+        stochastic matrices. Should be properly stochastic if is_sampleable.
+
+        :param      node_index_map:  The mapping from state label to index in
+                                     vectorized representation of the
+                                     distribution
+
+        :returns:   mapping from each symbol to the (num_states x num_states)
+                    numpy matrix containing the probability of transitioning
+                    to state i to state j under the given symbol at entry [i,j]
+        """
+
+        weight = 'probability'
+        nonedge_trans_prob = 0.0
+        nodelist = list(node_index_map)
+        nodeset = set(node_index_map)
+
+        if len(nodelist) != len(nodeset):
+            msg = "Ambiguous ordering: `nodelist` contained duplicates."
+            raise nx.NetworkXError(msg)
+        transition_matrices = dict()
+
+        for symbol in self.symbols:
+            A = np.full((self._num_states, self._num_states), np.nan)
+            transition_matrices[symbol] = copy.deepcopy(A)
+
+        for u, v, attrs in self.edges(data=True):
+            symbol = attrs['symbol']
+            curr_trans_mat = transition_matrices[symbol]
+
+            if (u in nodeset) and (v in nodeset):
+                i, j = node_index_map[u], node_index_map[v]
+                e_weight = attrs.get(weight, 1)
+                curr_trans_mat[i, j] = e_weight
+
+            transition_matrices[symbol] = curr_trans_mat
+
+        for symbol in self.symbols:
+            A = transition_matrices[symbol]
+            A[np.isnan(A)] = nonedge_trans_prob
+            A = np.asarray(A)
+            transition_matrices[symbol] = A
+
+        return transition_matrices
 
     def _convert_symbol_idxs(self, integer_symbols: {List[int], int}) -> List:
         """
