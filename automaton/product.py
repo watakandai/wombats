@@ -136,7 +136,8 @@ class Product(Automaton):
         violating_state = SPEC_VIOLATING_STATE
         violating_state_props = {'final_probability': 0.00,
                                  'trans_distribution': None,
-                                 'is_accepting': None}
+                                 'is_accepting': None,
+                                 'is_violating': True}
         specification.add_node(violating_state, **violating_state_props)
 
         specification._initialize_node_edge_properties(
