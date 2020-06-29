@@ -8,6 +8,7 @@ import multiprocessing
 import warnings
 import os
 import copy
+import queue
 from pathlib import Path
 from numpy.random import RandomState
 from joblib import Parallel, delayed
@@ -421,6 +422,50 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         self._num_states += 1
 
         return super(nx.MultiDiGraph, self).add_node(node_for_adding, **attr)
+
+    def BMPS_exact(self, min_string_probability: Probability = 0.0001,
+                   max_string_length: int = 100) -> Tuple[Symbols,
+                                                          Probability]:
+
+        # keeping naming the same as in the paper
+        Q = queue.Queue()
+        S = copy.deepcopy(self._initial_state_distribution)
+        F = self._final_state_distribution
+        M = self._transition_matrices
+        d = self._num_states
+
+        p_empty = np.asscalar(S @ F)
+        empty_symbol = self._empty_transition_sym
+        symbols = [symbol for symbol in self.symbols if symbol != empty_symbol]
+        w = [empty_symbol]
+
+        if p_empty > min_string_probability:
+            return w, p_empty
+
+        Q.put((w, S))
+
+        while not Q.empty():
+            w, V = Q.get()
+
+            for symbol in symbols:
+                w_new = copy.deepcopy(w)
+                w_new.append(symbol)
+                V_new = V @ M[symbol]
+                new_string_probability = np.asscalar(V_new @ F)
+
+                if new_string_probability > min_string_probability:
+                    return w_new, new_string_probability
+
+                # only keep a possible new symbol if it's (non-final) emission
+                # probability is above the minimum probability threshold and
+                # the string isn't too long
+                string_length_below_bound = len(w_new) < max_string_length
+                curr_emis_prob = np.asscalar(V_new @ np.ones(shape=(d, 1)))
+                string_could_be_mps = curr_emis_prob > min_string_probability
+                if string_length_below_bound and string_could_be_mps:
+                    Q.put((w_new, V_new))
+
+        return None, None
 
     def _choose_next_state(self, curr_state: Node,
                            random_state: {None, int, Iterable}=None,

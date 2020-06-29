@@ -218,6 +218,7 @@ class TSBuilder(Builder):
                 num_states=config_data['num_states'],
                 num_obs=config_data['num_obs'],
                 start_state=config_data['start_state'],
-                final_transition_sym=final_transition_sym)
+                final_transition_sym=final_transition_sym,
+                empty_transition_sym=empty_transition_sym)
 
             return self._instance

@@ -82,6 +82,10 @@ class Product(Automaton):
                          can_have_accepting_nodes=True,
                          edge_weight_key='probability')
 
+    def compute_strategy(self):
+
+        pass
+
     def observe(self, curr_state: Node) -> Observation:
         """
         Returns the given state's observation symbol
