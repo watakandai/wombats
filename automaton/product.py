@@ -492,12 +492,12 @@ class ProductBuilder(Builder):
         internal_dyn_sys = copy.deepcopy(dynamical_system)
 
         complete_specification = Product._complete_specification(internal_spec)
-        complete_specification.draw_IPython()
+        complete_specification.draw()
 
         augmented_dyn_sys = Product._augment_initial_state(
             internal_dyn_sys,
             complete_specification)
-        augmented_dyn_sys.draw_IPython()
+        augmented_dyn_sys.draw()
 
         config_data = Product._compute_product(augmented_dyn_sys,
                                                complete_specification)

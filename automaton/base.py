@@ -11,7 +11,7 @@ from joblib import Parallel, delayed
 from abc import ABCMeta, abstractmethod
 from scipy.stats import rv_discrete
 from networkx.drawing.nx_pydot import to_pydot
-from IPython.display import display
+from IPython.display import display, Image
 from pydot import Dot
 from typing import Hashable, List, Tuple, Iterable, Dict
 from bidict import bidict
@@ -228,16 +228,23 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         for node in graph.nodes(data=True):
             print(node)
 
-    def draw_IPython(self) -> None:
+    def draw(self, filename=None, img_format='png') -> None:
         """
         Draws the pdfa structure in a way compatible with a jupyter / IPython
         notebook
+
+        :param      filename:  The filename to save the automaton image
         """
 
         graph = self._get_pydot_representation()
 
-        dot_string = graph.to_string()
-        display(gv.Source(dot_string))
+        if filename:
+            graph = gv.Source(graph)
+            path = graph.render(format=img_format, filename=filename)
+            display(Image(filename=path))
+        else:
+            dot_string = graph.to_string()
+            display(gv.Source(dot_string))
 
     def plot_node_trans_dist(self, curr_state: Node) -> None:
         """
