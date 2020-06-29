@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import collections
 import multiprocessing
 import warnings
+import os
+from pathlib import Path
 from numpy.random import RandomState
 from joblib import Parallel, delayed
 from abc import ABCMeta, abstractmethod
@@ -42,6 +44,7 @@ Sampled_Trans_Data = (Node, Symbol, Probability)
 SMOOTHING_AMOUNT = 0.0001
 DEFAULT_FINAL_TRANS_SYMBOL = -1000
 DEFAULT_EMPTY_TRANS_SYMBOL = -1
+AUTOMATON_DISPLAY_HOME = 'automaton_images'
 
 
 class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
@@ -240,7 +243,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         if filename:
             graph = gv.Source(graph)
-            path = graph.render(format=img_format, filename=filename)
+            fpath = os.path.join(AUTOMATON_DISPLAY_HOME, filename)
+            Path(AUTOMATON_DISPLAY_HOME).mkdir(parents=True, exist_ok=True)
+            path = graph.render(format=img_format, filename=fpath)
             display(Image(filename=path))
         else:
             dot_string = graph.to_string()

@@ -446,7 +446,8 @@ class ProductBuilder(Builder):
         self.edges = None
 
     def __call__(self, graph_data: Tuple[TransitionSystem, PDFA],
-                 graph_data_format: str = 'existing_objects') -> Product:
+                 graph_data_format: str = 'existing_objects',
+                 **kwargs: dict) -> Product:
         """
         Returns an initialized Product instance given the graph_data
 
@@ -455,7 +456,8 @@ class ProductBuilder(Builder):
         :param      graph_data:         The graph configuration file name
         :param      graph_data_format:  The graph data file format.
                                         {'existing_objects'}
-                                        (default 'existing_objects')
+        :param      kwargs:             The keywords arguments to the specific
+                                        constructors
 
         :returns:   instance of an initialized Product object
 
@@ -468,7 +470,8 @@ class ProductBuilder(Builder):
             sys = graph_data[0]
             spec = graph_data[1]
             self._instance = self._from_automata(dynamical_system=sys,
-                                                 specification=spec)
+                                                 specification=spec,
+                                                 **kwargs)
         else:
             msg = 'graph_data_format ({}) must be one of: ' + \
                   '"existing_objects"'.format(graph_data_format)
@@ -477,12 +480,15 @@ class ProductBuilder(Builder):
         return self._instance
 
     def _from_automata(self, dynamical_system: TransitionSystem,
-                       specification: PDFA) -> Product:
+                       specification: PDFA,
+                       show_steps: bool = False) -> Product:
         """
         Returns an instance of a Product Automaton from existing automata
 
         :param      dynamical_system:  The dynamical system automaton instance
         :param      specification:     The specification automaton instance
+        :param      show_steps:        draw intermediate steps in the product
+                                       creation
 
         :returns:   instance of an initialized Product automaton object
         """
@@ -492,12 +498,14 @@ class ProductBuilder(Builder):
         internal_dyn_sys = copy.deepcopy(dynamical_system)
 
         complete_specification = Product._complete_specification(internal_spec)
-        complete_specification.draw()
+        if show_steps:
+            complete_specification.draw('complete_specification')
 
         augmented_dyn_sys = Product._augment_initial_state(
             internal_dyn_sys,
             complete_specification)
-        augmented_dyn_sys.draw()
+        if show_steps:
+            augmented_dyn_sys.draw('augment_initial_state')
 
         config_data = Product._compute_product(augmented_dyn_sys,
                                                complete_specification)

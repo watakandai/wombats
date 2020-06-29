@@ -503,7 +503,7 @@ class PDFABuilder(Builder):
 
     def __call__(self, graph_data: {str, FDFA},
                  graph_data_format: str = 'yaml',
-                 **kwargs) -> PDFA:
+                 **kwargs: dict) -> PDFA:
         """
         Returns an initialized PDFA instance given the graph_data
 
@@ -512,7 +512,8 @@ class PDFABuilder(Builder):
         :param      graph_data:         The variable specifying graph data
         :param      graph_data_format:  The graph data file format.
                                         {'yaml', 'fdfa_object'}
-        :param      kwargs:             The keywords arguments
+        :param      kwargs:             The keywords arguments to the specific
+                                        constructors
 
         :returns:   instance of an initialized PDFA object
 
@@ -522,7 +523,7 @@ class PDFABuilder(Builder):
         """
 
         if graph_data_format == 'yaml':
-            self._instance = self._from_yaml(graph_data)
+            self._instance = self._from_yaml(graph_data, **kwargs)
         elif graph_data_format == 'fdfa_object':
             self._instance = self._from_fdfa(graph_data, **kwargs)
         else:
