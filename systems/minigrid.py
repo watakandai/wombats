@@ -25,6 +25,17 @@ Minigrid_TSEdge = Tuple[Minigrid_TSNode, Minigrid_TSNode]
 
 
 class StaticMinigridWombatsWrapper(gym.core.Wrapper):
+    """
+    Wrapper to define an environment that can be represented as a transition
+    system.
+
+    This means that the environment must be STATIC -> no keys or doors opening
+    as this would require a reactive synthesis formulation.
+
+    :param      env:    The gym environment to wrap and compute transitions on
+    :param      seeds:  The random seeds given to the Minigrid environment, so
+                        when the environment is reset(), it remains the same
+    """
 
     env: EnvType
     IDX_TO_STATE = dict(zip(STATE_TO_IDX.values(), STATE_TO_IDX.keys()))
@@ -58,30 +69,63 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
                                                        self.ACTION_ENUM_TO_STR)
 
     def render_notebook(self) -> None:
+        """
+        Wrapper for the env.render() that works in notebooks
+        """
 
         plt.imshow(self.env.render(mode='rgb_image'), interpolation='bilinear')
         plt.axis('off')
         plt.show()
 
     def state_only_obs(self, obs: dict) -> EnvObs:
+        """
+        Extracts only the grid observation from a step() observation
+
+        This command only works for a MiniGridEnv obj, as their obs:
+            obs, reward, done, _ = MiniGridEnbv.step()
+        is a dict containing the (full/partially) observable grid observation
+
+        :param      obs:  Full observation received from MiniGridEnbv.step()
+
+        :returns:   The grid-only observation
+        """
 
         cell_obs = obs['image']
 
         return cell_obs
 
     def state_only_obs_reset(self) -> EnvObs:
+        """
+        Resets the environment, but returns the grid-only observation
+
+        :returns:   The grid-only observation after reseting
+        """
 
         obs = self.env.reset()
 
         return self.state_only_obs(obs)
 
     def state_only_obs_step(self, action: MiniGridEnv.Actions) -> StepData:
+        """
+        step()s the environment, but returns only the grid observation
+
+        This command only works for a MiniGridEnv obj, as their obs:
+            obs, reward, done, _ = MiniGridEnbv.step()
+        is a dict containing the (full/partially) observable grid observation
+
+        :param      action:  The action to take
+
+        :returns:   Normal step() return data, but with obs being only the grid
+        """
 
         obs, reward, done, _ = self.env.step(action)
 
         return self.state_only_obs(obs), reward, done, {}
 
     def get_agent_props(self) -> Tuple[AgentPos, AgentDir]:
+        """
+        Gets the agent's position and direction in the base environment
+        """
 
         base_env = self.env.unwrapped
 
@@ -90,6 +134,12 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
     def set_agent_props(self,
                         position: {AgentPos, None}=None,
                         direction: {AgentDir, None}=None) -> None:
+        """
+        Sets the agent's position and direction in the base environment
+
+        :param      position:   The new agent grid position
+        :param      direction:  The new agent direction
+        """
 
         base_env = self.env.unwrapped
 
@@ -100,18 +150,40 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
             base_env.agent_dir = direction
 
     def get_env_prop(self, env_property_name: str):
+        """
+        Gets the base environment's property.
+
+        :param      env_property_name:  The base environment's property name
+
+        :returns:   The base environment's property.
+        """
 
         base_env = self.env.unwrapped
 
         return getattr(base_env, env_property_name)
 
     def set_env_prop(self, env_property_name: str, env_property) -> None:
+        """
+        Sets the base environment's property.
+
+        :param      env_property_name:  The base environment's property name
+        :param      env_property:       The new base environment property data
+        """
 
         base_env = self.env.unwrapped
         setattr(base_env, env_property_name, env_property)
 
     def obs_to_prop_str(self, obs: EnvObs,
                         row_idx: int, col_idx: int) -> str:
+        """
+        Converts a grid observation array into a string based on Minigrid ENUMs
+
+        :param      obs:      The grid observation
+        :param      row_idx:  The row index of the cell to get the obs. string
+        :param      col_idx:  The col index of the cell to get the obs. string
+
+        :returns:   verbose, string representation of the state observation
+        """
 
         obj_type, obj_color, obj_state = obs[col_idx, row_idx]
         agent_pos, _ = self.get_agent_props()
@@ -126,6 +198,13 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
             return '_'.join([prop_string_base, self.IDX_TO_STATE[obj_state]])
 
     def get_action_str(self, action_enum: MiniGridEnv.Actions) -> str:
+        """
+        Gets a string representation of the action enum constant
+
+        :param      action_enum:  The action enum constant to convert
+
+        :returns:   The action enum's string representation
+        """
 
         action_str = str(action_enum)
 
@@ -137,6 +216,24 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
 
     def get_observation_maps(self, start_pos: AgentPos,
                              obs: EnvObs) -> Tuple[dict, defaultdict, dict]:
+        """
+        Computes mappings for grid state (cell) observations.
+
+        A cell obs. array consists of [obj_type, obj_color, obj_state], where
+        each element is an integer index in a ENUM from the Minigrid env.
+
+            obs_str_idxs_map[cell_obs_str] = np.array(cell obs. array)
+            cell_obs_map[cell_obs_str] = list_of((cell_col_idx, cell_row_idx))
+            obs_str_idxs_map[(cell_col_idx, cell_row_idx)] = cell_obs_str
+
+        :param      start_pos:  The agent's start position
+        :param      obs:        The grid observation
+
+        :returns:   (mapping from cell obs. string -> cell obs. array
+                     mapping from cell obs. string -> cell indices
+                        NOTE: each key in this dict has a list of values assoc.
+                     mapping from cell indices -> cell obs. string)
+        """
 
         obs_str_idxs_map = dict()
         cell_obs_map = defaultdict(list)
@@ -167,7 +264,24 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
         return obs_str_idxs_map, cell_obs_map, cell_to_obs
 
     def get_cell_str(self, obj_type_str: str, obs_str_idxs_map: dict,
-                     only_one_type_of_obj: bool = True) -> str:
+                     only_one_type_of_obj: bool = True) -> {str, List[str]}:
+        """
+        Gets the observation string(s) associated with each type of object
+
+        :param      obj_type_str:          The object type string
+        :param      obs_str_idxs_map:      mapping from cell obs.
+                                           string -> cell obs. array
+        :param      only_one_type_of_obj:  Whether or not there should only be
+                                           one distinct version of this object
+                                           in the environment
+
+        :returns:   The cell observation string(s) associated with the object
+
+        :raises     AssertionError:        obj_type_str must be in the ENUM.
+        :raises     ValueError:            if there is more than one of an
+                                           object when there should only be one
+                                           in the env.
+        """
 
         assert obj_type_str in OBJECT_TO_IDX.keys()
 
@@ -185,7 +299,19 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
         return cell_str
 
     def add_node(self, nodes: dict, pos: AgentPos,
-                 direction: AgentPos, obs_str: str) -> Tuple[dict, dict]:
+                 direction: AgentPos, obs_str: str) -> Tuple[dict, str]:
+        """
+        Adds a node to the dict of nodes used to initialize an automaton obj.
+
+        :param      nodes:      dict of nodes to build the automaton
+                                out of. Must be in the format needed
+                                by networkx.add_nodes_from()
+        :param      pos:        The agent's position
+        :param      direction:  The agent's direction
+        :param      obs_str:    The state observation string
+
+        :returns:   (updated dict of nodes, new label for the added node)
+        """
 
         state = ', '.join([str(pos), self.DIR_TO_STRING[direction]])
 
@@ -198,16 +324,35 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
 
     def add_edge(self, nodes: dict, edges: dict,
                  action: MiniGridEnv.Actions,
-                 possible_edge: Minigrid_TSEdge,
+                 edge: Minigrid_TSEdge,
                  ACTION_ENUM_TO_STR: dict,
                  cell_to_obs: dict) -> Tuple[dict, dict]:
+        """
+        Adds both nodes to the dict of nodes and to the dict of edges used to
+        initialize an automaton obj.
+
+        :param      nodes:               dict of nodes to build the automaton
+                                         out of. Must be in the format needed
+                                         by networkx.add_nodes_from()
+        :param      edges:               dict of edges to build the automaton
+                                         out of. Must be in the format needed
+                                         by networkx.add_edges_from()
+        :param      action:              The action taken
+        :param      edge:                The edge to add
+        :param      ACTION_ENUM_TO_STR:  Mapping from action to it's str
+                                         representation
+        :param      cell_to_obs:         mapping from cell indices -> cell obs.
+                                         string
+
+        :returns:   (updated dict of nodes, updated dict of edges)
+        """
 
         action_str = ACTION_ENUM_TO_STR[action]
 
         (src, dest,
          src_pos, src_dir,
          dest_pos, dest_dir,
-         obs_str_src, obs_str_dest) = self.get_egde_components(possible_edge,
+         obs_str_src, obs_str_dest) = self.get_edge_components(edge,
                                                                cell_to_obs)
 
         nodes, state_src = self.add_node(nodes, src_pos, src_dir, obs_str_src)
@@ -224,20 +369,27 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
 
         return nodes, edges
 
-    def get_egde_components(self, edge: Minigrid_TSEdge,
+    def get_edge_components(self, edge: Minigrid_TSEdge,
                             cell_to_obs: dict) -> Tuple[Minigrid_TSNode,
                                                         Minigrid_TSNode,
                                                         AgentPos, AgentDir,
                                                         AgentPos, AgentDir,
                                                         str, str]:
+        """
+        Parses the edge data structure and returns a tuple of unpacked data
+
+        :param      edge:         The edge to unpack
+        :param      cell_to_obs:  mapping from cell indices -> cell obs. string
+
+        :returns:   All edge components. Not going to name them all bro-bro
+        """
 
         edge = edge
-        src = edge[0]
-        dest = edge[1]
-        src_pos = src[0]
-        src_dir = src[1]
-        dest_pos = dest[0]
-        dest_dir = dest[1]
+
+        src, dest = edge
+        src_pos, src_dir = src
+        dest_pos, dest_dir = dest
+
         obs_str_src = cell_to_obs[src_pos]
         obs_str_dest = cell_to_obs[dest_pos]
 
@@ -248,6 +400,20 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
                                    cell_to_obs: dict,
                                    ACTION_ENUM_TO_STR: dict) -> Tuple[dict,
                                                                       dict]:
+        """
+        Extracts all data needed to build a transition system representation of
+        the environment.
+
+        :param      cell_obs_map:        mapping from cell obs. string -> cell
+                                         indices NOTE: each key in this dict
+                                         has a list of values assoc.
+        :param      cell_to_obs:         mapping from cell indices -> cell obs.
+                                         string
+        :param      ACTION_ENUM_TO_STR:  Mapping from action to it's str
+                                         representation
+
+        :returns:   The transition system data.
+        """
 
         possible_nodes = [(cell, direction) for cells in cell_obs_map.values()
                           for cell in cells
@@ -266,7 +432,7 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
              src_pos, src_dir,
              possible_dest_pos, possible_dest_dir,
              obs_str_src,
-             obs_str_dest) = self.get_egde_components(possible_edge,
+             obs_str_dest) = self.get_edge_components(possible_edge,
                                                       cell_to_obs)
 
             if src not in done_nodes:
