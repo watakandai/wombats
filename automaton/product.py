@@ -233,24 +233,14 @@ class Product(Automaton):
                 specification_compatible = spec_trans in A._transition_map
 
                 if specification_compatible:
-                    # violating SCC has uniform transition probability over all
-                    # possible control symbols
-                    in_violating_SCC = q == SPEC_VIOLATING_STATE
-                    if in_violating_SCC:
-                        q_prime, _ = A._get_next_state(q, o_x_prime)
-                        trans_prob = 1.0 / T._alphabet_size
-                    else:
-                        q_prime, trans_prob = A._get_next_state(q, o_x_prime)
-
+                    q_prime, trans_prob = A._get_next_state(q, o_x_prime)
                     q_final_prob = A._get_node_data(q, 'final_probability')
                     q_prime_final_prob = A._get_node_data(q_prime,
                                                           'final_probability')
                     o_x = T.observe(x)
 
                     (nodes,
-                     edges,
-                     prod_src_state,
-                     proc_dest_state) = \
+                     edges, _, _) = \
                         cls._add_product_edge(
                             nodes, edges,
                             x_src=x, x_dest=x_prime,
@@ -499,21 +489,16 @@ class ProductBuilder(Builder):
         """
 
         # don't want to destroy the automaton when we pre-process them
-        internal_spec = copy.deepcopy(specification)
         internal_dyn_sys = copy.deepcopy(dynamical_system)
-
-        complete_specification = Product._complete_specification(internal_spec)
-        if show_steps:
-            complete_specification.draw('complete_specification')
 
         augmented_dyn_sys = Product._augment_initial_state(
             internal_dyn_sys,
-            complete_specification)
+            specification)
         if show_steps:
             augmented_dyn_sys.draw('augment_initial_state')
 
         config_data = Product._compute_product(augmented_dyn_sys,
-                                               complete_specification)
+                                               specification)
 
         # saving these so we can just return initialized instances if the
         # underlying data has not changed
