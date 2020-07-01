@@ -377,7 +377,7 @@ class Product(Automaton):
 
     @classmethod
     def _package_data(cls, dynamical_system: TransitionSystem,
-                      nodes: NXNodeList, edges: NXEdgeList,
+                      nodes: dict, edges: dict,
                       init_prod_state: Node) -> dict:
 
         config_data = {}

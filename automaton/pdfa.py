@@ -580,7 +580,7 @@ class PDFABuilder(Builder):
             self.nodes = states
             self.edges = edges
 
-            self._instance = PDFA(
+            instance = PDFA(
                 nodes=states,
                 edges=edges,
                 symbol_display_map=symbol_display_map,
@@ -592,7 +592,7 @@ class PDFABuilder(Builder):
                 start_state=config_data['start_state'],
                 smooth_transitions=config_data['smooth_transitions'])
 
-            return self._instance
+            return instance
 
     def _from_fdfa(self, fdfa: FDFA,
                    smooth_transitions: bool = False,
@@ -617,7 +617,7 @@ class PDFABuilder(Builder):
         self.nodes = nodes
         self.edges = edges
 
-        self._instance = PDFA(
+        instance = PDFA(
             nodes=nodes,
             edges=edges,
             symbol_display_map=fdfa._symbol_display_map,
@@ -632,4 +632,4 @@ class PDFABuilder(Builder):
             smooth_transitions=smooth_transitions,
             smoothing_amount=smoothing_amount)
 
-        return self._instance
+        return instance
