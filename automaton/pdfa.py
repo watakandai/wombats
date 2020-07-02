@@ -594,6 +594,8 @@ class PDFABuilder(Builder):
 
             return instance
 
+        return self._instance
+
     def _from_fdfa(self, fdfa: FDFA,
                    smooth_transitions: bool = False,
                    smoothing_amount: float = SMOOTHING_AMOUNT) -> PDFA:

@@ -1,1 +1,1 @@
-from .minigrid import LavaComparison_noDryingOff, StaticMinigridWombatsWrapper
+from .minigrid import LavaComparison_noDryingOff, StaticMinigridTSWrapper

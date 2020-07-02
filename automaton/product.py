@@ -393,8 +393,7 @@ class Product(Automaton):
         observations = set()
         for state, edge in edges.items():
             for _, edge_data in edge.items():
-                edge_symbols = edge_data['symbols']
-                symbols.add(symbol for symbol in edge_symbols)
+                symbols.update(edge_data['symbols'])
                 state_labels.add(state)
                 observation = nodes[state]['observation']
                 observations.add(observation)

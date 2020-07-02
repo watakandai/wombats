@@ -1,7 +1,8 @@
-from .pdfa import PDFABuilder
-from .fdfa import FDFABuilder
-from .transition_system import TSBuilder
-from .product import ProductBuilder
+from .pdfa import PDFABuilder, PDFA
+from .fdfa import FDFABuilder, FDFA
+from .transition_system import (TSBuilder, TransitionSystem,
+                                MinigridTransitionSystem)
+from .product import ProductBuilder, Product
 from .factory import AutomatonCollection
 
 active_automata = AutomatonCollection()

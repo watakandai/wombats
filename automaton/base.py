@@ -602,6 +602,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         edge_list = []
         symbol_count = 0
         symbol_display_map = bidict({})
+
         for source_node, dest_edges_data in edges.items():
 
             # don't need to add any edges if there is no edge data
@@ -638,9 +639,13 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         # for completeness
         symbol_count += 1
         symbol_display_map[final_transition_sym] = symbol_count
-        if empty_transition_sym not in symbol_display_map.keys():
+        if empty_transition_sym not in symbol_display_map:
             symbol_count += 1
             symbol_display_map[empty_transition_sym] = symbol_count
+
+        if final_transition_sym not in symbol_display_map:
+            symbol_count += 1
+            symbol_display_map[final_transition_sym] = symbol_count
 
         return symbol_display_map, converted_nodes, edge_list
 

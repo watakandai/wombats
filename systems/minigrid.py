@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import gym
 import itertools
 import numpy as np
+import re
 from collections import defaultdict
 from bidict import bidict
 from typing import Type, List, Tuple
@@ -24,7 +25,7 @@ Minigrid_TSNode = Tuple[AgentPos, AgentDir]
 Minigrid_TSEdge = Tuple[Minigrid_TSNode, Minigrid_TSNode]
 
 
-class StaticMinigridWombatsWrapper(gym.core.Wrapper):
+class StaticMinigridTSWrapper(gym.core.Wrapper):
     """
     Wrapper to define an environment that can be represented as a transition
     system.
@@ -42,13 +43,13 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
     DIR_TO_STRING = bidict({0: 'right', 1: 'down', 2: 'left', 3: 'up'})
 
     def __init__(self, env: EnvType,
-                 seeds: List[int] = [0]) -> 'StaticMinigridWombatsWrapper':
+                 seeds: List[int] = [0]) -> 'StaticMinigridTSWrapper':
 
         # actually creating the minigrid environment with appropriate wrappers
         super().__init__(FullyObsWrapper(ReseedWrapper(env, seeds=seeds)))
 
         # building some more constant DICTS dynamically from the env data
-        self.ACTION_STR_TO_ENUM = {self.get_action_str(action): action
+        self.ACTION_STR_TO_ENUM = {self._get_action_str(action): action
                                    for action in self.env.Actions}
         self.ACTION_ENUM_TO_STR = dict(zip(self.ACTION_STR_TO_ENUM.values(),
                                            self.ACTION_STR_TO_ENUM.keys()))
@@ -56,17 +57,18 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
         # We only compute state observations label maps once here, as the
         # environment MUST BE STATIC in this instance
         obs = self.state_only_obs_reset()
-        self.start_pos, self.start_dir = self.get_agent_props()
+        self.agent_start_pos, self.agent_start_dir = self._get_agent_props()
         (self.obs_str_idxs_map,
          self.cell_obs_map,
-         self.cell_to_obs) = self.get_observation_maps(self.start_pos, obs)
+         self.cell_to_obs) = self._get_observation_maps(self.agent_start_pos,
+                                                        obs)
 
         # we want to statically compute the data that can be used to build
         # a transition system representation of the environment
-        (self.nodes,
-         self.edges) = self.get_transition_system_data(self.cell_obs_map,
-                                                       self.cell_to_obs,
-                                                       self.ACTION_ENUM_TO_STR)
+        self.TS_config_data = self._get_transition_system_data(
+            self.cell_obs_map,
+            self.cell_to_obs,
+            self.ACTION_ENUM_TO_STR)
 
     def render_notebook(self) -> None:
         """
@@ -122,7 +124,7 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
 
         return self.state_only_obs(obs), reward, done, {}
 
-    def get_agent_props(self) -> Tuple[AgentPos, AgentDir]:
+    def _get_agent_props(self) -> Tuple[AgentPos, AgentDir]:
         """
         Gets the agent's position and direction in the base environment
         """
@@ -131,9 +133,9 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
 
         return tuple(base_env.agent_pos), base_env.agent_dir
 
-    def set_agent_props(self,
-                        position: {AgentPos, None}=None,
-                        direction: {AgentDir, None}=None) -> None:
+    def _set_agent_props(self,
+                         position: {AgentPos, None}=None,
+                         direction: {AgentDir, None}=None) -> None:
         """
         Sets the agent's position and direction in the base environment
 
@@ -149,7 +151,7 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
         if direction is not None:
             base_env.agent_dir = direction
 
-    def get_env_prop(self, env_property_name: str):
+    def _get_env_prop(self, env_property_name: str):
         """
         Gets the base environment's property.
 
@@ -162,7 +164,7 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
 
         return getattr(base_env, env_property_name)
 
-    def set_env_prop(self, env_property_name: str, env_property) -> None:
+    def _set_env_prop(self, env_property_name: str, env_property) -> None:
         """
         Sets the base environment's property.
 
@@ -173,8 +175,8 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
         base_env = self.env.unwrapped
         setattr(base_env, env_property_name, env_property)
 
-    def obs_to_prop_str(self, obs: EnvObs,
-                        row_idx: int, col_idx: int) -> str:
+    def _obs_to_prop_str(self, obs: EnvObs,
+                         row_idx: int, col_idx: int) -> str:
         """
         Converts a grid observation array into a string based on Minigrid ENUMs
 
@@ -186,7 +188,7 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
         """
 
         obj_type, obj_color, obj_state = obs[col_idx, row_idx]
-        agent_pos, _ = self.get_agent_props()
+        agent_pos, _ = self._get_agent_props()
         is_agent = (col_idx, row_idx) == tuple(agent_pos)
 
         prop_string_base = '_'.join([IDX_TO_OBJECT[obj_type],
@@ -197,7 +199,7 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
         else:
             return '_'.join([prop_string_base, self.IDX_TO_STATE[obj_state]])
 
-    def get_action_str(self, action_enum: MiniGridEnv.Actions) -> str:
+    def _get_action_str(self, action_enum: MiniGridEnv.Actions) -> str:
         """
         Gets a string representation of the action enum constant
 
@@ -214,8 +216,28 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
 
         return action_str
 
-    def get_observation_maps(self, start_pos: AgentPos,
-                             obs: EnvObs) -> Tuple[dict, defaultdict, dict]:
+    def _make_transition(self, action: MiniGridEnv.Actions,
+                         pos: AgentPos,
+                         direction: AgentDir) -> Tuple[AgentPos,
+                                                       AgentDir,
+                                                       Done]:
+        """
+        Makes a state transition in the environment, assuming the env has state
+
+        :param      action:     The action to take
+        :param      pos:        The agent's position
+        :param      direction:  The agent's direction
+
+        :returns:   the agent's new state, whether or not step() emitted done
+        """
+
+        self._set_agent_props(pos, direction)
+        _, _, done, _ = self.state_only_obs_step(action)
+
+        return *self._get_agent_props(), done
+
+    def _get_observation_maps(self, start_pos: AgentPos,
+                              obs: EnvObs) -> Tuple[dict, defaultdict, dict]:
         """
         Computes mappings for grid state (cell) observations.
 
@@ -244,7 +266,7 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
         for row_idx in range(num_rows):
             for col_idx in range(num_cols):
 
-                obs_str = self.obs_to_prop_str(obs, row_idx, col_idx)
+                obs_str = self._obs_to_prop_str(obs, row_idx, col_idx)
                 obj = obs[col_idx, row_idx][0]
 
                 if IDX_TO_OBJECT[obj] != 'wall':
@@ -253,8 +275,8 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
                     cell_to_obs[(col_idx, row_idx)] = obs_str
 
         # need to remove the agent from the environment
-        empty_cell_str = self.get_cell_str('empty', obs_str_idxs_map)
-        agent_cell_str = self.get_cell_str('agent', obs_str_idxs_map)
+        empty_cell_str = self._get_cell_str('empty', obs_str_idxs_map)
+        agent_cell_str = self._get_cell_str('agent', obs_str_idxs_map)
 
         cell_to_obs[start_pos] = empty_cell_str
         obs_str_idxs_map.pop(agent_cell_str, None)
@@ -263,8 +285,8 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
 
         return obs_str_idxs_map, cell_obs_map, cell_to_obs
 
-    def get_cell_str(self, obj_type_str: str, obs_str_idxs_map: dict,
-                     only_one_type_of_obj: bool = True) -> {str, List[str]}:
+    def _get_cell_str(self, obj_type_str: str, obs_str_idxs_map: dict,
+                      only_one_type_of_obj: bool = True) -> {str, List[str]}:
         """
         Gets the observation string(s) associated with each type of object
 
@@ -298,8 +320,29 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
 
         return cell_str
 
-    def add_node(self, nodes: dict, pos: AgentPos,
-                 direction: AgentPos, obs_str: str) -> Tuple[dict, str]:
+    def _get_state_str(self, pos: AgentPos, direction: AgentDir) -> str:
+        """
+        Gets the string label for the automaton state given the agent's state.
+
+        :param      pos:        The agent's position
+        :param      direction:  The agent's direction
+
+        :returns:   The state label string.
+        """
+
+        return ', '.join([str(pos), self.DIR_TO_STRING[direction]])
+
+    def _get_state_from_str(self, state: str) -> Tuple[AgentPos, AgentDir]:
+
+        m = re.match(r'\(([\d]), ([\d])\), ([a-z]*)', state)
+
+        pos = (int(m.group(1)), int(m.group(2)))
+        direction = self.DIR_TO_STRING.inv[m.group(3)]
+
+        return pos, direction
+
+    def _add_node(self, nodes: dict, pos: AgentPos,
+                  direction: AgentPos, obs_str: str) -> Tuple[dict, str]:
         """
         Adds a node to the dict of nodes used to initialize an automaton obj.
 
@@ -313,7 +356,7 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
         :returns:   (updated dict of nodes, new label for the added node)
         """
 
-        state = ', '.join([str(pos), self.DIR_TO_STRING[direction]])
+        state = self._get_state_str(pos, direction)
 
         if state not in nodes:
             state_data = {'trans_distribution': None,
@@ -322,11 +365,11 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
 
         return nodes, state
 
-    def add_edge(self, nodes: dict, edges: dict,
-                 action: MiniGridEnv.Actions,
-                 edge: Minigrid_TSEdge,
-                 ACTION_ENUM_TO_STR: dict,
-                 cell_to_obs: dict) -> Tuple[dict, dict]:
+    def _add_edge(self, nodes: dict, edges: dict,
+                  action: MiniGridEnv.Actions,
+                  edge: Minigrid_TSEdge,
+                  ACTION_ENUM_TO_STR: dict,
+                  cell_to_obs: dict) -> Tuple[dict, dict]:
         """
         Adds both nodes to the dict of nodes and to the dict of edges used to
         initialize an automaton obj.
@@ -352,12 +395,12 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
         (src, dest,
          src_pos, src_dir,
          dest_pos, dest_dir,
-         obs_str_src, obs_str_dest) = self.get_edge_components(edge,
-                                                               cell_to_obs)
+         obs_str_src, obs_str_dest) = self._get_edge_components(edge,
+                                                                cell_to_obs)
 
-        nodes, state_src = self.add_node(nodes, src_pos, src_dir, obs_str_src)
-        nodes, state_dest = self.add_node(nodes, dest_pos, dest_dir,
-                                          obs_str_dest)
+        nodes, state_src = self._add_node(nodes, src_pos, src_dir, obs_str_src)
+        nodes, state_dest = self._add_node(nodes, dest_pos, dest_dir,
+                                           obs_str_dest)
 
         edge_data = {'symbols': [action_str]}
         edge = {state_dest: edge_data}
@@ -369,12 +412,12 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
 
         return nodes, edges
 
-    def get_edge_components(self, edge: Minigrid_TSEdge,
-                            cell_to_obs: dict) -> Tuple[Minigrid_TSNode,
-                                                        Minigrid_TSNode,
-                                                        AgentPos, AgentDir,
-                                                        AgentPos, AgentDir,
-                                                        str, str]:
+    def _get_edge_components(self, edge: Minigrid_TSEdge,
+                             cell_to_obs: dict) -> Tuple[Minigrid_TSNode,
+                                                         Minigrid_TSNode,
+                                                         AgentPos, AgentDir,
+                                                         AgentPos, AgentDir,
+                                                         str, str]:
         """
         Parses the edge data structure and returns a tuple of unpacked data
 
@@ -396,10 +439,10 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
         return (src, dest, src_pos, src_dir,
                 dest_pos, dest_dir, obs_str_src, obs_str_dest)
 
-    def get_transition_system_data(self, cell_obs_map: defaultdict,
-                                   cell_to_obs: dict,
-                                   ACTION_ENUM_TO_STR: dict) -> Tuple[dict,
-                                                                      dict]:
+    def _get_transition_system_data(self, cell_obs_map: defaultdict,
+                                    cell_to_obs: dict,
+                                    ACTION_ENUM_TO_STR: dict) -> Tuple[dict,
+                                                                       dict]:
         """
         Extracts all data needed to build a transition system representation of
         the environment.
@@ -432,24 +475,25 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
              src_pos, src_dir,
              possible_dest_pos, possible_dest_dir,
              obs_str_src,
-             obs_str_dest) = self.get_edge_components(possible_edge,
-                                                      cell_to_obs)
+             obs_str_dest) = self._get_edge_components(possible_edge,
+                                                       cell_to_obs)
 
             if src not in done_nodes:
                 for action in self.env.actions:
 
-                    self.set_agent_props(src_pos, src_dir)
-                    _, _, done, _ = self.state_only_obs_step(action)
-                    dest_pos, dest_dir = self.get_agent_props()
+                    (dest_pos,
+                     dest_dir,
+                     done) = self._make_transition(action, src_pos, src_dir)
 
                     dest_pos_is_valid = possible_dest_pos == dest_pos
                     dest_dir_is_valid = possible_dest_dir == dest_dir
                     egde_is_valid = (dest_pos_is_valid and dest_dir_is_valid)
+
                     if egde_is_valid:
-                        nodes, edges = self.add_edge(nodes, edges,
-                                                     action, possible_edge,
-                                                     ACTION_ENUM_TO_STR,
-                                                     cell_to_obs)
+                        nodes, edges = self._add_edge(nodes, edges,
+                                                      action, possible_edge,
+                                                      ACTION_ENUM_TO_STR,
+                                                      cell_to_obs)
                         if done:
                             done_nodes.add(dest)
 
@@ -457,7 +501,49 @@ class StaticMinigridWombatsWrapper(gym.core.Wrapper):
         # extracting all of the data
         self.reset()
 
-        return nodes, edges
+        return self._package_data(nodes, edges)
+
+    def _package_data(self, nodes: dict, edges: dict) -> dict:
+        """
+        Packages up extracted data from the environment in the format needed by
+        automaton constructors
+
+        :param      nodes:               dict of nodes to build the automaton
+                                         out of. Must be in the format needed
+                                         by networkx.add_nodes_from()
+        :param      edges:               dict of edges to build the automaton
+                                         out of. Must be in the format needed
+                                         by networkx.add_edges_from()
+
+        :returns:   configuration data dictionary
+        """
+
+        config_data = {}
+
+        # can directly compute these from the graph data
+        symbols = set()
+        state_labels = set()
+        observations = set()
+        for state, edge in edges.items():
+            for _, edge_data in edge.items():
+                symbols.update(edge_data['symbols'])
+                state_labels.add(state)
+                observation = nodes[state]['observation']
+                observations.add(observation)
+
+        alphabet_size = len(symbols)
+        num_states = len(state_labels)
+        num_obs = len(observations)
+
+        config_data['alphabet_size'] = alphabet_size
+        config_data['num_states'] = num_states
+        config_data['num_obs'] = num_obs
+        config_data['nodes'] = nodes
+        config_data['edges'] = edges
+        config_data['start_state'] = self._get_state_str(self.agent_start_pos,
+                                                         self.agent_start_dir)
+
+        return config_data
 
 
 class LavaComparison(MiniGridEnv):

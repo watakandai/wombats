@@ -6,7 +6,10 @@ from bidict import bidict
 # local packages
 from wombats.factory.builder import Builder
 from .base import (Automaton, NXNodeList, NXEdgeList, Node, Nodes,
-                   Observation, Symbol, Symbols)
+                   Observation, Symbol, Symbols, DEFAULT_FINAL_TRANS_SYMBOL,
+                   DEFAULT_EMPTY_TRANS_SYMBOL)
+
+from wombats.systems import StaticMinigridTSWrapper
 
 # define these type defs for method annotation type hints
 TS_Trans_Data = Tuple[Node, Observation]
@@ -45,16 +48,18 @@ class TransitionSystem(Automaton):
                                        default to base class default.
     """
 
-    def __init__(self,
-                 nodes: NXNodeList,
-                 edges: NXEdgeList,
-                 symbol_display_map: bidict,
-                 alphabet_size: int,
-                 num_states: int,
-                 start_state: Node,
-                 num_obs: int,
-                 final_transition_sym: {Symbol, None}=None,
-                 empty_transition_sym: {Symbol, None}=None) -> 'TransitionSystem':
+    def __init__(
+        self,
+        nodes: NXNodeList,
+        edges: NXEdgeList,
+        symbol_display_map: bidict,
+        alphabet_size: int,
+        num_states: int,
+        start_state: Node,
+        num_obs: int,
+        final_transition_sym: {Symbol, None}=DEFAULT_FINAL_TRANS_SYMBOL,
+        empty_transition_sym: {Symbol, None}=DEFAULT_EMPTY_TRANS_SYMBOL
+    ) -> 'TransitionSystem':
 
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, symbol_display_map,
@@ -141,6 +146,74 @@ class TransitionSystem(Automaton):
         pass
 
 
+class MinigridTransitionSystem(TransitionSystem):
+
+    def __init__(self, **kwargs):
+
+        self.env = kwargs['env']
+
+        # normal TS don't have an 'env'
+        kwargs.pop('env', None)
+        super().__init__(**kwargs)
+
+    def run(self, word: {Symbol, Symbols}) -> Tuple[Symbols, Nodes]:
+        """
+        processes a input word and produces a output word & state sequence
+
+        :param      word:        The word to process
+
+        :returns:   output word (list of symbols), list of states visited
+
+        :raises     ValueError:  Catches and re-raises exceptions from
+                                 invalid symbol use
+        """
+
+        self.env.reset()
+
+        return super().run(word)
+
+    def _get_next_state(self, curr_state: Node, symbol: Symbol):
+        """
+        Gets the next state given the current state and the "input" symbol.
+
+        computes this using the underlying environment's step() function
+
+        :param      curr_state:  The current state
+        :param      symbol:      The input symbol
+
+        :returns:   (The next state label, the transition probability)
+
+        :raises     ValueError:  symbol not in curr_state's transition function
+        :raises     ValueError:  duplicate symbol in curr_state's transition
+                                 function
+        """
+
+        (possible_symbols, _) = self._get_trans_probabilities(curr_state)
+
+        if symbol not in possible_symbols:
+            msg = ('given symbol ({}) is not found in the '
+                   'curr_state\'s ({}) '
+                   'transition distribution').format(symbol, curr_state)
+            raise ValueError(msg)
+
+        symbol_idx = [i for i, val in enumerate(possible_symbols)
+                      if val == symbol]
+        num_matched_symbols = len(symbol_idx)
+        if num_matched_symbols != 1:
+            msg = ('given symbol ({}) is found multiple times in '
+                   'curr_state\'s ({}) '
+                   'transition distribution').format(symbol, curr_state)
+            raise ValueError(msg)
+
+        symbol_probability = None
+
+        curr_state = self.env._get_state_from_str(curr_state)
+        next_state = self.env._make_transition(symbol, *curr_state)
+        next_state_label = self.env._get_state_str(next_state)
+
+        return next_state_label, symbol_probability
+
+
 class TSBuilder(Builder):
     """
     Implements the generic automaton builder class for TransitionSystem objects
@@ -159,16 +232,17 @@ class TSBuilder(Builder):
         self.nodes = None
         self.edges = None
 
-    def __call__(self, graph_data: str,
+    def __call__(self, graph_data: {str, StaticMinigridTSWrapper},
                  graph_data_format: str = 'yaml') -> TransitionSystem:
         """
         Returns an initialized TransitionSystem instance given the graph_data
 
         graph_data and graph_data_format must match
 
-        :param      graph_data:         The graph configuration file name
+        :param      graph_data:         The graph configuration data
+                                        {str, Minigrid environment wrapper}
         :param      graph_data_format:  The graph data file format.
-                                        {'yaml'}
+                                        {'yaml', 'minigrid'}
 
         :returns:   instance of an initialized TransitionSystem object
 
@@ -177,14 +251,16 @@ class TSBuilder(Builder):
                                         data loader
         """
 
-        _, file_extension = os.path.splitext(graph_data)
-
-        allowed_exts = ['.yaml', '.yml']
-        if file_extension in allowed_exts:
-            config_data = self.load_YAML_config_data(graph_data)
+        if graph_data_format == 'yaml':
+            config_data = self._from_yaml(graph_data)
+            TS_Type = TransitionSystem
+        elif graph_data_format == 'minigrid':
+            config_data = self._from_minigrid(graph_data)
+            TS_Type = MinigridTransitionSystem
         else:
-            msg = 'graph_data ({}) is not a ({}) file'
-            raise ValueError(msg.format(graph_data, allowed_exts))
+            msg = 'graph_data_format ({}) must be one of: "yaml", ' + \
+                  '"minigrid"'.format(graph_data_format)
+            raise ValueError(msg)
 
         nodes_have_changed = (self.nodes != config_data['nodes'])
         edges_have_changed = (self.edges != config_data['edges'])
@@ -195,8 +271,16 @@ class TSBuilder(Builder):
             # nodes and edge_list must be in the format needed by:
             #   - networkx.add_nodes_from()
             #   - networkx.add_edges_from()
-            final_transition_sym = config_data['final_transition_sym']
-            empty_transition_sym = config_data['empty_transition_sym']
+            if 'final_transition_sym' not in config_data:
+                final_transition_sym = DEFAULT_FINAL_TRANS_SYMBOL
+            else:
+                final_transition_sym = config_data['final_transition_sym']
+
+            if 'empty_transition_sym' not in config_data:
+                empty_transition_sym = DEFAULT_EMPTY_TRANS_SYMBOL
+            else:
+                empty_transition_sym = config_data['empty_transition_sym']
+
             (symbol_display_map,
              states,
              edges) = Automaton._convert_states_edges(config_data['nodes'],
@@ -204,21 +288,38 @@ class TSBuilder(Builder):
                                                       final_transition_sym,
                                                       empty_transition_sym,
                                                       is_stochastic=False)
+            config_data['symbol_display_map'] = symbol_display_map
 
             # saving these so we can just return initialized instances if the
             # underlying data has not changed
             self.nodes = states
             self.edges = edges
+            config_data['nodes'] = self.nodes
+            config_data['edges'] = self.edges
 
-            self._instance = TransitionSystem(
-                nodes=self.nodes,
-                edges=self.edges,
-                symbol_display_map=symbol_display_map,
-                alphabet_size=config_data['alphabet_size'],
-                num_states=config_data['num_states'],
-                num_obs=config_data['num_obs'],
-                start_state=config_data['start_state'],
-                final_transition_sym=final_transition_sym,
-                empty_transition_sym=empty_transition_sym)
+            self._instance = TS_Type(**config_data)
 
-            return self._instance
+        return self._instance
+
+    def _from_minigrid(
+        self,
+        graph_data: StaticMinigridTSWrapper
+    ) -> TransitionSystem:
+
+        config_data = graph_data.TS_config_data
+        config_data['env'] = graph_data
+
+        return config_data
+
+    def _from_yaml(self, graph_data: str) -> dict:
+
+        _, file_extension = os.path.splitext(graph_data)
+
+        allowed_exts = ['.yaml', '.yml']
+        if file_extension in allowed_exts:
+            config_data = self.load_YAML_config_data(graph_data)
+        else:
+            msg = 'graph_data ({}) is not a ({}) file'
+            raise ValueError(msg.format(graph_data, allowed_exts))
+
+        return config_data
