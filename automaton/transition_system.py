@@ -1,6 +1,6 @@
 import os
 import collections
-from typing import Tuple
+from typing import Tuple, Iterable
 from bidict import bidict
 
 # local packages
@@ -10,9 +10,12 @@ from .base import (Automaton, NXNodeList, NXEdgeList, Node, Nodes,
                    DEFAULT_EMPTY_TRANS_SYMBOL)
 
 from wombats.systems import StaticMinigridTSWrapper
+from wombats.systems.minigrid import ActionsEnum
 
 # define these type defs for method annotation type hints
 TS_Trans_Data = Tuple[Node, Observation]
+EnvAct = ActionsEnum
+EnvActs = Iterable[ActionsEnum]
 
 
 class TransitionSystem(Automaton):
@@ -71,21 +74,26 @@ class TransitionSystem(Automaton):
                          final_transition_sym=final_transition_sym,
                          empty_transition_sym=empty_transition_sym,
                          state_observation_key='observation',
-                         can_have_accepting_nodes=False,
+                         can_have_accepting_nodes=True,
                          edge_weight_key=None)
 
-    def transition(self, curr_state: Node, input_symbol: str) -> TS_Trans_Data:
+    def transition(self, curr_state: Node,
+                   input_symbol: str,
+                   **get_next_state_kwargs: dict) -> TS_Trans_Data:
         """
         transitions the TS given the current TS state and an input symbol, then
         outputs the state observation
 
-        :param      curr_state:    The current TS state
-        :param      input_symbol:  The input TS symbol
+        :param      curr_state:             The current TS state
+        :param      input_symbol:           The input TS symbol
+        :param      get_next_state_kwargs:  Any additional inputs to
+                                            _get_next_state
 
         :returns:   the next TS state, and the obs
         """
 
-        next_state, _ = self._get_next_state(curr_state, input_symbol)
+        next_state, _ = self._get_next_state(curr_state, input_symbol,
+                                             **get_next_state_kwargs)
         observation = self.observe(next_state)
 
         return next_state, observation
@@ -101,16 +109,19 @@ class TransitionSystem(Automaton):
 
         return self._get_node_data(curr_state, 'observation')
 
-    def run(self, word: {Symbol, Symbols}) -> Tuple[Symbols, Nodes]:
+    def run(self, word: {Symbol, Symbols},
+            **get_next_state_kwargs: dict) -> Tuple[Symbols, Nodes]:
         """
         processes a input word and produces a output word & state sequence
 
-        :param      word:        The word to process
+        :param      word:                   The word to process
+        :param      get_next_state_kwargs:  Any additional inputs to
+                                            _get_next_state
 
         :returns:   output word (list of symbols), list of states visited
 
-        :raises     ValueError:  Catches and re-raises exceptions from
-                                 invalid symbol use
+        :raises     ValueError:             Catches and re-raises exceptions
+                                            from invalid symbol use
         """
 
         # need to do type-checking / polymorphism handling here
@@ -123,7 +134,9 @@ class TransitionSystem(Automaton):
 
         for symbol in word:
             try:
-                next_state, observation = self.transition(curr_state, symbol)
+                next_state, observation = self.transition(
+                    curr_state, symbol,
+                    **get_next_state_kwargs)
             except ValueError as e:
                 msg = f'Invalid symbol encountered processesing ' + \
                       f'word: {word}.\ncurrent output word: {output_word}' + \
@@ -156,7 +169,9 @@ class MinigridTransitionSystem(TransitionSystem):
         kwargs.pop('env', None)
         super().__init__(**kwargs)
 
-    def run(self, word: {Symbol, Symbols}) -> Tuple[Symbols, Nodes]:
+    def run(self,
+            word: {EnvAct, EnvActs, Symbol, Symbols},
+            show_steps: bool = False) -> Tuple[Symbols, Nodes]:
         """
         processes a input word and produces a output word & state sequence
 
@@ -170,9 +185,20 @@ class MinigridTransitionSystem(TransitionSystem):
 
         self.env.reset()
 
-        return super().run(word)
+        if show_steps:
+            self.env.render_notebook()
 
-    def _get_next_state(self, curr_state: Node, symbol: Symbol):
+        # need to do type-checking / polymorphism handling here
+        if isinstance(word, str) or not isinstance(word, collections.Iterable):
+            word = [word]
+
+        if isinstance(word[0], self.env.actions):
+            word = [self.env.ACTION_ENUM_TO_STR[action] for action in word]
+
+        return super().run(word, show_steps=show_steps)
+
+    def _get_next_state(self, curr_state: Node, symbol: Symbol,
+                        show_steps: bool = False) -> Tuple[Node, None]:
         """
         Gets the next state given the current state and the "input" symbol.
 
@@ -180,6 +206,8 @@ class MinigridTransitionSystem(TransitionSystem):
 
         :param      curr_state:  The current state
         :param      symbol:      The input symbol
+        :param      show_steps:  turn on / off displaying pictures of the
+                                 environment after getting the symbol
 
         :returns:   (The next state label, the transition probability)
 
@@ -208,8 +236,13 @@ class MinigridTransitionSystem(TransitionSystem):
         symbol_probability = None
 
         curr_state = self.env._get_state_from_str(curr_state)
-        next_state = self.env._make_transition(symbol, *curr_state)
-        next_state_label = self.env._get_state_str(next_state)
+        action = self.env.ACTION_STR_TO_ENUM[symbol]
+        next_pos, next_dir, done = self.env._make_transition(action,
+                                                             *curr_state)
+        next_state_label = self.env._get_state_str(next_pos, next_dir)
+
+        if show_steps:
+            self.env.render_notebook()
 
         return next_state_label, symbol_probability
 

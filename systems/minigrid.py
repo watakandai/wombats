@@ -6,15 +6,16 @@ from gym_minigrid.register import register
 
 import matplotlib.pyplot as plt
 import gym
-import itertools
 import numpy as np
 import re
+import queue
 from collections import defaultdict
 from bidict import bidict
 from typing import Type, List, Tuple
 
 # define these type defs for method annotation type hints
 EnvObs = np.ndarray
+ActionsEnum = MiniGridEnv.Actions
 Reward = float
 Done = bool
 StepData = Tuple[EnvObs, Reward, Done, dict]
@@ -68,6 +69,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         self.TS_config_data = self._get_transition_system_data(
             self.cell_obs_map,
             self.cell_to_obs,
+            self.obs_str_idxs_map,
             self.ACTION_ENUM_TO_STR)
 
     def render_notebook(self) -> None:
@@ -107,7 +109,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
         return self.state_only_obs(obs)
 
-    def state_only_obs_step(self, action: MiniGridEnv.Actions) -> StepData:
+    def state_only_obs_step(self, action: ActionsEnum) -> StepData:
         """
         step()s the environment, but returns only the grid observation
 
@@ -199,7 +201,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         else:
             return '_'.join([prop_string_base, self.IDX_TO_STATE[obj_state]])
 
-    def _get_action_str(self, action_enum: MiniGridEnv.Actions) -> str:
+    def _get_action_str(self, action_enum: ActionsEnum) -> str:
         """
         Gets a string representation of the action enum constant
 
@@ -216,7 +218,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
         return action_str
 
-    def _make_transition(self, action: MiniGridEnv.Actions,
+    def _make_transition(self, action: ActionsEnum,
                          pos: AgentPos,
                          direction: AgentDir) -> Tuple[AgentPos,
                                                        AgentDir,
@@ -333,6 +335,13 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         return ', '.join([str(pos), self.DIR_TO_STRING[direction]])
 
     def _get_state_from_str(self, state: str) -> Tuple[AgentPos, AgentDir]:
+        """
+        Gets the agent's state components from the state string representation
+
+        :param      state:  The state label string
+
+        :returns:   the agent's grid cell position, the agent's direction index
+        """
 
         m = re.match(r'\(([\d]), ([\d])\), ([a-z]*)', state)
 
@@ -342,34 +351,41 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         return pos, direction
 
     def _add_node(self, nodes: dict, pos: AgentPos,
-                  direction: AgentPos, obs_str: str) -> Tuple[dict, str]:
+                  direction: AgentPos, obs_str: str,
+                  obs_str_idxs_map: dict) -> Tuple[dict, str]:
         """
         Adds a node to the dict of nodes used to initialize an automaton obj.
 
-        :param      nodes:      dict of nodes to build the automaton
-                                out of. Must be in the format needed
-                                by networkx.add_nodes_from()
-        :param      pos:        The agent's position
-        :param      direction:  The agent's direction
-        :param      obs_str:    The state observation string
+        :param      nodes:             dict of nodes to build the automaton out
+                                       of. Must be in the format needed by
+                                       networkx.add_nodes_from()
+        :param      pos:               The agent's position
+        :param      direction:         The agent's direction
+        :param      obs_str:           The state observation string
+        :param      obs_str_idxs_map:  mapping from cell obs. string -> cell
+                                       obs. array
 
         :returns:   (updated dict of nodes, new label for the added node)
         """
 
         state = self._get_state_str(pos, direction)
+        goal_cell_str = self._get_cell_str('goal', obs_str_idxs_map)
+        is_goal = obs_str == goal_cell_str
 
         if state not in nodes:
             state_data = {'trans_distribution': None,
-                          'observation': obs_str}
+                          'observation': obs_str,
+                          'is_accepting': is_goal}
             nodes[state] = state_data
 
         return nodes, state
 
     def _add_edge(self, nodes: dict, edges: dict,
-                  action: MiniGridEnv.Actions,
+                  action: ActionsEnum,
                   edge: Minigrid_TSEdge,
                   ACTION_ENUM_TO_STR: dict,
-                  cell_to_obs: dict) -> Tuple[dict, dict]:
+                  obs_str_idxs_map: dict,
+                  cell_to_obs: dict) -> Tuple[dict, dict, str, str]:
         """
         Adds both nodes to the dict of nodes and to the dict of edges used to
         initialize an automaton obj.
@@ -384,6 +400,8 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         :param      edge:                The edge to add
         :param      ACTION_ENUM_TO_STR:  Mapping from action to it's str
                                          representation
+        :param      obs_str_idxs_map:    mapping from cell obs. string -> cell
+                                         obs. array
         :param      cell_to_obs:         mapping from cell indices -> cell obs.
                                          string
 
@@ -398,19 +416,25 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
          obs_str_src, obs_str_dest) = self._get_edge_components(edge,
                                                                 cell_to_obs)
 
-        nodes, state_src = self._add_node(nodes, src_pos, src_dir, obs_str_src)
+        nodes, state_src = self._add_node(nodes, src_pos, src_dir, obs_str_src,
+                                          obs_str_idxs_map)
         nodes, state_dest = self._add_node(nodes, dest_pos, dest_dir,
-                                           obs_str_dest)
+                                           obs_str_dest, obs_str_idxs_map)
 
         edge_data = {'symbols': [action_str]}
         edge = {state_dest: edge_data}
 
         if state_src in edges:
-            edges[state_src].update(edge)
+            if state_dest in edges[state_src]:
+                existing_edge_data = edges[state_src][state_dest]
+                existing_edge_data['symbols'].extend(edge_data['symbols'])
+                edges[state_src][state_dest] = existing_edge_data
+            else:
+                edges[state_src].update(edge)
         else:
             edges[state_src] = edge
 
-        return nodes, edges
+        return nodes, edges, state_src, state_dest
 
     def _get_edge_components(self, edge: Minigrid_TSEdge,
                              cell_to_obs: dict) -> Tuple[Minigrid_TSNode,
@@ -441,6 +465,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
     def _get_transition_system_data(self, cell_obs_map: defaultdict,
                                     cell_to_obs: dict,
+                                    obs_str_idxs_map: dict,
                                     ACTION_ENUM_TO_STR: dict) -> Tuple[dict,
                                                                        dict]:
         """
@@ -452,50 +477,50 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
                                          has a list of values assoc.
         :param      cell_to_obs:         mapping from cell indices -> cell obs.
                                          string
+        :param      obs_str_idxs_map:    mapping from cell obs. string -> cell
+                                         obs. array
         :param      ACTION_ENUM_TO_STR:  Mapping from action to it's str
                                          representation
 
         :returns:   The transition system data.
         """
 
-        possible_nodes = [(cell, direction) for cells in cell_obs_map.values()
-                          for cell in cells
-                          for direction in self.DIR_TO_STRING.keys()]
-
-        all_possible_edges = itertools.product(possible_nodes, possible_nodes)
-
         self.reset()
-        done_nodes = set()
 
         nodes = {}
         edges = {}
 
-        for possible_edge in all_possible_edges:
-            (src, dest,
-             src_pos, src_dir,
-             possible_dest_pos, possible_dest_dir,
-             obs_str_src,
-             obs_str_dest) = self._get_edge_components(possible_edge,
-                                                       cell_to_obs)
+        init_state_label = self._get_state_str(self.agent_start_pos,
+                                               self.agent_start_dir)
 
-            if src not in done_nodes:
-                for action in self.env.actions:
+        search_queue = queue.Queue()
+        search_queue.put(init_state_label)
+        visited = set()
 
-                    (dest_pos,
-                     dest_dir,
-                     done) = self._make_transition(action, src_pos, src_dir)
+        while not search_queue.empty():
 
-                    dest_pos_is_valid = possible_dest_pos == dest_pos
-                    dest_dir_is_valid = possible_dest_dir == dest_dir
-                    egde_is_valid = (dest_pos_is_valid and dest_dir_is_valid)
+            curr_state_label = search_queue.get()
+            visited.add(curr_state_label)
+            src_pos, src_dir = self._get_state_from_str(curr_state_label)
 
-                    if egde_is_valid:
-                        nodes, edges = self._add_edge(nodes, edges,
-                                                      action, possible_edge,
-                                                      ACTION_ENUM_TO_STR,
-                                                      cell_to_obs)
-                        if done:
-                            done_nodes.add(dest)
+            for action in self.env.actions:
+
+                (dest_pos,
+                 dest_dir,
+                 done) = self._make_transition(action, src_pos, src_dir)
+
+                possible_edge = ((src_pos, src_dir), (dest_pos, dest_dir))
+
+                (nodes, edges,
+                 _,
+                 dest_state_label) = self._add_edge(nodes, edges,
+                                                    action, possible_edge,
+                                                    ACTION_ENUM_TO_STR,
+                                                    obs_str_idxs_map,
+                                                    cell_to_obs)
+                if dest_state_label not in visited:
+                    search_queue.put(dest_state_label)
+                    visited.add(dest_state_label)
 
         # we have moved the agent a bunch, so we should reset it when done
         # extracting all of the data

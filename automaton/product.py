@@ -1,5 +1,4 @@
 import copy
-import itertools
 from typing import Tuple
 from bidict import bidict
 import queue
@@ -268,6 +267,7 @@ class Product(Automaton):
 
                         if prod_dest not in visited:
                             search_queue.put(prod_dest)
+                            visited.add(prod_dest)
 
         return cls._package_data(T, nodes, edges, init_prod_state)
 
@@ -404,6 +404,16 @@ class Product(Automaton):
 
         if prod_src in edges:
             edges[prod_src].update(prod_edge)
+            if prod_dest in edges[prod_src]:
+                existing_edge_data = edges[prod_src][prod_dest]
+
+                new_probs = prod_edge_data['probabilities']
+                existing_edge_data['symbols'].extend(prod_edge_data['symbols'])
+                existing_edge_data['symbols'].extend(new_probs)
+
+                edges[prod_src][prod_dest] = existing_edge_data
+            else:
+                edges[prod_src].update(prod_edge)
         else:
             edges[prod_src] = prod_edge
 

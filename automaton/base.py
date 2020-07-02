@@ -318,10 +318,11 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return samples, trace_lengths, trace_probs
 
-    def generate_trace(self, start_state: Node, N: int,
-                       random_state: {None, int, Iterable}=None) -> (Symbols,
-                                                                     int,
-                                                                     Probability):
+    def generate_trace(
+        self, start_state: Node, N: int,
+        random_state: {None, int, Iterable}=None) -> (Symbols,
+                                                      int,
+                                                      Probability):
         """
         Generates a trace from the pdfa starting from start_state
 
