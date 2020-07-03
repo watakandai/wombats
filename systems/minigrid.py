@@ -17,6 +17,7 @@ from gym.wrappers.monitor import disable_videos
 
 # define these type defs for method annotation type hints
 EnvObs = np.ndarray
+CellObs = Tuple[int, int, int]
 ActionsEnum = MiniGridEnv.Actions
 Reward = float
 Done = bool
@@ -26,6 +27,13 @@ AgentDir = int
 EnvType = Type[MiniGridEnv]
 Minigrid_TSNode = Tuple[AgentPos, AgentDir]
 Minigrid_TSEdge = Tuple[Minigrid_TSNode, Minigrid_TSNode]
+
+MINIGRID_TO_GRAPHVIZ_COLOR = {'red': 'firebrick',
+                              'green': 'darkseagreen1',
+                              'blue': 'steelblue1',
+                              'purple': 'mediumpurple1',
+                              'yellow': 'yellow',
+                              'grey': 'gray60'}
 
 
 class StaticMinigridTSWrapper(gym.core.Wrapper):
@@ -271,7 +279,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         return *self._get_agent_props(), done
 
     def _get_observation_maps(self, start_pos: AgentPos,
-                              obs: EnvObs) -> Tuple[dict, defaultdict, dict]:
+                              obs: EnvObs) -> Tuple[bidict, defaultdict, dict]:
         """
         Computes mappings for grid state (cell) observations.
 
@@ -280,7 +288,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
             obs_str_idxs_map[cell_obs_str] = np.array(cell obs. array)
             cell_obs_map[cell_obs_str] = list_of((cell_col_idx, cell_row_idx))
-            obs_str_idxs_map[(cell_col_idx, cell_row_idx)] = cell_obs_str
+            cell_to_obs[(cell_col_idx, cell_row_idx)] = cell_obs_str
 
         :param      start_pos:  The agent's start position
         :param      obs:        The grid observation
@@ -291,7 +299,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
                      mapping from cell indices -> cell obs. string)
         """
 
-        obs_str_idxs_map = dict()
+        obs_str_idxs_map = bidict()
         cell_obs_map = defaultdict(list)
         cell_to_obs = dict()
 
@@ -319,7 +327,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
         return obs_str_idxs_map, cell_obs_map, cell_to_obs
 
-    def _get_cell_str(self, obj_type_str: str, obs_str_idxs_map: dict,
+    def _get_cell_str(self, obj_type_str: str, obs_str_idxs_map: bidict,
                       only_one_type_of_obj: bool = True) -> {str, List[str]}:
         """
         Gets the observation string(s) associated with each type of object
@@ -382,13 +390,31 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
         return pos, direction
 
-    def _get_state_obs_color(str, state: str) -> str:
+    def _get_state_obs_from_state_str(self, state: str) -> CellObs:
+        """
+        Return the cell observation at the given cell from the cell's
+        state string
 
-        pass
+        :param      state:  The state string to get the obs. array from
+
+        :returns:   The state obs from state string.
+        """
+
+        agent_pos, _ = self._get_state_from_str(state)
+        cell_obs_str = self.cell_to_obs[agent_pos]
+        cell_obs_arr = self.obs_str_idxs_map[cell_obs_str]
+
+        return cell_obs_arr
+
+    def _get_state_obs_color(self, state: str) -> str:
+
+        cell_obs_arr = self._get_state_obs_from_state_str(state)
+
+        return IDX_TO_COLOR[cell_obs_arr[1]]
 
     def _add_node(self, nodes: dict, pos: AgentPos,
                   direction: AgentPos, obs_str: str,
-                  obs_str_idxs_map: dict) -> Tuple[dict, str]:
+                  obs_str_idxs_map: bidict) -> Tuple[dict, str]:
         """
         Adds a node to the dict of nodes used to initialize an automaton obj.
 
@@ -405,13 +431,22 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         """
 
         state = self._get_state_str(pos, direction)
+
+        color = self._get_state_obs_color(state)
+        empty_cell_str = self._get_cell_str('empty', obs_str_idxs_map)
+        if obs_str == empty_cell_str:
+            color = 'gray'
+        else:
+            color = MINIGRID_TO_GRAPHVIZ_COLOR[color]
+
         goal_cell_str = self._get_cell_str('goal', obs_str_idxs_map)
         is_goal = obs_str == goal_cell_str
 
         if state not in nodes:
             state_data = {'trans_distribution': None,
                           'observation': obs_str,
-                          'is_accepting': is_goal}
+                          'is_accepting': is_goal,
+                          'color': color}
             nodes[state] = state_data
 
         return nodes, state
@@ -420,7 +455,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
                   action: ActionsEnum,
                   edge: Minigrid_TSEdge,
                   ACTION_ENUM_TO_STR: dict,
-                  obs_str_idxs_map: dict,
+                  obs_str_idxs_map: bidict,
                   cell_to_obs: dict) -> Tuple[dict, dict, str, str]:
         """
         Adds both nodes to the dict of nodes and to the dict of edges used to
@@ -501,7 +536,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
     def _get_transition_system_data(self, cell_obs_map: defaultdict,
                                     cell_to_obs: dict,
-                                    obs_str_idxs_map: dict,
+                                    obs_str_idxs_map: bidict,
                                     ACTION_ENUM_TO_STR: dict) -> Tuple[dict,
                                                                        dict]:
         """

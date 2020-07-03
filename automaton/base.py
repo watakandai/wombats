@@ -1286,6 +1286,10 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             is_start_state = (node_name == self.start_state)
 
             # colors are ranked in increasing importance
+            if 'color' in node_data:
+                color = node_data['color']
+                graphviz_node_label.update({'fillcolor': color})
+
             if 'is_violating' in node_data and node_data['is_violating']:
                 graphviz_node_label.update({'shape': 'diamond'})
                 graphviz_node_label.update({'fillcolor': 'tomato1'})
