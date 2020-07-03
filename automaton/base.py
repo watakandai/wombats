@@ -424,9 +424,32 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return super(nx.MultiDiGraph, self).add_node(node_for_adding, **attr)
 
-    def BMPS_exact(self, min_string_probability: Probability = 0.0001,
-                   max_string_length: int = 100) -> Tuple[Symbols,
-                                                          Probability]:
+    def BMPS_exact(self, min_string_probability: Probability,
+                   max_string_length: int) -> Tuple[Symbols, Probability]:
+        """
+        Computes the bounder, most probable string in the probabilistic
+        language of the automaton
+
+        :param      min_string_probability:  The minimum string probability
+                                             (default 0.0)
+        :param      max_string_length:       The maximum string length
+                                             (default 100)
+
+        :returns:   sequence of control symbols to input to produce the BMPS,
+                    probability of producing the output string
+        """
+
+        if not self._is_stochastic:
+            msg = 'Cannot compute most probable string for a ' + \
+                  'non-stochastic automaton'
+            raise ValueError(msg)
+
+        # setting default values in case they're not given
+        if min_string_probability is None:
+            min_string_probability = 0.0
+
+        if max_string_length is None:
+            max_string_length = 100
 
         # keeping naming the same as in the paper
         Q = queue.Queue()
@@ -803,10 +826,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                            'under symbol {} found - transition must be '
                            'deterministic').format(start_state, symbol)
                     raise ValueError(msg)
-                elif same_start_state and not new_dest_state:
-                    msg = ('updating existing transition from state {} '
-                           'under symbol {}').format(start_state, symbol)
-                    warnings.warn(msg, RuntimeWarning)
 
         self._transition_map = {**self._transition_map,
                                 **new_trans_map_entries}

@@ -14,6 +14,7 @@ from bidict import bidict
 from typing import Type, List, Tuple
 from gym import wrappers
 from gym.wrappers.monitor import disable_videos
+from enum import IntEnum
 
 # define these type defs for method annotation type hints
 EnvObs = np.ndarray
@@ -55,6 +56,14 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
     IDX_TO_STATE = dict(zip(STATE_TO_IDX.values(), STATE_TO_IDX.keys()))
     DIR_TO_STRING = bidict({0: 'right', 1: 'down', 2: 'left', 3: 'up'})
 
+    # Enumeration of possible actions
+    # as this is a static environment, we will only allow for movement actions
+    class Actions(IntEnum):
+        # Turn left, turn right, move forward
+        left = 0
+        right = 1
+        forward = 2
+
     def __init__(self, env: EnvType,
                  seeds: List[int] = [0]) -> 'StaticMinigridTSWrapper':
 
@@ -73,6 +82,13 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
         # actually creating the minigrid environment with appropriate wrappers
         super().__init__(env)
+
+        # Action enumeration for this environment
+        self.unwrapped.actions = StaticMinigridTSWrapper.Actions
+
+        # Actions are discrete integer values
+        num_actions = len(self.unwrapped.actions)
+        self.unwrapped.action_space = gym.spaces.Discrete(num_actions)
 
         # building some more constant DICTS dynamically from the env data
         self.ACTION_STR_TO_ENUM = {self._get_action_str(action): action

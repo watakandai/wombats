@@ -3,13 +3,15 @@ from typing import Tuple
 from bidict import bidict
 import re
 import queue
+import warnings
+from collections.abc import Iterable
 
 # local packages
 from wombats.factory.builder import Builder
 from .transition_system import TransitionSystem
 from .pdfa import PDFA
 from .base import (Automaton, NXNodeList, NXEdgeList, Node, Probability,
-                   Observation, Symbol)
+                   Observation, Symbol, Symbols)
 
 # define these type defs for method annotation type hints
 TS_Trans_Data = Tuple[Node, Observation]
@@ -83,9 +85,56 @@ class Product(Automaton):
                          can_have_accepting_nodes=True,
                          edge_weight_key='probability')
 
-    def compute_strategy(self):
+    def compute_strategy(self, min_string_probability: Probability = 0.0,
+                         max_string_length: int = 100) -> Tuple[Symbols,
+                                                                Probability]:
+        """
+        Calculates a control strategy for the dynamical system that best
+        matches the language of the specification.
 
-        pass
+        :param      min_string_probability:  The minimum string probability
+        :param      max_string_length:       The maximum string length
+
+        :returns:   The sequence of controls to apply, the probability in the
+                    languge of the specification of generating the output word
+                    of the dynamical system under the control symbols.
+        """
+
+        controls_symbols, obs_prob = self.BMPS_exact(min_string_probability,
+                                                     max_string_length)
+
+        # None -> completely incompatible
+        if controls_symbols is None:
+            msg = 'no valid controller possible for given settings of ' + \
+                  f'min_string_probability {min_string_probability} and ' + \
+                  f'max_string_length {max_string_length}.'
+            warnings.warn(msg, RuntimeWarning)
+
+            return controls_symbols, obs_prob
+
+        if len(controls_symbols) == 1:
+            msg = f'only empty control symbol {self._empty_transition_sym}' + \
+                  f' found to be most probable controller -> ' + \
+                  f'specification and dynamical system are ' + \
+                  f'incompatible. Try adjusting ' + \
+                  f'min_string_probability {min_string_probability} and ' + \
+                  f'max_string_length {max_string_length}.'
+            warnings.warn(msg, RuntimeWarning)
+
+        if len(controls_symbols) == 2:
+            msg = f'only "initialization" symbol artificially added to ' + \
+                  f'the TS found to be most probable controller -> ' + \
+                  f'specification and dynamical system are ' + \
+                  f'incompatible. Try adjusting ' + \
+                  f'min_string_probability {min_string_probability} and ' + \
+                  f'max_string_length {max_string_length}.'
+            warnings.warn(msg, RuntimeWarning)
+
+        # as seen above, first two symbols are useless / artifical, so remove
+        if isinstance(controls_symbols, Iterable):
+            controls_symbols = controls_symbols[2:]
+
+        return controls_symbols, obs_prob
 
     def observe(self, curr_state: Node) -> Observation:
         """
@@ -217,13 +266,12 @@ class Product(Automaton):
         edges = {}
 
         search_queue = queue.Queue()
-        search_queue.put(init_prod_state)
+        search_queue.put((x_init, q_init))
         visited = set()
 
         while not search_queue.empty():
 
-            curr_prod_state = search_queue.get()
-            x, q = cls._breakdown_prodct_state(curr_prod_state)
+            x, q = search_queue.get()
 
             for sigma in Sigma:
 
@@ -248,7 +296,7 @@ class Product(Automaton):
 
                     (nodes,
                      edges,
-                     prod_src, prod_dest) = \
+                     _, _) = \
                         cls._add_product_edge(
                             nodes, edges,
                             x_src=x, x_dest=x_prime,
@@ -259,10 +307,10 @@ class Product(Automaton):
                             observation_dest=o_x_prime,
                             sigma=sigma,
                             trans_prob=trans_prob)
-
-                    if prod_dest not in visited:
-                        visited.add(prod_dest)
-                        search_queue.put(prod_dest)
+                    prod_dest_state = (x_prime, q_prime)
+                    if prod_dest_state not in visited:
+                        visited.add(prod_dest_state)
+                        search_queue.put(prod_dest_state)
 
         return cls._package_data(T, nodes, edges, init_prod_state)
 
@@ -287,7 +335,8 @@ class Product(Automaton):
         return dynamical_system_state + ', ' + specification_state
 
     @classmethod
-    def _breakdown_prodct_state(cls, product_state: Node) -> Tuple[Node, Node]:
+    def _breakdown_product_state(cls,
+                                 product_state: Node) -> Tuple[Node, Node]:
         """
         Gets the dynamical system and specification states from a product state
 
