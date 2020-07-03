@@ -64,14 +64,6 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
          self.cell_to_obs) = self._get_observation_maps(self.agent_start_pos,
                                                         obs)
 
-        # we want to statically compute the data that can be used to build
-        # a transition system representation of the environment
-        self.TS_config_data = self._get_transition_system_data(
-            self.cell_obs_map,
-            self.cell_to_obs,
-            self.obs_str_idxs_map,
-            self.ACTION_ENUM_TO_STR)
-
     def render_notebook(self) -> None:
         """
         Wrapper for the env.render() that works in notebooks
@@ -125,6 +117,23 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         obs, reward, done, _ = self.env.step(action)
 
         return self.state_only_obs(obs), reward, done, {}
+
+    def extract_transition_system(self) -> dict:
+        """
+        Runs extraction routines to build the configuration dict for a TS
+
+        :returns:   config_data dict needed to initialize an automaton
+        """
+
+        # we want to statically compute the data that can be used to build
+        # a transition system representation of the environment
+        self.TS_config_data = self._get_transition_system_data(
+            self.cell_obs_map,
+            self.cell_to_obs,
+            self.obs_str_idxs_map,
+            self.ACTION_ENUM_TO_STR)
+
+        return self.TS_config_data
 
     def _get_agent_props(self) -> Tuple[AgentPos, AgentDir]:
         """

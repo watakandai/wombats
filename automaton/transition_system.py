@@ -235,11 +235,22 @@ class MinigridTransitionSystem(TransitionSystem):
 
         symbol_probability = None
 
-        curr_state = self.env._get_state_from_str(curr_state)
+        curr_state_env = self.env._get_state_from_str(curr_state)
         action = self.env.ACTION_STR_TO_ENUM[symbol]
         next_pos, next_dir, done = self.env._make_transition(action,
-                                                             *curr_state)
+                                                             *curr_state_env)
         next_state_label = self.env._get_state_str(next_pos, next_dir)
+
+        # need to make sure that the environment and the internal, TS
+        # transition map are in sync
+        next_state_label_in_TS = self._transition_map[(curr_state, symbol)]
+        if next_state_label != next_state_label_in_TS:
+            msg = f'At the current_state ({curr_state}) under given symbol ' +\
+                  f'({symbol}, the internal Minigrid env''s env.step() ' + \
+                  f'returned a next state ({next_state_label}) that was ' + \
+                  f'different than the next state ' + \
+                  f'({next_state_label_in_TS}) in the transition system.'
+            raise ValueError(msg)
 
         if show_steps:
             self.env.render_notebook()
@@ -336,11 +347,11 @@ class TSBuilder(Builder):
 
     def _from_minigrid(
         self,
-        graph_data: StaticMinigridTSWrapper
+        minigrid_environment: StaticMinigridTSWrapper
     ) -> TransitionSystem:
 
-        config_data = graph_data.TS_config_data
-        config_data['env'] = graph_data
+        config_data = minigrid_environment.extract_transition_system()
+        config_data['env'] = minigrid_environment
 
         return config_data
 
