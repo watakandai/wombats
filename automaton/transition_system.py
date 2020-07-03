@@ -78,7 +78,7 @@ class TransitionSystem(Automaton):
                          edge_weight_key=None)
 
     def transition(self, curr_state: Node,
-                   input_symbol: str,
+                   input_symbol: Symbol,
                    **get_next_state_kwargs: dict) -> TS_Trans_Data:
         """
         transitions the TS given the current TS state and an input symbol, then
@@ -160,14 +160,89 @@ class TransitionSystem(Automaton):
 
 
 class MinigridTransitionSystem(TransitionSystem):
+    """
+    A class representing both a transition system and a Minigrid environment.
+
+
+    The Minigrid gym environment is kept in sync with the transition system
+
+    NOTE: changes to `_env` are NOT
+    automatically recognized by the TS, so only use methods of this class to
+    change attributes of `_env` unless you know what you're doing.
+
+    :param      nodes:                 node list as expected by
+                                       networkx.add_nodes_from() (node
+                                       label, node attribute dict)
+    :param      edges:                 edge list as expected by
+                                       networkx.add_edges_from() (src node
+                                       label, dest node label, edge
+                                       attribute dict)
+    :param      symbol_display_map:    bidirectional mapping of
+                                       hashable symbols, to a unique
+                                       integer index in the symbol map.
+                                       Needed to translate between the
+                                       indices in the transition
+                                       distribution and the hashable
+                                       representation which is
+                                       meaningful to the user
+    :param      alphabet_size:         number of symbols in system alphabet
+    :param      num_states:            number of states in automaton state
+                                       space
+    :param      num_obs:               number of observation symbols
+    :param      start_state:           unique start state string label of
+                                       system
+    :param      final_transition_sym:  representation of the termination
+                                       symbol. If not given, will default
+                                       to base class default.
+    :param      empty_transition_sym:  representation of the empty symbol
+                                       (a.k.a. lambda). If not given, will
+                                       default to base class default.
+    :param      env:                   Minigrid gym env represented by this TS
+    """
+
+    current_state: Node
+    """the current state in the transition system. Kept in sync with env"""
 
     def __init__(self, **kwargs):
 
-        self.env = kwargs['env']
+        self._env = kwargs['env']
 
         # normal TS don't have an 'env'
         kwargs.pop('env', None)
         super().__init__(**kwargs)
+
+        self.reset()
+
+        self.actions = self._env.actions
+        """actions available in the gym env. Can be fed into the TS or env"""
+
+    def reset(self):
+        """
+        Resets both the transition system's state and the Minigrid env itself.
+        """
+
+        self._env.reset()
+        self.current_state = self.start_state
+
+    def transition(self, curr_state: Node,
+                   input_symbol: {Symbol, EnvAct},
+                   **get_next_state_kwargs: dict) -> TS_Trans_Data:
+        """
+        transitions the TS given the current TS state and an input symbol, then
+        outputs the state observation.
+
+        Note: Accepts both a TS symbol or one of self.actions.
+
+        :param      curr_state:             The current TS state
+        :param      input_symbol:           The input TS symbol
+        :param      get_next_state_kwargs:  Any additional inputs to
+                                            _get_next_state
+
+        :returns:   the next TS state, and the obs
+        """
+
+        return super().transition(curr_state, input_symbol,
+                                  **get_next_state_kwargs)
 
     def run(self,
             word: {EnvAct, EnvActs, Symbol, Symbols},
@@ -183,26 +258,25 @@ class MinigridTransitionSystem(TransitionSystem):
                                  invalid symbol use
         """
 
-        self.env.reset()
+        self.reset()
 
         if show_steps:
-            self.env.render_notebook()
+            self._env.render_notebook()
 
         # need to do type-checking / polymorphism handling here
         if isinstance(word, str) or not isinstance(word, collections.Iterable):
             word = [word]
 
-        if isinstance(word[0], self.env.actions):
-            word = [self.env.ACTION_ENUM_TO_STR[action] for action in word]
-
         return super().run(word, show_steps=show_steps)
 
-    def _get_next_state(self, curr_state: Node, symbol: Symbol,
+    def _get_next_state(self, curr_state: Node,
+                        symbol: {Symbol, EnvAct},
                         show_steps: bool = False) -> Tuple[Node, None]:
         """
         Gets the next state given the current state and the "input" symbol.
 
-        computes this using the underlying environment's step() function
+        computes this using the underlying environment's step() function.
+        Note: Accepts both a TS symbol or one of self.actions.
 
         :param      curr_state:  The current state
         :param      symbol:      The input symbol
@@ -215,6 +289,9 @@ class MinigridTransitionSystem(TransitionSystem):
         :raises     ValueError:  duplicate symbol in curr_state's transition
                                  function
         """
+
+        if isinstance(symbol, self.actions):
+            symbol = self._env.ACTION_ENUM_TO_STR[symbol]
 
         (possible_symbols, _) = self._get_trans_probabilities(curr_state)
 
@@ -235,11 +312,12 @@ class MinigridTransitionSystem(TransitionSystem):
 
         symbol_probability = None
 
-        curr_state_env = self.env._get_state_from_str(curr_state)
-        action = self.env.ACTION_STR_TO_ENUM[symbol]
-        next_pos, next_dir, done = self.env._make_transition(action,
-                                                             *curr_state_env)
-        next_state_label = self.env._get_state_str(next_pos, next_dir)
+        curr_state_env = self._env._get_state_from_str(curr_state)
+        action = self._env.ACTION_STR_TO_ENUM[symbol]
+        next_pos, next_dir, done = self._env._make_transition(action,
+                                                              *curr_state_env)
+        next_state_label = self._env._get_state_str(next_pos, next_dir)
+        self.current_state = next_state_label
 
         # need to make sure that the environment and the internal, TS
         # transition map are in sync
@@ -253,7 +331,7 @@ class MinigridTransitionSystem(TransitionSystem):
             raise ValueError(msg)
 
         if show_steps:
-            self.env.render_notebook()
+            self._env.render_notebook()
 
         return next_state_label, symbol_probability
 
