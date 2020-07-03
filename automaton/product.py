@@ -1,8 +1,8 @@
 import copy
 from typing import Tuple
 from bidict import bidict
-import queue
 import re
+import queue
 
 # local packages
 from wombats.factory.builder import Builder
@@ -207,13 +207,7 @@ class Product(Automaton):
         # naming to follow written algorithm
         T = dynamical_system
         A = specification
-        # X = dynamical_system.state_labels
         Sigma = dynamical_system.symbols
-        # Q = specification.state_labels
-
-        # set of all POSSIBLE product states
-        # P = itertools.product(X, Q)
-        # all_possible_prod_trans = itertools.product(P, Sigma)
 
         x_init = T.start_state
         q_init = A.start_state
@@ -229,7 +223,6 @@ class Product(Automaton):
         while not search_queue.empty():
 
             curr_prod_state = search_queue.get()
-            visited.add(curr_prod_state)
             x, q = cls._breakdown_prodct_state(curr_prod_state)
 
             for sigma in Sigma:
@@ -237,37 +230,39 @@ class Product(Automaton):
                 dyn_trans = (x, sigma)
                 dynamically_compatible = dyn_trans in T._transition_map
 
-                if dynamically_compatible:
+                if not dynamically_compatible:
+                    specification_compatible = False
+                else:
                     x_prime = T._transition_map[dyn_trans]
                     o_x_prime = T.observe(x_prime)
                     spec_trans = (q, o_x_prime)
                     specification_compatible = spec_trans in A._transition_map
 
-                    if specification_compatible:
-                        q_prime, trans_prob = A._get_next_state(q, o_x_prime)
-                        q_final_prob = A._get_node_data(q, 'final_probability')
-                        q_prime_final_prob = A._get_node_data(
-                            q_prime,
-                            'final_probability')
-                        o_x = T.observe(x)
+                if dynamically_compatible and specification_compatible:
+                    q_prime, trans_prob = A._get_next_state(q, o_x_prime)
+                    q_final_prob = A._get_node_data(q, 'final_probability')
+                    q_prime_final_prob = A._get_node_data(
+                        q_prime,
+                        'final_probability')
+                    o_x = T.observe(x)
 
-                        (nodes,
-                         edges,
-                         prod_src, prod_dest) = \
-                            cls._add_product_edge(
-                                nodes, edges,
-                                x_src=x, x_dest=x_prime,
-                                q_src=q, q_dest=q_prime,
-                                q_src_final_prob=q_final_prob,
-                                q_dest_final_prob=q_prime_final_prob,
-                                observation_src=o_x,
-                                observation_dest=o_x_prime,
-                                sigma=sigma,
-                                trans_prob=trans_prob)
+                    (nodes,
+                     edges,
+                     prod_src, prod_dest) = \
+                        cls._add_product_edge(
+                            nodes, edges,
+                            x_src=x, x_dest=x_prime,
+                            q_src=q, q_dest=q_prime,
+                            q_src_final_prob=q_final_prob,
+                            q_dest_final_prob=q_prime_final_prob,
+                            observation_src=o_x,
+                            observation_dest=o_x_prime,
+                            sigma=sigma,
+                            trans_prob=trans_prob)
 
-                        if prod_dest not in visited:
-                            search_queue.put(prod_dest)
-                            visited.add(prod_dest)
+                    if prod_dest not in visited:
+                        visited.add(prod_dest)
+                        search_queue.put(prod_dest)
 
         return cls._package_data(T, nodes, edges, init_prod_state)
 
@@ -397,19 +392,17 @@ class Product(Automaton):
         nodes, prod_dest = cls._add_product_node(nodes, x_dest, q_dest,
                                                  q_dest_final_prob,
                                                  observation_dest)
-
         prod_edge_data = {'symbols': [sigma],
                           'probabilities': [trans_prob]}
         prod_edge = {prod_dest: prod_edge_data}
 
         if prod_src in edges:
-            edges[prod_src].update(prod_edge)
             if prod_dest in edges[prod_src]:
                 existing_edge_data = edges[prod_src][prod_dest]
 
-                new_probs = prod_edge_data['probabilities']
                 existing_edge_data['symbols'].extend(prod_edge_data['symbols'])
-                existing_edge_data['symbols'].extend(new_probs)
+                new_probs = prod_edge_data['probabilities']
+                existing_edge_data['probabilities'].extend(new_probs)
 
                 edges[prod_src][prod_dest] = existing_edge_data
             else:
