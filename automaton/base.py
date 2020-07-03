@@ -1290,7 +1290,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                 graphviz_node_label.update({'shape': 'diamond'})
                 graphviz_node_label.update({'fillcolor': 'tomato1'})
 
-            if can_have_accepting_nodes and node_data['is_accepting']:
+            if ('is_violating' in node_data and node_data['is_accepting']):
                 graphviz_node_label.update({'peripheries': 2})
                 graphviz_node_label.update({'shape': 'doubleoctagon'})
                 graphviz_node_label.update({'fillcolor': 'lawngreen'})
