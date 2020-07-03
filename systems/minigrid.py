@@ -14,7 +14,6 @@ from bidict import bidict
 from typing import Type, List, Tuple
 from gym import wrappers
 from gym.wrappers.monitor import disable_videos
-from IPython.display import Video
 
 # define these type defs for method annotation type hints
 EnvObs = np.ndarray
@@ -383,6 +382,10 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
         return pos, direction
 
+    def _get_state_obs_color(str, state: str) -> str:
+
+        pass
+
     def _add_node(self, nodes: dict, pos: AgentPos,
                   direction: AgentPos, obs_str: str,
                   obs_str_idxs_map: dict) -> Tuple[dict, str]:
@@ -597,8 +600,10 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
             for _, edge_data in edge.items():
                 symbols.update(edge_data['symbols'])
                 state_labels.add(state)
-                observation = nodes[state]['observation']
-                observations.add(observation)
+
+        for node in nodes.keys():
+            observation = nodes[node]['observation']
+            observations.add(observation)
 
         alphabet_size = len(symbols)
         num_states = len(state_labels)
