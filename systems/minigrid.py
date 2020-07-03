@@ -27,6 +27,8 @@ AgentDir = int
 EnvType = Type[MiniGridEnv]
 Minigrid_TSNode = Tuple[AgentPos, AgentDir]
 Minigrid_TSEdge = Tuple[Minigrid_TSNode, Minigrid_TSNode]
+Minigrid_Edge_Unpacked = Tuple[Minigrid_TSNode, Minigrid_TSNode, AgentPos,
+                               AgentDir, AgentPos, AgentDir, str, str]
 
 MINIGRID_TO_GRAPHVIZ_COLOR = {'red': 'firebrick',
                               'green': 'darkseagreen1',
@@ -148,23 +150,6 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         obs, reward, done, _ = self.env.step(action)
 
         return self.state_only_obs(obs), reward, done, {}
-
-    def extract_transition_system(self) -> dict:
-        """
-        Runs extraction routines to build the configuration dict for a TS
-
-        :returns:   config_data dict needed to initialize an automaton
-        """
-
-        # we want to statically compute the data that can be used to build
-        # a transition system representation of the environment
-        self.TS_config_data = self._get_transition_system_data(
-            self.cell_obs_map,
-            self.cell_to_obs,
-            self.obs_str_idxs_map,
-            self.ACTION_ENUM_TO_STR)
-
-        return self.TS_config_data
 
     def _get_agent_props(self) -> Tuple[AgentPos, AgentDir]:
         """
@@ -413,8 +398,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         return IDX_TO_COLOR[cell_obs_arr[1]]
 
     def _add_node(self, nodes: dict, pos: AgentPos,
-                  direction: AgentPos, obs_str: str,
-                  obs_str_idxs_map: bidict) -> Tuple[dict, str]:
+                  direction: AgentPos, obs_str: str) -> Tuple[dict, str]:
         """
         Adds a node to the dict of nodes used to initialize an automaton obj.
 
@@ -424,8 +408,6 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         :param      pos:               The agent's position
         :param      direction:         The agent's direction
         :param      obs_str:           The state observation string
-        :param      obs_str_idxs_map:  mapping from cell obs. string -> cell
-                                       obs. array
 
         :returns:   (updated dict of nodes, new label for the added node)
         """
@@ -433,13 +415,13 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         state = self._get_state_str(pos, direction)
 
         color = self._get_state_obs_color(state)
-        empty_cell_str = self._get_cell_str('empty', obs_str_idxs_map)
+        empty_cell_str = self._get_cell_str('empty', self.obs_str_idxs_map)
         if obs_str == empty_cell_str:
             color = 'gray'
         else:
             color = MINIGRID_TO_GRAPHVIZ_COLOR[color]
 
-        goal_cell_str = self._get_cell_str('goal', obs_str_idxs_map)
+        goal_cell_str = self._get_cell_str('goal', self.obs_str_idxs_map)
         is_goal = obs_str == goal_cell_str
 
         if state not in nodes:
@@ -453,10 +435,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
     def _add_edge(self, nodes: dict, edges: dict,
                   action: ActionsEnum,
-                  edge: Minigrid_TSEdge,
-                  ACTION_ENUM_TO_STR: dict,
-                  obs_str_idxs_map: bidict,
-                  cell_to_obs: dict) -> Tuple[dict, dict, str, str]:
+                  edge: Minigrid_TSEdge) -> Tuple[dict, dict, str, str]:
         """
         Adds both nodes to the dict of nodes and to the dict of edges used to
         initialize an automaton obj.
@@ -469,28 +448,20 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
                                          by networkx.add_edges_from()
         :param      action:              The action taken
         :param      edge:                The edge to add
-        :param      ACTION_ENUM_TO_STR:  Mapping from action to it's str
-                                         representation
-        :param      obs_str_idxs_map:    mapping from cell obs. string -> cell
-                                         obs. array
-        :param      cell_to_obs:         mapping from cell indices -> cell obs.
-                                         string
 
         :returns:   (updated dict of nodes, updated dict of edges)
         """
 
-        action_str = ACTION_ENUM_TO_STR[action]
+        action_str = self.ACTION_ENUM_TO_STR[action]
 
         (src, dest,
          src_pos, src_dir,
          dest_pos, dest_dir,
-         obs_str_src, obs_str_dest) = self._get_edge_components(edge,
-                                                                cell_to_obs)
+         obs_str_src, obs_str_dest) = self._get_edge_components(edge)
 
-        nodes, state_src = self._add_node(nodes, src_pos, src_dir, obs_str_src,
-                                          obs_str_idxs_map)
+        nodes, state_src = self._add_node(nodes, src_pos, src_dir, obs_str_src)
         nodes, state_dest = self._add_node(nodes, dest_pos, dest_dir,
-                                           obs_str_dest, obs_str_idxs_map)
+                                           obs_str_dest)
 
         edge_data = {'symbols': [action_str]}
         edge = {state_dest: edge_data}
@@ -507,17 +478,12 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
         return nodes, edges, state_src, state_dest
 
-    def _get_edge_components(self, edge: Minigrid_TSEdge,
-                             cell_to_obs: dict) -> Tuple[Minigrid_TSNode,
-                                                         Minigrid_TSNode,
-                                                         AgentPos, AgentDir,
-                                                         AgentPos, AgentDir,
-                                                         str, str]:
+    def _get_edge_components(self,
+                             edge: Minigrid_TSEdge) -> Minigrid_Edge_Unpacked:
         """
         Parses the edge data structure and returns a tuple of unpacked data
 
         :param      edge:         The edge to unpack
-        :param      cell_to_obs:  mapping from cell indices -> cell obs. string
 
         :returns:   All edge components. Not going to name them all bro-bro
         """
@@ -528,30 +494,16 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         src_pos, src_dir = src
         dest_pos, dest_dir = dest
 
-        obs_str_src = cell_to_obs[src_pos]
-        obs_str_dest = cell_to_obs[dest_pos]
+        obs_str_src = self.cell_to_obs[src_pos]
+        obs_str_dest = self.cell_to_obs[dest_pos]
 
         return (src, dest, src_pos, src_dir,
                 dest_pos, dest_dir, obs_str_src, obs_str_dest)
 
-    def _get_transition_system_data(self, cell_obs_map: defaultdict,
-                                    cell_to_obs: dict,
-                                    obs_str_idxs_map: bidict,
-                                    ACTION_ENUM_TO_STR: dict) -> Tuple[dict,
-                                                                       dict]:
+    def extract_transition_system(self) -> Tuple[dict, dict]:
         """
         Extracts all data needed to build a transition system representation of
         the environment.
-
-        :param      cell_obs_map:        mapping from cell obs. string -> cell
-                                         indices NOTE: each key in this dict
-                                         has a list of values assoc.
-        :param      cell_to_obs:         mapping from cell indices -> cell obs.
-                                         string
-        :param      obs_str_idxs_map:    mapping from cell obs. string -> cell
-                                         obs. array
-        :param      ACTION_ENUM_TO_STR:  Mapping from action to it's str
-                                         representation
 
         :returns:   The transition system data.
         """
@@ -587,10 +539,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
                     (nodes, edges,
                      _,
                      dest_state_label) = self._add_edge(nodes, edges,
-                                                        action, possible_edge,
-                                                        ACTION_ENUM_TO_STR,
-                                                        obs_str_idxs_map,
-                                                        cell_to_obs)
+                                                        action, possible_edge)
 
                     # don't want to add outgoing transitions from states that
                     # we know are done to the TS, as these are wasted space
