@@ -12,6 +12,9 @@ import queue
 from collections import defaultdict
 from bidict import bidict
 from typing import Type, List, Tuple
+from gym import wrappers
+from gym.wrappers.monitor import disable_videos
+from IPython.display import Video
 
 # define these type defs for method annotation type hints
 EnvObs = np.ndarray
@@ -46,8 +49,21 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
     def __init__(self, env: EnvType,
                  seeds: List[int] = [0]) -> 'StaticMinigridTSWrapper':
 
+        self._monitor_log_location = 'minigrid_env_logs'
+        self._force_monitor = False
+        self._resume_monitor = True
+        self._uid_monitor = None
+        self._mode = None
+
+        env = FullyObsWrapper(ReseedWrapper(env, seeds=seeds))
+        env = wrappers.Monitor(env, self._monitor_log_location,
+                               video_callable=False,
+                               force=self._force_monitor,
+                               resume=self._resume_monitor,
+                               mode=self._mode)
+
         # actually creating the minigrid environment with appropriate wrappers
-        super().__init__(FullyObsWrapper(ReseedWrapper(env, seeds=seeds)))
+        super().__init__(env)
 
         # building some more constant DICTS dynamically from the env data
         self.ACTION_STR_TO_ENUM = {self._get_action_str(action): action
@@ -72,6 +88,14 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         plt.imshow(self.env.render(mode='rgb_image'), interpolation='bilinear')
         plt.axis('off')
         plt.show()
+
+    def reset(self, **kwargs):
+
+        self.close()
+        self._start_monitor()
+        observation = self.env.reset(**kwargs)
+
+        return observation
 
     def state_only_obs(self, obs: dict) -> EnvObs:
         """
@@ -505,6 +529,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         search_queue = queue.Queue()
         search_queue.put(init_state_label)
         visited = set()
+        done_states = set()
 
         while not search_queue.empty():
 
@@ -513,26 +538,36 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
             src_pos, src_dir = self._get_state_from_str(curr_state_label)
 
             for action in self.env.actions:
+                if curr_state_label not in done_states:
 
-                (dest_pos,
-                 dest_dir,
-                 done) = self._make_transition(action, src_pos, src_dir)
+                    (dest_pos,
+                     dest_dir,
+                     done) = self._make_transition(action, src_pos, src_dir)
 
-                possible_edge = ((src_pos, src_dir), (dest_pos, dest_dir))
+                    possible_edge = ((src_pos, src_dir), (dest_pos, dest_dir))
 
-                (nodes, edges,
-                 _,
-                 dest_state_label) = self._add_edge(nodes, edges,
-                                                    action, possible_edge,
-                                                    ACTION_ENUM_TO_STR,
-                                                    obs_str_idxs_map,
-                                                    cell_to_obs)
-                if dest_state_label not in visited:
-                    search_queue.put(dest_state_label)
-                    visited.add(dest_state_label)
+                    (nodes, edges,
+                     _,
+                     dest_state_label) = self._add_edge(nodes, edges,
+                                                        action, possible_edge,
+                                                        ACTION_ENUM_TO_STR,
+                                                        obs_str_idxs_map,
+                                                        cell_to_obs)
+
+                    # don't want to add outgoing transitions from states that
+                    # we know are done to the TS, as these are wasted space
+                    if done:
+                        done_states.add(dest_state_label)
+
+                        # need to reset after done, to clear the 'done' state
+                        self.reset()
+
+                    if dest_state_label not in visited:
+                        search_queue.put(dest_state_label)
+                        visited.add(dest_state_label)
 
         # we have moved the agent a bunch, so we should reset it when done
-        # extracting all of the data
+        # extracting all of the data.
         self.reset()
 
         return self._package_data(nodes, edges)
@@ -578,6 +613,47 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
                                                          self.agent_start_dir)
 
         return config_data
+
+    def _toggle_video_recording(self, record_video: {bool, None}=None) -> None:
+        """
+        Turns on / off the video monitoring for the underlying Minigrid env
+
+        :param      record_video:  setting for environment monitoring.
+                                   If not given, will toggle the current video
+                                   recording state
+        """
+
+        if record_video is None:
+            turn_off_video = self.env._video_enabled()
+        else:
+            turn_off_video = not record_video
+
+        if turn_off_video:
+            self.env.video_callable = disable_videos
+        else:
+            self.env.video_callable = lambda episode_id: True
+
+    def _start_monitor(self) -> None:
+        """
+        (Re)-Starts a the env's monitor wrapper
+        """
+
+        self.env._start(self.env.directory,
+                        self.env.video_callable,
+                        self._force_monitor,
+                        self._resume_monitor,
+                        self.env.write_upon_reset,
+                        self._uid_monitor,
+                        self._mode)
+
+    def _get_video_path(self) -> str:
+        """
+        Gets the current video recording's full path.
+
+        :returns:   The video path.
+        """
+
+        return self.env.video_recorder.path
 
 
 class LavaComparison(MiniGridEnv):

@@ -211,12 +211,14 @@ class MinigridTransitionSystem(TransitionSystem):
         kwargs.pop('env', None)
         super().__init__(**kwargs)
 
-        self.reset()
-
         self.actions = self._env.actions
         """actions available in the gym env. Can be fed into the TS or env"""
 
-    def reset(self):
+        self.video_location = self._env._monitor_log_location
+
+        self.reset()
+
+    def reset(self) -> None:
         """
         Resets both the transition system's state and the Minigrid env itself.
         """
@@ -246,17 +248,25 @@ class MinigridTransitionSystem(TransitionSystem):
 
     def run(self,
             word: {EnvAct, EnvActs, Symbol, Symbols},
-            show_steps: bool = False) -> Tuple[Symbols, Nodes]:
+            record_video: bool = False,
+            show_steps: bool = False) -> Tuple[Symbols, Nodes, str]:
         """
         processes a input word and produces a output word & state sequence
 
-        :param      word:        The word to process
+        :param      word:          The word to process
+        :param      record_video:  toggles recording of the run on the env
+        :param      show_steps:    whether or not to print out images of the
+                                   env as it is given each symbol.
 
-        :returns:   output word (list of symbols), list of states visited
+        :returns:   output word (list of symbols), list of states visited,
+                    path to recorded video (None if no video recorded)
 
-        :raises     ValueError:  Catches and re-raises exceptions from
-                                 invalid symbol use
+        :raises     ValueError:  Catches and re-raises exceptions from invalid
+                                 symbol use
         """
+
+        if record_video:
+            self._env._toggle_video_recording(record_video)
 
         self.reset()
 
@@ -267,7 +277,17 @@ class MinigridTransitionSystem(TransitionSystem):
         if isinstance(word, str) or not isinstance(word, collections.Iterable):
             word = [word]
 
-        return super().run(word, show_steps=show_steps)
+        output_word, state_sequence = super().run(word, show_steps=show_steps)
+
+        # return the video state to what it was before
+        if record_video:
+            self._env.close()
+            video_path = self._env._get_video_path()
+            self._env._toggle_video_recording()
+        else:
+            video_path = None
+
+        return output_word, state_sequence, video_path
 
     def _get_next_state(self, curr_state: Node,
                         symbol: {Symbol, EnvAct},
@@ -288,6 +308,8 @@ class MinigridTransitionSystem(TransitionSystem):
         :raises     ValueError:  symbol not in curr_state's transition function
         :raises     ValueError:  duplicate symbol in curr_state's transition
                                  function
+        :raises     ValueError:  if the Minigrid env and TS do not have the
+                                 same next state
         """
 
         if isinstance(symbol, self.actions):
