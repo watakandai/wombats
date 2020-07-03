@@ -205,16 +205,16 @@ class MinigridTransitionSystem(TransitionSystem):
 
     def __init__(self, **kwargs):
 
-        self._env = kwargs['env']
+        self.env = kwargs['env']
 
         # normal TS don't have an 'env'
         kwargs.pop('env', None)
         super().__init__(**kwargs)
 
-        self.actions = self._env.actions
+        self.actions = self.env.actions
         """actions available in the gym env. Can be fed into the TS or env"""
 
-        self.video_location = self._env._monitor_log_location
+        self.video_location = self.env._monitor_log_location
 
         self.reset()
 
@@ -223,7 +223,7 @@ class MinigridTransitionSystem(TransitionSystem):
         Resets both the transition system's state and the Minigrid env itself.
         """
 
-        self._env.reset()
+        self.env.reset()
         self.current_state = self.start_state
 
     def transition(self, curr_state: Node,
@@ -266,12 +266,12 @@ class MinigridTransitionSystem(TransitionSystem):
         """
 
         if record_video:
-            self._env._toggle_video_recording(record_video)
+            self.env._toggle_video_recording(record_video)
 
         self.reset()
 
         if show_steps:
-            self._env.render_notebook()
+            self.env.render_notebook()
 
         # need to do type-checking / polymorphism handling here
         if isinstance(word, str) or not isinstance(word, collections.Iterable):
@@ -281,9 +281,9 @@ class MinigridTransitionSystem(TransitionSystem):
 
         # return the video state to what it was before
         if record_video:
-            self._env.close()
-            video_path = self._env._get_video_path()
-            self._env._toggle_video_recording()
+            self.env.close()
+            video_path = self.env._get_video_path()
+            self.env._toggle_video_recording()
         else:
             video_path = None
 
@@ -305,6 +305,8 @@ class MinigridTransitionSystem(TransitionSystem):
 
         :returns:   (The next state label, the transition probability)
 
+        :raises     ValueError:  if you try to take an action when curr_state
+                                  is 'done'
         :raises     ValueError:  symbol not in curr_state's transition function
         :raises     ValueError:  duplicate symbol in curr_state's transition
                                  function
@@ -312,8 +314,13 @@ class MinigridTransitionSystem(TransitionSystem):
                                  same next state
         """
 
+        if self.env.env.stats_recorder.done:
+            msg = f'curr_state ({curr_state}) is done. ' + \
+                  f'Cannot take any more actions.'
+            raise ValueError(msg)
+
         if isinstance(symbol, self.actions):
-            symbol = self._env.ACTION_ENUM_TO_STR[symbol]
+            symbol = self.env.ACTION_ENUM_TO_STR[symbol]
 
         (possible_symbols, _) = self._get_trans_probabilities(curr_state)
 
@@ -334,11 +341,11 @@ class MinigridTransitionSystem(TransitionSystem):
 
         symbol_probability = None
 
-        curr_state_env = self._env._get_state_from_str(curr_state)
-        action = self._env.ACTION_STR_TO_ENUM[symbol]
-        next_pos, next_dir, done = self._env._make_transition(action,
-                                                              *curr_state_env)
-        next_state_label = self._env._get_state_str(next_pos, next_dir)
+        curr_state_env = self.env._get_state_from_str(curr_state)
+        action = self.env.ACTION_STR_TO_ENUM[symbol]
+        next_pos, next_dir, done = self.env._make_transition(action,
+                                                             *curr_state_env)
+        next_state_label = self.env._get_state_str(next_pos, next_dir)
         self.current_state = next_state_label
 
         # need to make sure that the environment and the internal, TS
@@ -353,7 +360,7 @@ class MinigridTransitionSystem(TransitionSystem):
             raise ValueError(msg)
 
         if show_steps:
-            self._env.render_notebook()
+            self.env.render_notebook()
 
         return next_state_label, symbol_probability
 
