@@ -19,6 +19,7 @@ from IPython.display import display, Image
 from pydot import Dot
 from typing import Hashable, List, Tuple, Iterable, Dict
 from bidict import bidict
+from scipy import sparse
 
 # needed for multi-threaded sampling routine
 NUM_CORES = multiprocessing.cpu_count()
@@ -199,12 +200,12 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """a mapping from node label to it's index in the vectorized
            representation of the automaton"""
 
-        self._initial_state_distribution: np.ndarray
+        self._initial_state_distribution: sparse.csr_matrix
         """a (1 x _num_states) ndarray containing the pmf for the initial
            starting state. For most machines, this simply the indicator
            function with a one at the index of the state"""
 
-        self._final_state_distribution: np.ndarray
+        self._final_state_distribution: sparse.csr_matrix
         """a (_num_states x 1) ndarray containing the pmf for terminating
            at each state's index."""
 
@@ -458,7 +459,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         M = self._transition_matrices
         d = self._num_states
 
-        p_empty = np.asscalar(S @ F)
+        p_empty = np.asscalar((S @ F).todense())
         empty_symbol = self._empty_transition_sym
         symbols = [symbol for symbol in self.symbols if symbol != empty_symbol]
         w = [empty_symbol]
@@ -467,6 +468,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             return w, p_empty
 
         Q.put((w, S))
+        one_vec = sparse.csr_matrix(np.ones(shape=(d, 1)))
 
         while not Q.empty():
             w, V = Q.get()
@@ -475,17 +477,18 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                 w_new = copy.deepcopy(w)
                 w_new.append(symbol)
                 V_new = V @ M[symbol]
-                new_string_probability = np.asscalar(V_new @ F)
+                new_string_prob = np.asscalar((V_new @ F).todense())
 
-                if new_string_probability > min_string_probability:
-                    return w_new, new_string_probability
+                if new_string_prob > min_string_probability:
+                    return w_new, new_string_prob
 
                 # only keep a possible new symbol if it's (non-final) emission
                 # probability is above the minimum probability threshold and
                 # the string isn't too long
                 string_length_below_bound = len(w_new) < max_string_length
-                curr_emis_prob = np.asscalar(V_new @ np.ones(shape=(d, 1)))
+                curr_emis_prob = np.asscalar((V_new @ one_vec).todense())
                 string_could_be_mps = curr_emis_prob > min_string_probability
+
                 if string_length_below_bound and string_could_be_mps:
                     Q.put((w_new, V_new))
 
@@ -1075,7 +1078,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """
 
         start_state_index = node_index_map[self.start_state]
-        initial_state_distribution = np.zeros(shape=(1, self._num_states))
+        shape = (1, self._num_states)
+        initial_state_distribution = sparse.csr_matrix(np.zeros(shape=shape))
         initial_state_distribution[0, start_state_index] = 1.0
 
         return initial_state_distribution
@@ -1092,7 +1096,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                     distribution of terminating at each state's index
         """
 
-        final_state_distribution = np.zeros(shape=(self._num_states, 1))
+        shape = (self._num_states, 1)
+        final_state_distribution = sparse.csr_matrix(np.zeros(shape=shape))
 
         for node, node_index in node_index_map.items():
             final_prob = self._get_node_data(node, 'final_probability')
@@ -1146,7 +1151,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             A = transition_matrices[symbol]
             A[np.isnan(A)] = nonedge_trans_prob
             A = np.asarray(A)
-            transition_matrices[symbol] = A
+            transition_matrices[symbol] = sparse.csr_matrix(A)
 
         return transition_matrices
 
