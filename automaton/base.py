@@ -646,8 +646,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
                     # need to store new symbols in a map for display
                     if symbol not in symbol_display_map:
-                        symbol_count += 1
                         symbol_display_map[symbol] = symbol_count
+                        symbol_count += 1
 
                     edge_data = {'symbol': symbol}
 
@@ -664,15 +664,13 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         # we need to add the empty / final symbol to the display map
         # for completeness
-        symbol_count += 1
-        symbol_display_map[final_transition_sym] = symbol_count
         if empty_transition_sym not in symbol_display_map:
-            symbol_count += 1
             symbol_display_map[empty_transition_sym] = symbol_count
+            symbol_count += 1
 
         if final_transition_sym not in symbol_display_map:
-            symbol_count += 1
             symbol_display_map[final_transition_sym] = symbol_count
+            symbol_count += 1
 
         return symbol_display_map, converted_nodes, edge_list
 
@@ -1172,8 +1170,11 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         # need to do type-checking / polymorphism handling here
         if not isinstance(integer_symbols, collections.Iterable):
-            if np.issubdtype(integer_symbols, np.integer):
+            if isinstance(integer_symbols, int):
                 return self._symbol_display_map.inv[integer_symbols]
+            elif type(integer_symbols).__module__ == 'numpy':
+                if np.issubdtype(integer_symbols, np.integer):
+                    return self._symbol_display_map.inv[integer_symbols]
             else:
                 msg = f'symbol index ({integer_symbols}) is not an int'
                 raise ValueError(msg)
