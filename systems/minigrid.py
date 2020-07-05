@@ -1,8 +1,11 @@
 from gym_minigrid.minigrid import MiniGridEnv, Grid, Lava, Goal
-from gym_minigrid.wrappers import ReseedWrapper, FullyObsWrapper
+from gym_minigrid.wrappers import (ReseedWrapper, FullyObsWrapper,
+                                   ViewSizeWrapper)
 from gym_minigrid.minigrid import (IDX_TO_COLOR, IDX_TO_OBJECT, STATE_TO_IDX,
-                                   OBJECT_TO_IDX)
+                                   OBJECT_TO_IDX, TILE_PIXELS)
 from gym_minigrid.register import register
+from gym_minigrid.rendering import (point_in_rect, point_in_circle,
+                                    fill_coords, highlight_img, downsample)
 
 import matplotlib.pyplot as plt
 import gym
@@ -39,6 +42,198 @@ MINIGRID_TO_GRAPHVIZ_COLOR = {'red': 'firebrick',
                               'grey': 'gray60'}
 
 
+class ModifyActionsWrapper(gym.core.Wrapper):
+
+    # Enumeration of possible actions
+    # as this is a static environment, we will only allow for movement actions
+    # For a simple environment, we only allow the agent to move:
+    # North, South, East, or West
+    class SimpleStaticActions(IntEnum):
+        # move in this direction on the grid
+        north = 0
+        south = 1
+        east = 2
+        west = 3
+
+    SIMPLE_ACTION_TO_DIR_IDX = {SimpleStaticActions.north: 3,
+                                SimpleStaticActions.south: 1,
+                                SimpleStaticActions.east: 0,
+                                SimpleStaticActions.west: 2}
+
+    # Enumeration of possible actions
+    # as this is a static environment, we will only allow for movement actions
+    class StaticActions(IntEnum):
+        # Turn left, turn right, move forward
+        left = 0
+        right = 1
+        forward = 2
+
+    def __init__(self, env: EnvType, actions_type: str = 'static'):
+
+        # actually creating the minigrid environment with appropriate wrappers
+        super().__init__(env)
+
+        allowed_actions_types = set(['static', 'simple_static', 'default'])
+        if actions_type not in allowed_actions_types:
+            msg = f'actions_type ({actions_type}) must be one of: ' + \
+                  f'{actions_type}'
+            raise ValueError(msg)
+
+        # Need to change the Action enumeration in the base environment.
+        # This also changes the "step" behavior, so we also change that out
+        # to match the new set of actions
+        self._actions_type = actions_type
+        if actions_type == 'static':
+            actions = ModifyActionsWrapper.StaticActions
+            step_function = self._step_default
+        elif actions_type == 'simple_static':
+            actions = ModifyActionsWrapper.SimpleStaticActions
+            step_function = self._step_simple_static
+        elif actions_type == 'default':
+            actions = MiniGridEnv.Actions
+            step_function = self._step_default
+        self.unwrapped.actions = actions
+        self._step_function = step_function
+
+        # Actions are discrete integer values
+        num_actions = len(self.unwrapped.actions)
+        self.unwrapped.action_space = gym.spaces.Discrete(num_actions)
+
+        # building some more constant DICTS dynamically from the env data
+        self.ACTION_STR_TO_ENUM = {self._get_action_str(action): action
+                                   for action in self.unwrapped.actions}
+        self.ACTION_ENUM_TO_STR = dict(zip(self.ACTION_STR_TO_ENUM.values(),
+                                           self.ACTION_STR_TO_ENUM.keys()))
+
+    def step(self, action: IntEnum) -> StepData:
+
+        # all of these changes must affect the base environment to be seen
+        # across all other wrappers
+        base_env = self.unwrapped
+
+        base_env.step_count += 1
+
+        done, reward = self._step_function(action)
+
+        if base_env.step_count >= base_env.max_steps:
+            done = True
+
+        obs = base_env.gen_obs()
+
+        return obs, reward, done, {}
+
+    def _step_simple_static(self, action: IntEnum) -> Tuple[Done, Reward]:
+
+        # all of these changes must affect the base environment to be seen
+        # across all other wrappers
+        base_env = self.unwrapped
+
+        reward = 0
+        done = False
+
+        # ensure valid action is selected
+        if action not in base_env.actions:
+            msg = f'action ({action}) must be one of: {base_env.actions}'
+            raise ValueError(msg)
+
+        # save the original direction so we can reset it after moving
+        old_dir = base_env.agent_dir
+        new_dir = ModifyActionsWrapper.SIMPLE_ACTION_TO_DIR_IDX[action]
+        base_env.agent_dir = new_dir
+
+        # Get the contents of the cell in front of the agent
+        fwd_pos = base_env.front_pos
+        fwd_cell = base_env.grid.get(*fwd_pos)
+
+        if fwd_cell is None or fwd_cell.can_overlap():
+            base_env.agent_pos = fwd_pos
+        if fwd_cell is not None and fwd_cell.type == 'goal':
+            done = True
+            reward = base_env._reward()
+        if fwd_cell is not None and fwd_cell.type == 'lava':
+            done = True
+
+        # reset the direction of the agent, as it really cannot change
+        # direction
+        base_env.agent_dir = old_dir
+
+        return done, reward
+
+    def _step_default(self, action: IntEnum) -> Tuple[Done, Reward]:
+
+        reward = 0
+        done = False
+
+        # all of these changes must affect the base environment to be seen
+        # across all other wrappers
+        base_env = self.unwrapped
+
+        # Get the position in front of the agent
+        fwd_pos = base_env.front_pos
+
+        # Get the contents of the cell in front of the agent
+        fwd_cell = base_env.grid.get(*fwd_pos)
+        # Rotate left
+        if action == base_env.actions.left:
+            base_env.agent_dir -= 1
+            if base_env.agent_dir < 0:
+                base_env.agent_dir += 4
+
+        # Rotate right
+        elif action == base_env.actions.right:
+            base_env.agent_dir = (base_env.agent_dir + 1) % 4
+
+        # Move forward
+        elif action == base_env.actions.forward:
+            if fwd_cell is None or fwd_cell.can_overlap():
+                base_env.agent_pos = fwd_pos
+            if fwd_cell is not None and fwd_cell.type == 'goal':
+                done = True
+                reward = base_env._reward()
+            if fwd_cell is not None and fwd_cell.type == 'lava':
+                done = True
+
+        # Pick up an object
+        elif action == base_env.actions.pickup:
+            if fwd_cell and fwd_cell.can_pickup():
+                if base_env.carrying is None:
+                    base_env.carrying = fwd_cell
+                    base_env.carrying.cur_pos = np.array([-1, -1])
+                    base_env.grid.set(*fwd_pos, None)
+
+        # Drop an object
+        elif action == base_env.actions.drop:
+            if not fwd_cell and base_env.carrying:
+                base_env.grid.set(*fwd_pos, base_env.carrying)
+                base_env.carrying.cur_pos = fwd_pos
+                base_env.carrying = None
+
+        # Toggle/activate an object
+        elif action == base_env.actions.toggle:
+            if fwd_cell:
+                fwd_cell.toggle(base_env, fwd_pos)
+
+        # Done action (not used by default)
+        elif action == base_env.actions.done:
+            pass
+
+        else:
+            assert False, "unknown action"
+
+        return done, reward
+
+    def _get_action_str(self, action_enum: ActionsEnum) -> str:
+        """
+        Gets a string representation of the action enum constant
+
+        :param      action_enum:  The action enum constant to convert
+
+        :returns:   The action enum's string representation
+        """
+
+        return self.unwrapped.actions._member_names_[action_enum]
+
+
 class StaticMinigridTSWrapper(gym.core.Wrapper):
     """
     Wrapper to define an environment that can be represented as a transition
@@ -56,16 +251,9 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
     IDX_TO_STATE = dict(zip(STATE_TO_IDX.values(), STATE_TO_IDX.keys()))
     DIR_TO_STRING = bidict({0: 'right', 1: 'down', 2: 'left', 3: 'up'})
 
-    # Enumeration of possible actions
-    # as this is a static environment, we will only allow for movement actions
-    class Actions(IntEnum):
-        # Turn left, turn right, move forward
-        left = 0
-        right = 1
-        forward = 2
-
     def __init__(self, env: EnvType,
-                 seeds: List[int] = [0]) -> 'StaticMinigridTSWrapper':
+                 seeds: List[int] = [0],
+                 simpler_actions: bool = False) -> 'StaticMinigridTSWrapper':
 
         self._monitor_log_location = 'minigrid_env_logs'
         self._force_monitor = False
@@ -73,6 +261,15 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         self._uid_monitor = None
         self._mode = None
 
+        if simpler_actions:
+            actions_type = 'simple_static'
+            env.directionless_agent = True
+        else:
+            actions_type = 'static'
+            env.directionless_agent = False
+
+        env = ViewSizeWrapper(env, agent_view_size=3)
+        env = ModifyActionsWrapper(env, actions_type)
         env = FullyObsWrapper(ReseedWrapper(env, seeds=seeds))
         env = wrappers.Monitor(env, self._monitor_log_location,
                                video_callable=False,
@@ -82,19 +279,6 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
         # actually creating the minigrid environment with appropriate wrappers
         super().__init__(env)
-
-        # Action enumeration for this environment
-        self.unwrapped.actions = StaticMinigridTSWrapper.Actions
-
-        # Actions are discrete integer values
-        num_actions = len(self.unwrapped.actions)
-        self.unwrapped.action_space = gym.spaces.Discrete(num_actions)
-
-        # building some more constant DICTS dynamically from the env data
-        self.ACTION_STR_TO_ENUM = {self._get_action_str(action): action
-                                   for action in self.env.Actions}
-        self.ACTION_ENUM_TO_STR = dict(zip(self.ACTION_STR_TO_ENUM.values(),
-                                           self.ACTION_STR_TO_ENUM.keys()))
 
         # We only compute state observations label maps once here, as the
         # environment MUST BE STATIC in this instance
@@ -242,23 +426,6 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         else:
             return '_'.join([prop_string_base, self.IDX_TO_STATE[obj_state]])
 
-    def _get_action_str(self, action_enum: ActionsEnum) -> str:
-        """
-        Gets a string representation of the action enum constant
-
-        :param      action_enum:  The action enum constant to convert
-
-        :returns:   The action enum's string representation
-        """
-
-        action_str = str(action_enum)
-
-        # string version of Action.done is 'Action.done' -> trim
-        substring_to_trim = 'Actions.'
-        action_str = action_str[len(substring_to_trim):]
-
-        return action_str
-
     def _make_transition(self, action: ActionsEnum,
                          pos: AgentPos,
                          direction: AgentDir) -> Tuple[AgentPos,
@@ -277,7 +444,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         self._set_agent_props(pos, direction)
         _, _, done, _ = self.state_only_obs_step(action)
 
-        return *self._get_agent_props(), done
+        return (*self._get_agent_props(), done)
 
     def _get_observation_maps(self, start_pos: AgentPos,
                               obs: EnvObs) -> Tuple[bidict, defaultdict, dict]:
@@ -543,7 +710,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
             visited.add(curr_state_label)
             src_pos, src_dir = self._get_state_from_str(curr_state_label)
 
-            for action in self.env.actions:
+            for action in self.unwrapped.actions:
                 if curr_state_label not in done_states:
 
                     (dest_pos,
@@ -661,6 +828,111 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         return self.env.video_recorder.path
 
 
+class NoDirectionAgentGrid(Grid):
+    """
+    This class overrides the drawing of direction-less agents
+    """
+
+    def __init__(self, width: int, height: int):
+        super().__init__(width, height)
+
+    def render(
+        self,
+        tile_size,
+        agent_pos=None,
+        agent_dir=None,
+        highlight_mask=None
+    ):
+        """
+        Render this grid at a given scale
+
+        NOTE: overridden here to change the tile rendering to be the class' own
+
+        :param r: target renderer object
+        :param tile_size: tile size in pixels
+        """
+
+        if highlight_mask is None:
+            highlight_mask = np.zeros(shape=(self.width, self.height),
+                                      dtype=np.bool)
+
+        # Compute the total grid size
+        width_px = self.width * tile_size
+        height_px = self.height * tile_size
+
+        img = np.zeros(shape=(height_px, width_px, 3), dtype=np.uint8)
+
+        # Render the grid
+        for j in range(0, self.height):
+            for i in range(0, self.width):
+                cell = self.get(i, j)
+
+                agent_here = np.array_equal(agent_pos, (i, j))
+
+                # CHANGED: Grid.render_tile(...) to self.render_tile(...)
+                tile_img = self.render_tile(
+                    cell,
+                    agent_dir=agent_dir if agent_here else None,
+                    highlight=highlight_mask[i, j],
+                    tile_size=tile_size
+                )
+
+                ymin = j * tile_size
+                ymax = (j + 1) * tile_size
+                xmin = i * tile_size
+                xmax = (i + 1) * tile_size
+                img[ymin:ymax, xmin:xmax, :] = tile_img
+
+        return img
+
+    @classmethod
+    def render_tile(
+        cls,
+        obj,
+        agent_dir=None,
+        highlight=False,
+        tile_size=TILE_PIXELS,
+        subdivs=3
+    ):
+        """
+        Render a tile and cache the result
+        """
+
+        # Hash map lookup key for the cache
+        key = (agent_dir, highlight, tile_size)
+        key = obj.encode() + key if obj else key
+
+        if key in cls.tile_cache:
+            return cls.tile_cache[key]
+
+        img = np.zeros(shape=(tile_size * subdivs, tile_size * subdivs, 3),
+                       dtype=np.uint8)
+
+        # Draw the grid lines (top and left edges)
+        fill_coords(img, point_in_rect(0, 0.031, 0, 1), (100, 100, 100))
+        fill_coords(img, point_in_rect(0, 1, 0, 0.031), (100, 100, 100))
+
+        if obj is not None:
+            obj.render(img)
+
+        # Overlay the agent on top
+        if agent_dir is not None:
+            cir_fn = point_in_circle(cx=0.5, cy=0.5, r=0.3)
+            fill_coords(img, cir_fn, (255, 0, 0))
+
+        # Highlight the cell if needed
+        if highlight:
+            highlight_img(img)
+
+        # Downsample the image to perform supersampling/anti-aliasing
+        img = downsample(img, subdivs)
+
+        # Cache the rendered tile
+        cls.tile_cache[key] = img
+
+        return img
+
+
 class LavaComparison(MiniGridEnv):
     """
     Environment to try comparing with MIT Shah paper
@@ -678,6 +950,7 @@ class LavaComparison(MiniGridEnv):
         self.agent_start_dir = agent_start_dir
         self.goal_pos = [(1, 1), (1, 8), (8, 1), (8, 8)]
         self.drying_off_task = drying_off_task
+        self.directionless_agent = False
 
         super().__init__(
             width=width,
@@ -688,8 +961,11 @@ class LavaComparison(MiniGridEnv):
         )
 
     def _gen_grid(self, width, height):
-        # Create an empty grid
-        self.grid = Grid(width, height)
+
+        if self.directionless_agent:
+            self.grid = NoDirectionAgentGrid(width, height)
+        else:
+            self.grid = Grid(width, height)
 
         # Generate the surrounding walls
         self.grid.wall_rect(0, 0, width, height)

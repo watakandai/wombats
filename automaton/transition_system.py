@@ -10,7 +10,7 @@ from .base import (Automaton, NXNodeList, NXEdgeList, Node, Nodes,
                    DEFAULT_EMPTY_TRANS_SYMBOL)
 
 from wombats.systems import StaticMinigridTSWrapper
-from wombats.systems.minigrid import ActionsEnum
+from wombats.systems.minigrid import ActionsEnum, StepData, AgentPos, AgentDir
 
 # define these type defs for method annotation type hints
 TS_Trans_Data = Tuple[Node, Observation]
@@ -203,6 +203,9 @@ class MinigridTransitionSystem(TransitionSystem):
     current_state: Node
     """the current state in the transition system. Kept in sync with env"""
 
+    agent_state: Tuple[AgentPos, AgentDir]
+    """the current grid position and direction of the agent"""
+
     def __init__(self, **kwargs):
 
         self.env = kwargs['env']
@@ -225,6 +228,21 @@ class MinigridTransitionSystem(TransitionSystem):
 
         self.env.reset()
         self.current_state = self.start_state
+        self.agent_state = self.env._get_state_from_str(self.current_state)
+
+    def render(self, ) -> None:
+
+        self.env.render_notebook()
+
+    def step(self, action: ActionsEnum) -> StepData:
+
+        obs, reward, done, _ = self.env.state_only_obs_step(action)
+
+        # update states
+        self.agent_state = self.env._get_agent_props()
+        self.current_state = self.env._get_state_str(*self.agent_state)
+
+        return obs, reward, done, _
 
     def transition(self, curr_state: Node,
                    input_symbol: {Symbol, EnvAct},
@@ -347,6 +365,7 @@ class MinigridTransitionSystem(TransitionSystem):
                                                              *curr_state_env)
         next_state_label = self.env._get_state_str(next_pos, next_dir)
         self.current_state = next_state_label
+        self.agent_state = self.env._get_state_from_str(next_state_label)
 
         # need to make sure that the environment and the internal, TS
         # transition map are in sync
