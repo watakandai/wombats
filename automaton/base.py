@@ -8,7 +8,7 @@ import multiprocessing
 import warnings
 import os
 import copy
-import queue
+import heapq
 from pathlib import Path
 from numpy.random import RandomState
 from joblib import Parallel, delayed
@@ -19,7 +19,6 @@ from IPython.display import display, Image
 from pydot import Dot
 from typing import Hashable, List, Tuple, Iterable, Dict
 from bidict import bidict
-from scipy import sparse
 
 # needed for multi-threaded sampling routine
 NUM_CORES = multiprocessing.cpu_count()
@@ -42,6 +41,10 @@ Probabilities = Iterable[Probability]
 
 Trans_data = (Weights, Nodes, Symbols)
 Sampled_Trans_Data = (Node, Symbol, Probability)
+
+Heap = List
+Inverse_Probability = Probability
+BMPS_Queue = Heap[Tuple[Inverse_Probability, Tuple[Symbols, Probabilities]]]
 
 # constants
 SMOOTHING_AMOUNT = 0.0001
@@ -200,12 +203,12 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """a mapping from node label to it's index in the vectorized
            representation of the automaton"""
 
-        self._initial_state_distribution: sparse.csr_matrix
+        self._initial_state_distribution: np.ndarray
         """a (1 x _num_states) ndarray containing the pmf for the initial
            starting state. For most machines, this simply the indicator
            function with a one at the index of the state"""
 
-        self._final_state_distribution: sparse.csr_matrix
+        self._final_state_distribution: np.ndarray
         """a (_num_states x 1) ndarray containing the pmf for terminating
            at each state's index."""
 
@@ -425,10 +428,14 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return super(nx.MultiDiGraph, self).add_node(node_for_adding, **attr)
 
-    def BMPS_exact(self, min_string_probability: Probability,
-                   max_string_length: int) -> Tuple[Symbols, Probability]:
+    def most_probable_string(
+        self,
+        min_string_probability: Probability,
+        max_string_length: int,
+        allow_empty_symbol: bool = False
+    ) -> Tuple[Symbols, Probability]:
         """
-        Computes the bounder, most probable string in the probabilistic
+        Computes the bounded, most probable string in the probabilistic
         language of the automaton
 
         :param      min_string_probability:  The minimum string probability
@@ -452,47 +459,39 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         if max_string_length is None:
             max_string_length = 100
 
-        # keeping naming the same as in the paper
-        Q = queue.Queue()
-        S = copy.deepcopy(self._initial_state_distribution)
-        F = self._final_state_distribution
-        M = self._transition_matrices
-        d = self._num_states
-
-        p_empty = np.asscalar((S @ F).todense())
         empty_symbol = self._empty_transition_sym
-        symbols = [symbol for symbol in self.symbols if symbol != empty_symbol]
-        w = [empty_symbol]
+        empty_sym_idx = self._symbol_display_map[empty_symbol]
 
-        if p_empty > min_string_probability:
-            return w, p_empty
+        if allow_empty_symbol:
+            symbol_idxs = [self._symbol_display_map[symbol]
+                           for symbol in self.symbols]
+        else:
+            symbol_idxs = [self._symbol_display_map[symbol]
+                           for symbol in self.symbols
+                           if symbol != empty_symbol]
 
-        Q.put((w, S))
-        one_vec = sparse.csr_matrix(np.ones(shape=(d, 1)))
+        # numba pre-processing
+        trans_mat_dict = self._transition_matrices
+        num_states = self._num_states
+        trans_mat = np.empty((num_states, num_states, self._alphabet_size))
+        for sym_idx in symbol_idxs:
+            symbol = self._convert_symbol_idxs(sym_idx)
+            trans_mat[:, :, sym_idx] = trans_mat_dict[symbol]
 
-        while not Q.empty():
-            w, V = Q.get()
+        sym_idxs, prob, _ = BMPS_exact(symbols=symbol_idxs,
+                                       M=trans_mat,
+                                       S=self._initial_state_distribution,
+                                       F=self._final_state_distribution,
+                                       d=self._num_states,
+                                       empty_symbol=empty_sym_idx,
+                                       min_string_prob=min_string_probability,
+                                       max_string_length=max_string_length,
+                                       return_all_viable_strings=False)
 
-            for symbol in symbols:
-                w_new = copy.deepcopy(w)
-                w_new.append(symbol)
-                V_new = V @ M[symbol]
-                new_string_prob = np.asscalar((V_new @ F).todense())
-
-                if new_string_prob > min_string_probability:
-                    return w_new, new_string_prob
-
-                # only keep a possible new symbol if it's (non-final) emission
-                # probability is above the minimum probability threshold and
-                # the string isn't too long
-                string_length_below_bound = len(w_new) < max_string_length
-                curr_emis_prob = np.asscalar((V_new @ one_vec).todense())
-                string_could_be_mps = curr_emis_prob > min_string_probability
-
-                if string_length_below_bound and string_could_be_mps:
-                    Q.put((w_new, V_new))
-
-        return None, None
+        if sym_idxs is not None:
+            return self._convert_symbol_idxs(sym_idxs), prob
+        else:
+            return None, None
 
     def _choose_next_state(self, curr_state: Node,
                            random_state: {None, int, Iterable}=None,
@@ -627,27 +626,28 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         # need to convert the configuration adjacency list given in the config
         # to an edge list given as a 3-tuple of (source, dest, edgeAttrDict)
         edge_list = []
-        symbol_count = 0
-        symbol_display_map = bidict({})
+        seen_symbols = []
+
+        # add these symbols first, so we can then later ensure they have the
+        # last two indices
+        seen_symbols.append(empty_transition_sym)
+        seen_symbols.append(final_transition_sym)
 
         for source_node, dest_edges_data in edges.items():
-
             # don't need to add any edges if there is no edge data
             if dest_edges_data is None:
                 continue
 
             for dest_node in dest_edges_data:
-
                 symbols = dest_edges_data[dest_node]['symbols']
+
                 if is_stochastic:
                     probabilities = dest_edges_data[dest_node]['probabilities']
 
                 for symbol_idx, symbol in enumerate(symbols):
-
                     # need to store new symbols in a map for display
-                    if symbol not in symbol_display_map:
-                        symbol_display_map[symbol] = symbol_count
-                        symbol_count += 1
+                    if symbol not in seen_symbols:
+                        seen_symbols.append(symbol)
 
                     edge_data = {'symbol': symbol}
 
@@ -662,15 +662,11 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         # are iterable
         converted_nodes = list(nodes.items())
 
-        # we need to add the empty / final symbol to the display map
-        # for completeness
-        if empty_transition_sym not in symbol_display_map:
-            symbol_display_map[empty_transition_sym] = symbol_count
-            symbol_count += 1
-
-        if final_transition_sym not in symbol_display_map:
-            symbol_display_map[final_transition_sym] = symbol_count
-            symbol_count += 1
+        # ensure that the empty and final symbols always have the last indices
+        # in the display map for use in computations excluding those symbols
+        symbol_display_map = bidict({})
+        for new_sym_idx, symbol in enumerate(reversed(seen_symbols)):
+            symbol_display_map[symbol] = new_sym_idx
 
         return symbol_display_map, converted_nodes, edge_list
 
@@ -1076,8 +1072,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """
 
         start_state_index = node_index_map[self.start_state]
-        shape = (1, self._num_states)
-        initial_state_distribution = sparse.csr_matrix(np.zeros(shape=shape))
+        initial_state_distribution = np.zeros(shape=(1, self._num_states))
         initial_state_distribution[0, start_state_index] = 1.0
 
         return initial_state_distribution
@@ -1094,8 +1089,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                     distribution of terminating at each state's index
         """
 
-        shape = (self._num_states, 1)
-        final_state_distribution = sparse.csr_matrix(np.zeros(shape=shape))
+        final_state_distribution = np.zeros(shape=(self._num_states, 1))
 
         for node, node_index in node_index_map.items():
             final_prob = self._get_node_data(node, 'final_probability')
@@ -1149,7 +1143,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             A = transition_matrices[symbol]
             A[np.isnan(A)] = nonedge_trans_prob
             A = np.asarray(A)
-            transition_matrices[symbol] = sparse.csr_matrix(A)
 
         return transition_matrices
 
@@ -1556,3 +1549,99 @@ def edge_weight_to_string(weight: {int, float}) -> str:
                                               digits=2)
 
     return wt_str
+
+
+def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
+               d: int, empty_symbol: int,
+               min_string_prob: Probability,
+               max_string_length: int,
+               return_all_viable_strings: bool) -> Tuple[Symbols,
+                                                         Probability,
+                                                         BMPS_Queue]:
+    """
+    Computes the bounded, most probable string (MPS) in a stochastic automaton.
+
+    Automaton MUST have edge weights transition probabilities, but not the
+    outgoing transition weights don't necessarily need to add up to 1 - i.e.
+    the transition matrices don't need to be formal Stochastic Matrices.
+
+    :param      symbols:                    All symbol indices in the symbol
+                                            map
+    :param      M:                          a (d x d x num_symbols) tensor
+                                            containing the probabilistically
+                                            weighted (NOT NECESSARILY
+                                            stochastic) transition matrices
+                                            representing the automaton, keyed
+                                            on the third index - i.e. by symbol
+    :param      S:                          a (1 x d) vector containing the
+                                            initial state probabilities
+    :param      F:                          a (d x a) vector containing the
+                                            final state probabilities
+    :param      d:                          the number of states in the
+                                            automaton
+    :param      empty_symbol:               The "empty" symbol
+    :param      min_string_prob:            The minimum string probability
+    :param      max_string_length:          The maximum string length
+    :param      return_all_viable_strings:  whether to halt when finding a
+                                            string with
+                                            probability > min_string_prob
+                                            or to return all non-zero prob.
+                                            strings of
+                                            length <= max_string_length
+
+    :returns:   return_all_viable_strings = False:
+                most probable word in the PFA, it's probability, and the
+                PARTIAL search queue,
+                OR None, None, the empty search queue if no MPS exists for
+                the given settings.
+
+                return_all_viable_strings = False:
+                most probable word in the PFA, it's probability, and the
+                ENTIRE search queue,
+                OR None, None, the empty search queue if no MPS exists for
+                the given settings.
+    """
+
+    word = [empty_symbol]
+    p_empty = (S @ F).item()
+    if p_empty > min_string_prob:
+        return word, p_empty
+
+    # Q is a min heap, so we must use (1 - p_word) as the key to pop
+    # the best running MPS estimate out to try
+    Q = []
+    heapq.heappush(Q, (1 - p_empty, (word, S)))
+    one_vec = np.ones(shape=(d, 1))
+
+    while Q:
+        _, (word, state_probabilities) = heapq.heappop(Q)
+
+        for symbol in symbols:
+            # need to make a copy here so we don't add invalid symbols to the
+            # search
+            word_new = word.copy()
+            word_new.append(symbol)
+
+            state_probabilities_new = state_probabilities @ M[:, :, symbol]
+            new_string_prob = (state_probabilities_new @ F).item()
+            is_bmps_string = new_string_prob > min_string_prob
+
+            if is_bmps_string and not return_all_viable_strings:
+                return word_new, new_string_prob, Q
+
+            # only keep a possible new symbol if it's (non-final) emission
+            # probability is above the minimum probability threshold and
+            # the string isn't too long
+            string_length_below_bound = len(word_new) < max_string_length
+            curr_emis_prob = (state_probabilities_new @ one_vec).item()
+            string_could_be_mps = curr_emis_prob > min_string_prob
+
+            if string_length_below_bound and string_could_be_mps:
+                queue_item = (word_new, state_probabilities_new)
+                queue_weight = 1 - curr_emis_prob
+                heapq.heappush(Q, (queue_weight, queue_item))
+
+    if return_all_viable_strings:
+        return word_new, new_string_prob, Q
+    else:
+        return None, None, Q

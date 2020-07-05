@@ -100,8 +100,9 @@ class Product(Automaton):
                     of the dynamical system under the control symbols.
         """
 
-        controls_symbols, obs_prob = self.BMPS_exact(min_string_probability,
-                                                     max_string_length)
+        (controls_symbols,
+         obs_prob) = self.most_probable_string(min_string_probability,
+                                               max_string_length)
 
         # None -> completely incompatible
         if controls_symbols is None:
@@ -481,8 +482,10 @@ class Product(Automaton):
             for _, edge_data in edge.items():
                 symbols.update(edge_data['symbols'])
                 state_labels.add(state)
-                observation = nodes[state]['observation']
-                observations.add(observation)
+
+        for node in nodes.keys():
+            observation = nodes[node]['observation']
+            observations.add(observation)
 
         alphabet_size = len(symbols)
         num_states = len(state_labels)
