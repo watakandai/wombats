@@ -44,6 +44,22 @@ MINIGRID_TO_GRAPHVIZ_COLOR = {'red': 'firebrick',
 
 
 class ModifyActionsWrapper(gym.core.Wrapper):
+    """
+    This class allows you to modify the action space and behavior of the agent
+
+    :param      env:           The gym environment to wrap
+    :param      actions_type:  The actions type string
+                               {'static', 'simple_static', 'default'}
+                               'static':
+                               use a directional agent only capable of going
+                               forward and turning
+                               'simple_static':
+                               use a non-directional agent which can only move
+                               in cardinal directions in the grid
+                               'default':
+                               use an agent which has the default MinigridEnv
+                               actions, suitable for dynamic environments.
+    """
 
     # Enumeration of possible actions
     # as this is a static environment, we will only allow for movement actions
@@ -239,13 +255,19 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
     """
     Wrapper to define an environment that can be represented as a transition
     system.
-
+    
     This means that the environment must be STATIC -> no keys or doors opening
     as this would require a reactive synthesis formulation.
 
-    :param      env:    The gym environment to wrap and compute transitions on
-    :param      seeds:  The random seeds given to the Minigrid environment, so
-                        when the environment is reset(), it remains the same
+    :param      env:                   The gym environment to wrap and compute
+                                       transitions on
+    :param      seeds:                 The random seeds given to the Minigrid
+                                       environment, so when the environment is
+                                       reset(), it remains the same
+    :param      nondirectional_agent:  whether to use simpler actions, resulting in
+                                       an agent only capable of moving in cardinal
+                                       directions
+    :param      is_static:             if False, use the default agent actions.
     """
 
     env: EnvType
@@ -254,7 +276,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
     def __init__(self, env: EnvType,
                  seeds: List[int] = [0],
-                 simpler_actions: bool = False,
+                 nondirectional_agent: bool = False,
                  is_static: bool = True) -> 'StaticMinigridTSWrapper':
 
         self._monitor_log_location = 'minigrid_env_logs'
@@ -263,7 +285,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         self._uid_monitor = None
         self._mode = None
 
-        if simpler_actions:
+        if nondirectional_agent:
             actions_type = 'simple_static'
             env.directionless_agent = True
         elif is_static:
