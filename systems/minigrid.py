@@ -286,7 +286,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         self,
         env: EnvType,
         seeds: List[int] = [0],
-        actions_type: str = 'simple_static',
+        actions_type: str = 'static',
     ) -> 'StaticMinigridTSWrapper':
 
         self._monitor_log_location = 'minigrid_env_logs'
