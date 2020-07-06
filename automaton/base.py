@@ -1695,9 +1695,9 @@ def PWDFA_MPS(states: Set[Node],
               transition_map: Callable) -> SDFA_ConsesusData:
     """
     Computes the EXACT consensus string (the actual most probable string (MPS))
-    for a probabilistically weighted DETERMINISTIC finite automaton.
+    for a probabilistically weighted DETERMINISTIC finite automaton (PWDFA).
 
-    :warning THIS MPS CALCULATION IS ONLY VALID FOR A DETERMINISTIC AUTOMATON.
+    :warning THIS MPS CALCULATION IS ONLY VALID FOR A DETERMINISTIC AUTOMATA.
 
     :param      states:          The states of the automaton
     :param      start_state:     The start state of the PWDFA
