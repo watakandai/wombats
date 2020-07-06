@@ -90,8 +90,9 @@ class ModifyActionsWrapper(gym.core.Wrapper):
         # actually creating the minigrid environment with appropriate wrappers
         super().__init__(env)
 
-        allowed_actions_types = set(['static', 'simple_static', 'default'])
-        if actions_type not in allowed_actions_types:
+        self._allowed_actions_types = set(['static', 'simple_static',
+                                           'default'])
+        if actions_type not in self._allowed_actions_types:
             msg = f'actions_type ({actions_type}) must be one of: ' + \
                   f'{actions_type}'
             raise ValueError(msg)
@@ -259,27 +260,34 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
     This means that the environment must be STATIC -> no keys or doors opening
     as this would require a reactive synthesis formulation.
 
-    :param      env:                   The gym environment to wrap and
-                                       compute transitions on
-    :param      seeds:                 The random seeds given to the
-                                       Minigrid environment, so when the
-                                       environment is reset(), it remains
-                                       the same
-    :param      nondirectional_agent:  whether to use simpler actions,
-                                       resulting in an agent only capable
-                                       of moving in cardinal directions
-    :param      is_static:             if False, use the default agent
-                                       actions.
+    :param      env:           The gym environment to wrap and compute
+                               transitions on
+    :param      seeds:         The random seeds given to the Minigrid
+                               environment, so when the environment is reset(),
+                               it remains the same.
+    :param      actions_type:  The actions type string
+                               {'static', 'simple_static', 'default'}
+                               'static':
+                               use a directional agent only capable of going
+                               forward and turning
+                               'simple_static':
+                               use a non-directional agent which can only move
+                               in cardinal directions in the grid
+                               'default':
+                               use an agent which has the default MinigridEnv
+                               actions, suitable for dynamic environments.
     """
 
     env: EnvType
     IDX_TO_STATE = dict(zip(STATE_TO_IDX.values(), STATE_TO_IDX.keys()))
     DIR_TO_STRING = bidict({0: 'right', 1: 'down', 2: 'left', 3: 'up'})
 
-    def __init__(self, env: EnvType,
-                 seeds: List[int] = [0],
-                 nondirectional_agent: bool = False,
-                 is_static: bool = True) -> 'StaticMinigridTSWrapper':
+    def __init__(
+        self,
+        env: EnvType,
+        seeds: List[int] = [0],
+        actions_type: str = 'simple_static',
+    ) -> 'StaticMinigridTSWrapper':
 
         self._monitor_log_location = 'minigrid_env_logs'
         self._force_monitor = False
@@ -287,14 +295,18 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         self._uid_monitor = None
         self._mode = None
 
-        if nondirectional_agent:
-            actions_type = 'simple_static'
+        self._allowed_actions_types = set(['static', 'simple_static',
+                                           'default'])
+        if actions_type not in self._allowed_actions_types:
+            msg = f'actions_type ({actions_type}) must be one of: ' + \
+                  f'{actions_type}'
+            raise ValueError(msg)
+
+        if actions_type == 'simple_static':
             env.directionless_agent = True
-        elif is_static:
-            actions_type = 'static'
+        elif actions_type == 'static':
             env.directionless_agent = False
-        else:
-            actions_type = 'default'
+        elif actions_type == 'default':
             env.directionless_agent = False
 
         env = ViewSizeWrapper(env, agent_view_size=3)
