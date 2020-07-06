@@ -255,19 +255,21 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
     """
     Wrapper to define an environment that can be represented as a transition
     system.
-    
+
     This means that the environment must be STATIC -> no keys or doors opening
     as this would require a reactive synthesis formulation.
 
-    :param      env:                   The gym environment to wrap and compute
-                                       transitions on
-    :param      seeds:                 The random seeds given to the Minigrid
-                                       environment, so when the environment is
-                                       reset(), it remains the same
-    :param      nondirectional_agent:  whether to use simpler actions, resulting in
-                                       an agent only capable of moving in cardinal
-                                       directions
-    :param      is_static:             if False, use the default agent actions.
+    :param      env:                   The gym environment to wrap and
+                                       compute transitions on
+    :param      seeds:                 The random seeds given to the
+                                       Minigrid environment, so when the
+                                       environment is reset(), it remains
+                                       the same
+    :param      nondirectional_agent:  whether to use simpler actions,
+                                       resulting in an agent only capable
+                                       of moving in cardinal directions
+    :param      is_static:             if False, use the default agent
+                                       actions.
     """
 
     env: EnvType
