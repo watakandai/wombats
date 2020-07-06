@@ -85,9 +85,11 @@ class Product(Automaton):
                          can_have_accepting_nodes=True,
                          edge_weight_key='probability')
 
-    def compute_strategy(self, min_string_probability: Probability = 0.0,
-                         max_string_length: int = 100) -> Tuple[Symbols,
-                                                                Probability]:
+    def compute_strategy(
+        self,
+        min_string_probability: {Probability, None}=None,
+        max_string_length: {int, None}=None
+    ) -> Tuple[Symbols, Probability]:
         """
         Calculates a control strategy for the dynamical system that best
         matches the language of the specification.

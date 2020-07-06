@@ -9,6 +9,7 @@ import warnings
 import os
 import copy
 import heapq
+import queue
 from pathlib import Path
 from numpy.random import RandomState
 from joblib import Parallel, delayed
@@ -17,7 +18,7 @@ from scipy.stats import rv_discrete
 from networkx.drawing.nx_pydot import to_pydot
 from IPython.display import display, Image
 from pydot import Dot
-from typing import Hashable, List, Tuple, Iterable, Dict
+from typing import Hashable, List, Tuple, Iterable, Dict, Callable, Set
 from bidict import bidict
 
 # needed for multi-threaded sampling routine
@@ -45,6 +46,8 @@ Sampled_Trans_Data = (Node, Symbol, Probability)
 Heap = List
 Inverse_Probability = Probability
 BMPS_Queue = Heap[Tuple[Inverse_Probability, Tuple[Symbols, Probabilities]]]
+SDFA_ConsesusData = Tuple[Symbols, Probability, Dict[Node, Symbols],
+                          Dict[Node, Probability]]
 
 # constants
 SMOOTHING_AMOUNT = 0.0001
@@ -144,7 +147,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                  edge_weight_key: str = None,
                  smoothing_amount: float = SMOOTHING_AMOUNT) -> 'Automaton':
 
-        self._transition_map = {}
+        self._transition_map = dict()
         """a map of start state label and symbol to destination state"""
 
         self._edge_key_map = dict()
@@ -199,7 +202,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
            probabilistic transition matrix
            (NOT always a proper stochastic mat)"""
 
-        self._node_index_map = dict()
+        self._node_index_map = bidict()
         """a mapping from node label to it's index in the vectorized
            representation of the automaton"""
 
@@ -430,18 +433,31 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
     def most_probable_string(
         self,
-        min_string_probability: Probability,
-        max_string_length: int,
-        allow_empty_symbol: bool = False
+        min_string_probability: {Probability, None}=None,
+        max_string_length: {int, None}=None,
+        allow_empty_symbol: bool = False,
+        is_deterministic: bool = True
     ) -> Tuple[Symbols, Probability]:
         """
         Computes the bounded, most probable string in the probabilistic
         language of the automaton
 
-        :param      min_string_probability:  The minimum string probability
+        :param      min_string_probability:  The minimum string probability.
+                                             This setting does nothing if
+                                             is_deterministic, as the
+                                             deterministic algorithm is exact.
                                              (default 0.0)
-        :param      max_string_length:       The maximum string length
+        :param      max_string_length:       The maximum string length.
+                                             This setting does nothing if
+                                             is_deterministic, as the
+                                             deterministic algorithm is exact.
                                              (default 100)
+        :param     is_deterministic:         whether the automaton has
+                                             deterministic transitions. Only
+                                             set this to False if the automaton
+                                             actually is non-deterministic, as
+                                             the non-deterministic solver is
+                                             an approximation and MUCH slower.
 
         :returns:   sequence of control symbols to input to produce the BMPS,
                     probability of producing the output string
@@ -463,33 +479,48 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         empty_sym_idx = self._symbol_display_map[empty_symbol]
 
         if allow_empty_symbol:
-            symbol_idxs = [self._symbol_display_map[symbol]
-                           for symbol in self.symbols]
+            symbols = [symbol for symbol in self.symbols]
         else:
+            symbols = [symbol for symbol in self.symbols
+                       if symbol != empty_symbol]
+
+        # switch the solvers based on the type of automaton we have
+        if not is_deterministic:
             symbol_idxs = [self._symbol_display_map[symbol]
-                           for symbol in self.symbols
-                           if symbol != empty_symbol]
+                           for symbol in symbols]
 
-        # numba pre-processing
-        trans_mat_dict = self._transition_matrices
-        num_states = self._num_states
-        trans_mat = np.empty((num_states, num_states, self._alphabet_size))
-        for sym_idx in symbol_idxs:
-            symbol = self._convert_symbol_idxs(sym_idx)
-            trans_mat[:, :, sym_idx] = trans_mat_dict[symbol]
+            # numba pre-processing
+            trans_mat_dict = self._transition_matrices
+            num_states = self._num_states
+            trans_mat = np.empty((num_states, num_states, self._alphabet_size))
+            for sym_idx in symbol_idxs:
+                symbol = self._convert_symbol_idxs(sym_idx)
+                trans_mat[:, :, sym_idx] = trans_mat_dict[symbol]
 
-        sym_idxs, prob, _ = BMPS_exact(symbols=symbol_idxs,
-                                       M=trans_mat,
-                                       S=self._initial_state_distribution,
-                                       F=self._final_state_distribution,
-                                       d=self._num_states,
-                                       empty_symbol=empty_sym_idx,
-                                       min_string_prob=min_string_probability,
-                                       max_string_length=max_string_length,
-                                       return_all_viable_strings=False)
+            min_string_prob = min_string_probability
+            sym_idxs, prob, _ = BMPS_exact(symbols=symbol_idxs,
+                                           M=trans_mat,
+                                           S=self._initial_state_distribution,
+                                           F=self._final_state_distribution,
+                                           d=self._num_states,
+                                           empty_symbol=empty_sym_idx,
+                                           min_string_prob=min_string_prob,
+                                           max_string_length=max_string_length,
+                                           return_all_viable_strings=False)
+            mps = self._convert_symbol_idxs(sym_idxs)
 
-        if sym_idxs is not None:
-            return self._convert_symbol_idxs(sym_idxs), prob
+        else:
+            trans_prob_fcn = self._get_trans_probabilities
+            mps, prob, _, _ = PWDFA_MPS(states=self.state_labels,
+                                        start_state=self.start_state,
+                                        F=self._final_state_distribution,
+                                        empty_symbol=empty_symbol,
+                                        node_index_map=self._node_index_map,
+                                        trans_prob_fcn=trans_prob_fcn,
+                                        transition_map=self._transition_map)
+
+        if mps is not None:
+            return mps, prob
         else:
             return None, None
 
@@ -748,9 +779,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         # wait until all node computations are done to make the vectorized rep.
         if self._is_stochastic:
-            self._node_index_map = {state: index
-                                    for index, state
-                                    in enumerate(self.nodes())}
+            self._node_index_map = bidict({state: index
+                                           for index, state
+                                           in enumerate(self.nodes())})
             self._initial_state_distribution = self._make_initial_state_dist(
                 self._node_index_map)
             self._final_state_distribution = self._make_final_state_dist(
@@ -1059,7 +1090,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return edge_probs, edge_dests, edge_symbols
 
-    def _make_initial_state_dist(self, node_index_map: dict) -> np.ndarray:
+    def _make_initial_state_dist(self, node_index_map: bidict) -> np.ndarray:
         """
         Creates the pmf for the initial state distribution as a numpy array.
 
@@ -1077,7 +1108,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return initial_state_distribution
 
-    def _make_final_state_dist(self, node_index_map: dict) -> np.ndarray:
+    def _make_final_state_dist(self, node_index_map: bidict) -> np.ndarray:
         """
         Creates the pmf for the final state distribution as a numpy array.
 
@@ -1097,7 +1128,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return final_state_distribution
 
-    def _make_transition_matrices(self, node_index_map: dict) -> dict:
+    def _make_transition_matrices(self, node_index_map: bidict) -> dict:
         """
         Creates the mapping from a symbol to the state transition matrix under
         the given symbol.
@@ -1575,7 +1606,7 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
                                             on the third index - i.e. by symbol
     :param      S:                          a (1 x d) vector containing the
                                             initial state probabilities
-    :param      F:                          a (d x a) vector containing the
+    :param      F:                          a (d x 1) vector containing the
                                             final state probabilities
     :param      d:                          the number of states in the
                                             automaton
@@ -1590,28 +1621,31 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
                                             length <= max_string_length
 
     :returns:   return_all_viable_strings = False:
-                most probable word in the PFA, it's probability, and the
-                PARTIAL search queue,
-                OR None, None, the empty search queue if no MPS exists for
-                the given settings.
+                (most probable word in the PFA, it's probability, and the
+                PARTIAL search max heap)
+                    OR
+                (None, 0, the empty search max heap if no MPS exists for
+                the given settings)
 
                 return_all_viable_strings = False:
-                most probable word in the PFA, it's probability, and the
-                ENTIRE search queue,
-                OR None, None, the empty search queue if no MPS exists for
-                the given settings.
+                (None, 0, and the ENTIRE search max heap)
+                    OR
+                (None, 0, the empty search max heap if no MPS exists for
+                the given settings)
     """
+
+    Q = []
 
     word = [empty_symbol]
     p_empty = (S @ F).item()
     if p_empty > min_string_prob:
-        return word, p_empty
+        return word, p_empty, None
 
     # Q is a min heap, so we must use (1 - p_word) as the key to pop
     # the best running MPS estimate out to try
-    Q = []
     heapq.heappush(Q, (1 - p_empty, (word, S)))
     one_vec = np.ones(shape=(d, 1))
+    viable_words = []
 
     while Q:
         _, (word, state_probabilities) = heapq.heappop(Q)
@@ -1627,12 +1661,17 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
             is_bmps_string = new_string_prob > min_string_prob
 
             if is_bmps_string and not return_all_viable_strings:
-                return word_new, new_string_prob, Q
+                return word_new, new_string_prob, None
+
+            elif is_bmps_string and return_all_viable_strings:
+                queue_item = (word_new, state_probabilities_new)
+                queue_weight = 1 - new_string_prob
+                heapq.heappush(viable_words, (queue_weight, queue_item))
 
             # only keep a possible new symbol if it's (non-final) emission
             # probability is above the minimum probability threshold and
             # the string isn't too long
-            string_length_below_bound = len(word_new) < max_string_length
+            string_length_below_bound = len(word) < max_string_length
             curr_emis_prob = (state_probabilities_new @ one_vec).item()
             string_could_be_mps = curr_emis_prob > min_string_prob
 
@@ -1642,6 +1681,91 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
                 heapq.heappush(Q, (queue_weight, queue_item))
 
     if return_all_viable_strings:
-        return word_new, new_string_prob, Q
+        return None, None, viable_words
     else:
-        return None, None, Q
+        return None, None, None
+
+
+def PWDFA_MPS(states: Set[Node],
+              start_state: Node,
+              F: np.ndarray,
+              empty_symbol: Symbol,
+              node_index_map: bidict,
+              trans_prob_fcn: Callable,
+              transition_map: Callable) -> SDFA_ConsesusData:
+    """
+    Computes the EXACT consensus string (the actual most probable string (MPS))
+    for a probabilistically weighted DETERMINISTIC finite automaton.
+
+    :warning THIS MPS CALCULATION IS ONLY VALID FOR A DETERMINISTIC AUTOMATON.
+
+    :param      states:          The states of the automaton
+    :param      start_state:     The start state of the PWDFA
+    :param      F:               a (|states| x 1) vector containing the final
+                                 state probabilities
+    :param      empty_symbol:    The empty symbol
+    :param      node_index_map:  a mapping from node label to it's index in the
+                                 vectorized representation of the automaton
+    :param      trans_prob_fcn:  a function that extracts the transition
+                                 probabilities and associated symbols at the
+                                 current state.
+    :param      transition_map:  a map of start state label and symbol to
+                                 destination state
+
+    :returns:   The most probable string,
+                it's probability in the language of the PWDFA,
+                a mapping from each state to the highest probability
+                sequence of symbols that result in that state,
+                a mapping from each state to the largest intermediate
+                probability of reaching, BUT NOT terminating at that state.
+    """
+
+    search_queue = queue.Queue()
+
+    init_state = start_state
+    symbols, trans_probs = trans_prob_fcn(init_state)
+
+    for symbol, trans_prob in zip(symbols, trans_probs):
+        dest_state = transition_map[(init_state, symbol)]
+        queue_item = (init_state, dest_state, symbol, trans_prob)
+        search_queue.put(queue_item)
+
+    visited = set()
+    visited.add(init_state)
+
+    best_symbols = {state: [empty_symbol] for state in states}
+    best_state_probs = {state: 0.0 for state in states}
+    best_state_probs[init_state] = 1.0
+
+    while not search_queue.empty():
+        src_state, dest_state, symbol, trans_prob = search_queue.get()
+        visited.add(dest_state)
+
+        new_dest_prob = best_state_probs[src_state] * trans_prob
+        if new_dest_prob > best_state_probs[dest_state]:
+            best_state_probs[dest_state] = new_dest_prob
+
+            best_symbols[dest_state] = best_symbols[src_state].copy()
+            best_symbols[dest_state].append(symbol)
+
+        # now, we add any new transitions that we have not seen before
+        symbols, trans_probs = trans_prob_fcn(dest_state)
+        for symbol, trans_prob in zip(symbols, trans_probs):
+            new_dest_state = transition_map[(dest_state, symbol)]
+
+            if new_dest_state not in visited:
+                queue_item = (dest_state, new_dest_state, symbol, trans_prob)
+                search_queue.put(queue_item)
+
+    # terminate all of the strings, and then find the best one
+    mps_probability = 0.0
+    mps = None
+    for idx, term_prob in enumerate(F.flatten()):
+        state = node_index_map.inv[idx]
+        best_state_probs[state] *= term_prob
+
+        if best_state_probs[state] > mps_probability:
+            mps_probability = best_state_probs[state]
+            mps = best_symbols[state]
+
+    return mps, mps_probability, best_symbols, best_state_probs
