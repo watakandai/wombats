@@ -12,6 +12,7 @@ import gym
 import numpy as np
 import re
 import queue
+import warnings
 from collections import defaultdict
 from bidict import bidict
 from typing import Type, List, Tuple
@@ -253,7 +254,8 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
     def __init__(self, env: EnvType,
                  seeds: List[int] = [0],
-                 simpler_actions: bool = False) -> 'StaticMinigridTSWrapper':
+                 simpler_actions: bool = False,
+                 is_static: bool = True) -> 'StaticMinigridTSWrapper':
 
         self._monitor_log_location = 'minigrid_env_logs'
         self._force_monitor = False
@@ -264,8 +266,11 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         if simpler_actions:
             actions_type = 'simple_static'
             env.directionless_agent = True
-        else:
+        elif is_static:
             actions_type = 'static'
+            env.directionless_agent = False
+        else:
+            actions_type = 'default'
             env.directionless_agent = False
 
         env = ViewSizeWrapper(env, agent_view_size=3)
@@ -279,15 +284,19 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
         # actually creating the minigrid environment with appropriate wrappers
         super().__init__(env)
+        self.actions = self.unwrapped.actions
 
         # We only compute state observations label maps once here, as the
         # environment MUST BE STATIC in this instance
         obs = self.state_only_obs_reset()
         self.agent_start_pos, self.agent_start_dir = self._get_agent_props()
+
         (self.obs_str_idxs_map,
          self.cell_obs_map,
          self.cell_to_obs) = self._get_observation_maps(self.agent_start_pos,
                                                         obs)
+
+        self.reset()
 
     def render_notebook(self) -> None:
         """
@@ -403,13 +412,13 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         setattr(base_env, env_property_name, env_property)
 
     def _obs_to_prop_str(self, obs: EnvObs,
-                         row_idx: int, col_idx: int) -> str:
+                         col_idx: int, row_idx: int) -> str:
         """
         Converts a grid observation array into a string based on Minigrid ENUMs
 
         :param      obs:      The grid observation
-        :param      row_idx:  The row index of the cell to get the obs. string
         :param      col_idx:  The col index of the cell to get the obs. string
+        :param      row_idx:  The row index of the cell to get the obs. string
 
         :returns:   verbose, string representation of the state observation
         """
@@ -446,6 +455,49 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
         return (*self._get_agent_props(), done)
 
+    def _get_obs_str_of_start_cell(self, start_obs: EnvObs) -> str:
+        """
+        Gets the cell observation string for the start (reset) state
+
+        if returns None, then the agent cannot leave the start state and the
+        environment is broken lol.
+
+        :param      start_obs:   The gridcell observation matrix at reset()
+
+        :returns:   a full-cell observation at the agent's reset state
+
+        :raises     ValueError:  If the agent can't do anything at reset()
+        """
+
+        init_state = (self.agent_start_pos, self.agent_start_dir)
+
+        # sigh.... Well, we know that if you can't move within 3 steps, then
+        # the environment is completely unsolvable, or you start on the goal
+        # state.
+        for a1 in self.actions:
+            self._set_agent_props(*init_state)
+            self.state_only_obs_step(a1)
+            agent_pos1, agent_dir1 = self._get_agent_props()
+            s1 = (agent_pos1, agent_dir1)
+
+            for a2 in self.actions:
+                self._set_agent_props(*s1)
+                self.state_only_obs_step(a2)
+                agent_pos2, agent_dir2 = self._get_agent_props()
+                s2 = (agent_pos2, agent_dir2)
+
+                for a3 in self.actions:
+                    self._set_agent_props(*s2)
+                    obs, _, _, _ = self.state_only_obs_step(a3)
+                    agent_pos3, _ = self._get_agent_props()
+                    at_new_cell = agent_pos3 != init_state[0]
+
+                    if at_new_cell:
+                        return self._obs_to_prop_str(obs, *init_state[0])
+
+        msg = f'No actions allow the agent to make any progress in the env.'
+        raise ValueError(msg)
+
     def _get_observation_maps(self, start_pos: AgentPos,
                               obs: EnvObs) -> Tuple[bidict, defaultdict, dict]:
         """
@@ -476,22 +528,24 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         for row_idx in range(num_rows):
             for col_idx in range(num_cols):
 
-                obs_str = self._obs_to_prop_str(obs, row_idx, col_idx)
+                obs_str = self._obs_to_prop_str(obs, col_idx, row_idx)
                 obj = obs[col_idx, row_idx][0]
 
-                if IDX_TO_OBJECT[obj] != 'wall':
+                is_agent = IDX_TO_OBJECT[obj] == 'agent'
+                is_wall = IDX_TO_OBJECT[obj] == 'wall'
+
+                if not is_agent and not is_wall:
                     obs_str_idxs_map[obs_str] = tuple(obs[col_idx, row_idx])
                     cell_obs_map[obs_str].append((col_idx, row_idx))
                     cell_to_obs[(col_idx, row_idx)] = obs_str
 
-        # need to remove the agent from the environment
-        empty_cell_str = self._get_cell_str('empty', obs_str_idxs_map)
-        agent_cell_str = self._get_cell_str('agent', obs_str_idxs_map)
+        # need to add the agent's start cell observation to the environment
+        start_cell_obs_str = self._get_obs_str_of_start_cell(obs)
+        start_col, start_row = start_pos
 
-        cell_to_obs[start_pos] = empty_cell_str
-        obs_str_idxs_map.pop(agent_cell_str, None)
-        cell_obs_map[empty_cell_str].append(start_pos)
-        cell_obs_map.pop(agent_cell_str, None)
+        obs_str_idxs_map[start_cell_obs_str] = tuple(obs[start_col, start_row])
+        cell_obs_map[start_cell_obs_str].append((start_col, start_row))
+        cell_to_obs[(start_col, start_row)] = start_cell_obs_str
 
         return obs_str_idxs_map, cell_obs_map, cell_to_obs
 
@@ -520,11 +574,15 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         cell_str = [obs_str for obs_str in list(obs_str_idxs_map.keys())
                     if obj_type_str in obs_str]
 
-        if only_one_type_of_obj and len(cell_str) != 1:
+        if only_one_type_of_obj and len(cell_str) > 1:
             msg = f'there should be exactly one observation string ' + \
                   f'for a {obj_type_str} object. Found {cell_str} in ' + \
-                  f'cell oberservations.'
+                  f'cell observations.'
             raise ValueError(msg)
+        elif only_one_type_of_obj and len(cell_str) == 0:
+            msg = f'could not find any {obj_type_str} objects.'
+            warnings.warn(msg, RuntimeWarning)
+            return None
         else:
             cell_str = cell_str[0]
 
@@ -605,7 +663,10 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
             color = MINIGRID_TO_GRAPHVIZ_COLOR[color]
 
         goal_cell_str = self._get_cell_str('goal', self.obs_str_idxs_map)
-        is_goal = obs_str == goal_cell_str
+        if goal_cell_str is not None:
+            is_goal = obs_str == goal_cell_str
+        else:
+            is_goal = False
 
         if state not in nodes:
             state_data = {'trans_distribution': None,
@@ -710,7 +771,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
             visited.add(curr_state_label)
             src_pos, src_dir = self._get_state_from_str(curr_state_label)
 
-            for action in self.unwrapped.actions:
+            for action in self.actions:
                 if curr_state_label not in done_states:
 
                     (dest_pos,
