@@ -412,8 +412,7 @@ class PDFA(Automaton):
             # possible transitions from that node
             final_freq = fdfa._get_node_data(curr_node, 'final_frequency')
             out_freq = fdfa._get_node_data(curr_node, 'out_frequency')
-            self_freq = fdfa._get_node_data(curr_node, 'self_frequency')
-            number_of_choices = final_freq + out_freq + self_freq
+            number_of_choices = final_freq + out_freq
             new_final_probability = final_freq / number_of_choices
 
             new_node_data = {'final_probability': new_final_probability,

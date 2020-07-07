@@ -116,15 +116,6 @@ class Product(Automaton):
             return controls_symbols, obs_prob
 
         if len(controls_symbols) == 1:
-            msg = f'only empty control symbol {self._empty_transition_sym}' + \
-                  f' found to be most probable controller -> ' + \
-                  f'specification and dynamical system are ' + \
-                  f'incompatible. Try adjusting ' + \
-                  f'min_string_probability {min_string_probability} and ' + \
-                  f'max_string_length {max_string_length}.'
-            warnings.warn(msg, RuntimeWarning)
-
-        if len(controls_symbols) == 2:
             msg = f'only "initialization" symbol artificially added to ' + \
                   f'the TS found to be most probable controller -> ' + \
                   f'specification and dynamical system are ' + \
@@ -133,9 +124,10 @@ class Product(Automaton):
                   f'max_string_length {max_string_length}.'
             warnings.warn(msg, RuntimeWarning)
 
-        # as seen above, first two symbols are useless / artifical, so remove
+        # as seen above, first symbol is a useless / artifical initialization
+        # symbol
         if isinstance(controls_symbols, Iterable):
-            controls_symbols = controls_symbols[2:]
+            controls_symbols = controls_symbols[1:]
 
         return controls_symbols, obs_prob
 

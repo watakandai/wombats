@@ -1,6 +1,7 @@
 import subprocess as sp
 import graphviz
 import os
+import re
 from IPython.display import Image, display
 
 
@@ -24,13 +25,17 @@ class FlexfringeInterface():
         """
 
         self.binary_location = binary_location
+        self.num_training_examples: int
+        self.num_symbols: int
+        self.total_symbols_in_examples: int
+
         self._output_filename = 'dfa'
         self._output_base_filepath = None
         self._output_directory = output_directory
-
         self._flexfringe_output_dir_popt_str = 'o'
 
-    def infer_model(self, training_file: str, **kwargs) -> {str, None}:
+    def infer_model(self, training_file: str = None,
+                    get_help: bool = False, **kwargs) -> {str, None}:
         """
         calls the flexfringe binary given the data in the training file
 
@@ -44,7 +49,25 @@ class FlexfringeInterface():
         cmd = self._get_command(kwargs)
         output_file = self.learned_model_filepath
 
-        flexfringe_call = [self.binary_location] + cmd + [training_file]
+        if get_help:
+            flexfringe_call = [self.binary_location] + cmd + ['']
+        else:
+            flexfringe_call = [self.binary_location] + cmd + [training_file]
+
+            with open(training_file) as fh:
+                content = fh.readlines()
+                first_line = content[0]
+                N, num_symbols_str = re.match(r'(\d*)\s(\d*)',
+                                              first_line).groups()
+                self.num_training_examples = int(N)
+                self.num_symbols = int(num_symbols_str)
+
+                self.total_symbols_in_examples = 0
+                if self.num_training_examples > 0:
+                    for line in content[1:]:
+                        _, line_len, _ = re.match(r'(\d)\s(\d*)\s(.*)',
+                                                  line).groups()
+                        self.total_symbols_in_examples += int(line_len)
 
         if output_file is not None:
             try:

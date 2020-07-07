@@ -108,6 +108,12 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                            termination symbol
     :param      empty_transition_sym:      representation of the empty
                                            symbol (a.k.a. lambda)
+    :param      initial_weight_key:        key in the automaton's node data
+                                           corresponding to the weight /
+                                           probability of starting in that
+                                           node. If None, don't include
+                                           this info in the display of the
+                                           automaton.
     :param      final_weight_key:          key in the automaton's node data
                                            corresponding to the weight /
                                            probability of ending in that
@@ -141,6 +147,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                  num_obs: {int, None}=None,
                  final_transition_sym: Hashable = DEFAULT_FINAL_TRANS_SYMBOL,
                  empty_transition_sym: Hashable = DEFAULT_EMPTY_TRANS_SYMBOL,
+                 initial_weight_key: str = None,
                  final_weight_key: str = None,
                  state_observation_key: str = None,
                  can_have_accepting_nodes: bool = True,
@@ -224,6 +231,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         self._initialize_node_edge_properties(
             state_observation_key=state_observation_key,
             final_weight_key=final_weight_key,
+            initial_weight_key=initial_weight_key,
             can_have_accepting_nodes=can_have_accepting_nodes,
             edge_weight_key=edge_weight_key)
 
@@ -520,6 +528,11 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                         transition_map=self._transition_map)
 
         if mps is not None:
+
+            # first symbol will always be the empty symbol, so remove it
+            if not allow_empty_symbol:
+                mps = mps[1:]
+
             return mps, prob
         else:
             return None, None
@@ -711,7 +724,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         raise NotImplementedError
 
-    def _initialize_node_edge_properties(self, final_weight_key: str = None,
+    def _initialize_node_edge_properties(self, initial_weight_key: str = None,
+                                         final_weight_key: str = None,
                                          state_observation_key: str = None,
                                          can_have_accepting_nodes: bool = True,
                                          edge_weight_key: str = None,
@@ -719,6 +733,13 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """
         Initializes the node and edge data properties correctly for a pdfa.
 
+
+        :param      initial_weight_key:        key in the automaton's node data
+                                               corresponding to the weight /
+                                               probability of starting in that
+                                               node. If None, don't include
+                                               this info in the display of the
+                                               automaton.
         :param      final_weight_key:          key in the automaton's node data
                                                corresponding to the weight /
                                                probability of ending in that
@@ -744,7 +765,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         for node in self.nodes:
             self._compute_node_data_properties(node, **node_data_args)
 
-        self._set_node_labels(final_weight_key, state_observation_key,
+        self._set_node_labels(initial_weight_key, final_weight_key,
+                              state_observation_key,
                               can_have_accepting_nodes)
         self._set_edge_labels(edge_weight_key)
 
@@ -1288,17 +1310,27 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return possible_symbols, probabilities
 
-    def _set_node_labels(self, final_weight_key: str,
+    def _set_node_labels(self,
+                         initial_weight_key: str,
+                         final_weight_key: str,
                          state_observation_key: str,
                          can_have_accepting_nodes: bool,
                          graph: {None, nx.MultiDiGraph}=None) -> None:
         """
         Sets each node's label property for use in graphviz output
 
+        :param      initial_weight_key:        key in the automaton's node data
+                                               corresponding to the weight /
+                                               probability of starting in that
+                                               node. If None, don't include
+                                               this info in the display of the
+                                               automaton.
         :param      final_weight_key:          key in the automaton's node data
                                                corresponding to the weight /
                                                probability of ending in that
-                                               node
+                                               node. If None, don't include
+                                               this info in the display of the
+                                               automaton.
         :param      state_observation_key:     The state observation key
         :param      can_have_accepting_nodes:  Indicates if the automata can
                                                have accepting nodes
@@ -1316,10 +1348,19 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         for node_name, node_data in graph.nodes.data():
 
+            nodel_key = node_name
+
+            if initial_weight_key is not None:
+                weight = node_data[initial_weight_key]
+                initial_wt_string = edge_weight_to_string(weight)
+                node_name = initial_wt_string + ' : ' + node_name
+            else:
+                node_dot_label_string = node_name
+
             if final_weight_key is not None:
                 weight = node_data[final_weight_key]
-                final_prob_string = edge_weight_to_string(weight)
-                node_dot_label_string = node_name + ': ' + final_prob_string
+                final_wt_string = edge_weight_to_string(weight)
+                node_dot_label_string = node_name + ' : ' + final_wt_string
             else:
                 node_dot_label_string = node_name
 
@@ -1332,7 +1373,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                 external_label = '{' + obs_label + '}'
                 graphviz_node_label['xlabel'] = external_label
 
-            is_start_state = (node_name == self.start_state)
+            is_start_state = (nodel_key == self.start_state)
 
             # colors are ranked in increasing importance
             if 'color' in node_data:
@@ -1352,7 +1393,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                 graphviz_node_label.update({'shape': 'box'})
                 graphviz_node_label.update({'fillcolor': 'royalblue1'})
 
-            label_dict[node_name] = graphviz_node_label
+            label_dict[nodel_key] = graphviz_node_label
 
         nx.set_node_attributes(graph, label_dict)
 
