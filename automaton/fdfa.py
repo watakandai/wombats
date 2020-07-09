@@ -88,6 +88,63 @@ class FDFA(Automaton):
                          can_have_accepting_nodes=False,
                          edge_weight_key='frequency')
 
+    def to_pdfa_data(self) -> Tuple[NXNodeList, NXEdgeList]:
+        """
+        convert self nodes and edges to pdfa nodes and edges
+
+        :returns:   nodes, edges lists with all data initialized for creation
+                    of pdfa from networkx.add_nodes_from() and
+                    networkx.add_edges_from()
+        :rtype:     list of tuples: (node label, node, attribute dict),
+                    list of tuples: (src node label, dest node label,
+                                     edge attribute dict)
+        """
+
+        fdfa_nodes = self.nodes(data=True)
+        pdfa_nodes = []
+        pdfa_edges = []
+
+        # converting final state frequencies to final state probabilities
+        for curr_node, curr_node_data in fdfa_nodes:
+
+            # the final probability is just how often the execution ends at the
+            # curr_node divided by the all of sum of frequencies over all
+            # possible transitions from that node
+            final_freq = self._get_node_data(curr_node, 'final_frequency')
+            out_freq = self._get_node_data(curr_node, 'out_frequency')
+            number_of_choices = final_freq + out_freq
+            new_final_probability = final_freq / number_of_choices
+
+            new_node_data = {'final_probability': new_final_probability,
+                             'trans_distribution': None,
+                             'is_accepting': None}
+            pdfa_nodes.append((curr_node, new_node_data))
+
+            # converting transition frequencies to transition probabilities
+            #
+            # the edge transition probability is the edge's frequency divided
+            # by the the number of time you either ended or transitioned out
+            # of the that node
+            for node_post in self.successors(curr_node):
+
+                curr_edges_out = self.get_edge_data(curr_node, node_post)
+
+                for _, curr_out_edge_data in curr_edges_out.items():
+
+                    edge_freq = curr_out_edge_data['frequency']
+                    symbol = curr_out_edge_data['symbol']
+                    trans_probability = edge_freq / number_of_choices
+                    new_edge_data = {'symbol': symbol,
+                                     'probability': trans_probability}
+
+                    new_edge = (curr_node,
+                                node_post,
+                                new_edge_data)
+
+                    pdfa_edges.append(new_edge)
+
+        return pdfa_nodes, pdfa_edges
+
     @classmethod
     def load_flexfringe_data(cls: 'FDFA', graph: nx.MultiDiGraph,
                              number_input_symbols: int,
