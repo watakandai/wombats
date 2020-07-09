@@ -121,7 +121,8 @@ class Product(Automaton):
                   f'specification and dynamical system are ' + \
                   f'incompatible. Try adjusting ' + \
                   f'min_string_probability {min_string_probability} and ' + \
-                  f'max_string_length {max_string_length}.'
+                  f'max_string_length {max_string_length}, or trying a ' + \
+                  f'different solver.'
             warnings.warn(msg, RuntimeWarning)
 
         # as seen above, first symbol is a useless / artifical initialization

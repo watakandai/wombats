@@ -45,9 +45,10 @@ Sampled_Trans_Data = (Node, Symbol, Probability)
 
 Heap = List
 Inverse_Probability = Probability
-BMPS_Queue = Heap[Tuple[Inverse_Probability, Tuple[Symbols, Probabilities]]]
-SDFA_ConsesusData = Tuple[Symbols, Probability, Dict[Node, Symbols],
-                          Dict[Node, Probability]]
+ViableStringsHeap = Heap[Tuple[Inverse_Probability, Tuple[Symbols,
+                                                          Probabilities]]]
+SWDFA_ConsesusData = Tuple[Symbols, Probability, Dict[Node, Symbols],
+                           Dict[Node, Probability]]
 
 # constants
 SMOOTHING_AMOUNT = 0.0001
@@ -183,7 +184,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         self.start_state = start_state
         """unique start state string label of pdfa"""
 
-        self._is_stochastic = is_stochastic
+        self.is_stochastic = is_stochastic
         """whether symbol probabilities are given for string generation"""
 
         self._use_smoothing = smooth_transitions
@@ -192,7 +193,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         self._smoothing_amount = smoothing_amount
         """probability mass to re-assign to unseen symbols at each node"""
 
-        self._is_sampleable = is_sampleable
+        self.is_sampleable = is_sampleable
         """transitions will have pre-computed, well-formed distributions"""
 
         self.symbols = set()
@@ -203,6 +204,10 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         self.observations = set()
         """the set of all possible state output symbols (observations)"""
+
+        self.is_deterministic = True
+        """whether or not there is a unique state dest. under each symbol.
+           Defaults to true and is falsified later during initialization."""
 
         self._transition_matrices = dict()
         """a dict (keyed on symbol) of (_num_states x _num_states)
@@ -490,7 +495,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         min_string_probability: {Probability, None}=None,
         max_string_length: {int, None}=None,
         allow_empty_symbol: bool = False,
-        is_deterministic: bool = True
+        try_to_use_greedy: bool = True,
+        num_strings_to_return: int = 1,
     ) -> Tuple[Symbols, Probability]:
         """
         Computes the bounded, most probable string in the probabilistic
@@ -665,7 +671,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                    'transition distribution').format(symbol, curr_state)
             raise ValueError(msg)
 
-        if self._is_sampleable:
+        if self.is_sampleable:
             # stored in numpy array, so we just want the float probability
             # value
             symbol_probability = np.asscalar(probabilities[symbol_idx])
@@ -849,7 +855,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             self._num_obs = N_actual_obs
 
         # wait until all node computations are done to make the vectorized rep.
-        if self._is_stochastic:
+        if self.is_stochastic:
             self._node_index_map = bidict({state: index
                                            for index, state
                                            in enumerate(self.nodes)})
@@ -923,7 +929,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                     msg = ('duplicate transition from state {} '
                            'under symbol {} found - transition must be '
                            'deterministic').format(start_state, symbol)
-                    raise ValueError(msg)
+                    raise warnings.warn(msg)
+
+                    self.is_deterministic = False
 
         self._transition_map = {**self._transition_map,
                                 **new_trans_map_entries}
@@ -965,7 +973,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         # using class defaults if not given
         if stochastic is None:
-            stochastic = self._is_stochastic
+            stochastic = self.is_stochastic
         if should_complete is None:
             should_complete = self._use_smoothing
 
@@ -994,7 +1002,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             edge_symbols.append(final_trans_symbol_idx)
         else:
 
-            if self._is_sampleable:
+            if self.is_sampleable:
                 # using a uniform distribution to not bias the sampling of
                 # symbols in a deterministic that does not actually have edge
                 # probabilities
@@ -1025,7 +1033,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                       new_disp_symbols,
                                       edge_dests, edge_key_map)
 
-        if self._is_sampleable:
+        if self.is_sampleable:
             next_sym_dist = rv_discrete(name='transition',
                                         values=(edge_symbols, edge_probs))
         else:
@@ -1337,7 +1345,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :returns:   The transition probabilities and associated symbols
         """
 
-        if self._is_sampleable:
+        if self.is_sampleable:
             trans_distribution = self._get_node_data(curr_state,
                                                      'trans_distribution')
             possible_symbols = self._convert_symbol_idxs(trans_distribution.xk)
@@ -1349,7 +1357,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             possible_symbols = [edge['symbol']
                                 for state, edges in self[curr_state].items()
                                 for key, edge in edges.items()]
-            if self._is_stochastic:
+            if self.is_stochastic:
                 probabilities = [edge['probability']
                                  for state, edges in self[curr_state].items()
                                  for key, edge in edges.items()]
@@ -1497,7 +1505,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         node_data = graph.nodes.data()
 
-        if not self._is_sampleable and data_key == 'trans_distribution':
+        if not self.is_sampleable and data_key == 'trans_distribution':
             msg = 'automaton is not sampleable and thus does not have ' + \
                   'transition distributions'
             raise TypeError(msg)
@@ -1675,121 +1683,128 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
                d: int, empty_symbol: int,
                min_string_prob: Probability,
                max_string_length: int,
-               return_all_viable_strings: bool) -> Tuple[Symbols,
-                                                         Probability,
-                                                         BMPS_Queue]:
+               num_strings_to_return: int = 1) -> Tuple[Symbols,
+                                                        Probability,
+                                                        ViableStringsHeap]:
     """
-    Computes the bounded, most probable string (MPS) in a stochastic automaton.
+    Finds the bounded, most probable string(s) (MPS) in a stochastic automaton.
 
-    Automaton MUST have edge weights transition probabilities, but not the
-    outgoing transition weights don't necessarily need to add up to 1 - i.e.
+    Automaton MUST have edge weights as transition probabilities, but the
+    outgoing transition weights don't necessarily need to add up to 1, i.e.
     the transition matrices don't need to be formal Stochastic Matrices.
 
-    :param      symbols:                    All symbol indices in the symbol
-                                            map
-    :param      M:                          a (d x d x num_symbols) tensor
-                                            containing the probabilistically
-                                            weighted (NOT NECESSARILY
-                                            stochastic) transition matrices
-                                            representing the automaton, keyed
-                                            on the third index - i.e. by symbol
-    :param      S:                          a (1 x d) vector containing the
-                                            initial state probabilities
-    :param      F:                          a (d x 1) vector containing the
-                                            final state probabilities
-    :param      d:                          the number of states in the
-                                            automaton
-    :param      empty_symbol:               The "empty" symbol
-    :param      min_string_prob:            The minimum string probability
-    :param      max_string_length:          The maximum string length
-    :param      return_all_viable_strings:  whether to halt when finding a
-                                            string with
-                                            probability > min_string_prob
-                                            or to return all non-zero prob.
-                                            strings of
-                                            length <= max_string_length
+    This is useful if the automaton is a product, and thus its MPS can be
+    projected onto its constituent automaton and have the same probability in
+    its constituent automaton.
 
-    :returns:   return_all_viable_strings = False:
-                (most probable word in the PFA, it's probability, and the
-                PARTIAL search max heap)
-                    OR
-                (None, 0, the empty search max heap if no MPS exists for
-                the given settings)
+    Will default to return only the MOST probable, viable string thus far, but
+    this algorithm generalizes to return the num_strings_to_return viable
+    strings, decreasingly sorted by their probabilities.
 
-                return_all_viable_strings = False:
-                (None, 0, and the ENTIRE search max heap)
-                    OR
-                (None, 0, the empty search max heap if no MPS exists for
-                the given settings)
+    :param      symbols:                All symbol indices in the symbol map
+    :param      M:                      a (d x d x num_symbols) tensor
+                                        containing the probabilistically
+                                        weighted (NOT NECESSARILY stochastic)
+                                        transition matrices representing the
+                                        automaton, keyed on the third index -
+                                        i.e. by symbol
+    :param      S:                      a (1 x d) vector containing the initial
+                                        state probabilities
+    :param      F:                      a (d x 1) vector containing the final
+                                        state probabilities
+    :param      d:                      the number of states in the automaton
+    :param      empty_symbol:           The "empty" symbol
+    :param      min_string_prob:        The minimum string probability
+    :param      max_string_length:      The maximum string length
+    :param      num_strings_to_return:  The number of viable strings to return.
+                                        Defaults to only return the ONE,
+                                        highest probability string encountered
+                                        thus far in the search, which means the
+                                        algorithm is the original BMPS_exact.
+                                        If >1, then the algorithm returns the
+                                        num_strings_to_return most probable,
+                                        viable strings from the search heap.
+
+    :returns:   (most probable word in the PFA, it's probability,
+                 the viable strings max heap)
     """
 
-    Q = []
+    search_heap = []
 
-    word = [empty_symbol]
+    string = [empty_symbol]
     p_empty = (S @ F).item()
     if p_empty > min_string_prob:
-        return word, p_empty, None
+        return string, p_empty, None
 
-    # Q is a min heap, so we must use (1 - p_word) as the key to pop
-    # the best running MPS estimate out to try
-    heapq.heappush(Q, (1 - p_empty, (word, S)))
+    # search_heap is a min heap, so we must use (1 - p_string) as the key to
+    # pop the best running MPS estimate out to try
+    heapq.heappush(search_heap, (1 - p_empty, (string, S)))
     one_vec = np.ones(shape=(d, 1))
-    viable_words = []
+    viable_strings = []
 
-    while Q:
-        _, (word, state_probabilities) = heapq.heappop(Q)
+    while search_heap:
+        _, (string, state_probabilities) = heapq.heappop(search_heap)
 
         for symbol in symbols:
             # need to make a copy here so we don't add invalid symbols to the
             # search
-            word_new = word.copy()
-            word_new.append(symbol)
+            string_new = string.copy()
+            string_new.append(symbol)
 
             state_probabilities_new = state_probabilities @ M[:, :, symbol]
             new_string_prob = (state_probabilities_new @ F).item()
-            is_bmps_string = new_string_prob > min_string_prob
+            is_viable_string = new_string_prob > min_string_prob
 
-            if is_bmps_string and not return_all_viable_strings:
-                return word_new, new_string_prob, None
+            # if the string is viable, we can actually return it. We will
+            # always return the most probable string encountered thus far if we
+            # only want to return one string, and we will otherwise add the new
+            # viable string to the set of viable strings
+            have_enough_strings = len(viable_strings) == num_strings_to_return
 
-            elif is_bmps_string and return_all_viable_strings:
-                queue_item = (word_new, state_probabilities_new)
+            if is_viable_string and have_enough_strings:
+                # as we heapq maintains a MIN heap, we've been adding the
+                # stringsd viable
+
+                return string_new, new_string_prob, viable_strings
+
+            elif is_viable_string:
+                queue_item = (string_new, state_probabilities_new)
                 queue_weight = 1 - new_string_prob
-                heapq.heappush(viable_words, (queue_weight, queue_item))
+                heapq.heappush(viable_strings, (queue_weight, queue_item))
 
             # only keep a possible new symbol if it's (non-final) emission
             # probability is above the minimum probability threshold and
             # the string isn't too long
-            string_length_below_bound = len(word) < max_string_length
+            string_length_below_bound = len(string) < max_string_length
             curr_emis_prob = (state_probabilities_new @ one_vec).item()
             string_could_be_mps = curr_emis_prob > min_string_prob
 
             if string_length_below_bound and string_could_be_mps:
-                queue_item = (word_new, state_probabilities_new)
+                queue_item = (string_new, state_probabilities_new)
                 queue_weight = 1 - curr_emis_prob
-                heapq.heappush(Q, (queue_weight, queue_item))
+                heapq.heappush(search_heap, (queue_weight, queue_item))
 
-    if return_all_viable_strings:
-        return None, None, viable_words
-    else:
-        return None, None, None
+    # no viable string found
+    return None, None, None
 
 
-def PWDFA_MPS(states: Set[Node],
+def SWDFA_MPS(states: Set[Node],
               start_state: Node,
               F: np.ndarray,
               empty_symbol: Symbol,
               node_index_map: bidict,
               trans_prob_fcn: Callable,
-              transition_map: Callable) -> SDFA_ConsesusData:
+              transition_map: Callable) -> SWDFA_ConsesusData:
     """
     Computes the EXACT consensus string (the actual most probable string (MPS))
-    for a probabilistically weighted DETERMINISTIC finite automaton (PWDFA).
+    for a stochastically weighted DETERMINISTIC finite automaton (SWDFA).
 
-    :warning THIS MPS CALCULATION IS ONLY VALID FOR A DETERMINISTIC AUTOMATA.
+    :warning THIS MPS CALCULATION IS ONLY VALID FOR A DETERMINISTIC AUTOMATA,
+             as this is a very fast greedy algorithm where the optimal
+             substructure assumption only holds for deterministic automata.
 
     :param      states:          The states of the automaton
-    :param      start_state:     The start state of the PWDFA
+    :param      start_state:     The start state of the SWDFA
     :param      F:               a (|states| x 1) vector containing the final
                                  state probabilities
     :param      empty_symbol:    The empty symbol
@@ -1802,7 +1817,7 @@ def PWDFA_MPS(states: Set[Node],
                                  destination state
 
     :returns:   The most probable string,
-                it's probability in the language of the PWDFA,
+                it's probability in the language of the SWDFA,
                 a mapping from each state to the highest probability
                 sequence of symbols that result in that state,
                 a mapping from each state to the largest intermediate
