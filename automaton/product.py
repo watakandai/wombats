@@ -599,6 +599,11 @@ class ProductBuilder(Builder):
         self.nodes = config_data['nodes']
         self.edges = config_data['edges']
 
-        self._instance = Product(**config_data)
+        if not self.edges:
+            msg = 'no compatible edges were found, so the product is empty'
+            warnings.warn(msg, RuntimeWarning)
+            self._instance = None
+        else:
+            self._instance = Product(**config_data)
 
         return self._instance
