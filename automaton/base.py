@@ -325,29 +325,44 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         # in an 'int()' every time...
         num_samples = int(num_samples)
 
+        # dont start a parallel job unless it's a very large one
         iters = range(0, num_samples)
-        results = Parallel(n_jobs=NUM_CORES, verbose=1)(
-            delayed(self.generate_trace)(start_state, N) for i in iters)
+        if num_samples < 5000 or NUM_CORES == 1:
+            results = [self.generate_trace(start_state, N) for i in iters]
+        else:
+            results = Parallel(n_jobs=NUM_CORES, verbose=1)(
+                delayed(self.generate_trace)(start_state, N) for i in iters)
 
         samples, trace_lengths, trace_probs = zip(*results)
 
         return samples, trace_lengths, trace_probs
 
     def generate_trace(
-        self, start_state: Node, N: int,
+        self, start_state: Node, N: int, max_resamples: int = 10,
+        return_whatever_you_got: bool = False,
         random_state: {None, int, Iterable}=None) -> (Symbols,
                                                       int,
                                                       Probability):
         """
-        Generates a trace from the pdfa starting from start_state
+        Generates a trace w/ prob. > 0 from the automaton from its start_state
 
-        :param      start_state:   the state label to start sampling traces
-                                   from
-        :param      N:             maximum length of trace
-        :param      random_state:  The np.random.RandomState() seed parameter
-                                   for sampling from the state transition
-                                   distribution. Defaulting to None causes the
-                                   seed to reset.
+        :param      start_state:              the state label to start sampling
+                                              traces from
+        :param      N:                        maximum length of trace
+        :param      max_resamples:            The maximum number of times to
+                                              resample if if we create a trace
+                                              of length N that still doesn't
+                                              have a probability > 0 in the
+                                              language
+        :param      return_whatever_you_got:  Whether to return a string with
+                                              a non-zero probability after
+                                              all resampling attempts are
+                                              exhausted.
+        :param      random_state:             The np.random.RandomState() seed
+                                              parameter for sampling from the
+                                              state transition distribution.
+                                              Defaulting to None causes the
+                                              seed to reset.
 
         :returns:   the sequence of symbols emitted, the length of the trace,
                     the probability of the trace in the language of the pdfa
@@ -356,6 +371,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         curr_state = start_state
         length_of_trace = 1
         trace_prob = 1.0
+        num_times_restarted = 0
 
         (next_state,
          next_symbol,
@@ -366,7 +382,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         at_terminal_state = next_symbol == self._final_transition_sym
         trace_prob *= trans_probability
 
-        while (not at_terminal_state and length_of_trace <= N):
+        while not at_terminal_state:
             (next_state,
              next_symbol,
              trans_probability) = self._choose_next_state(curr_state,
@@ -380,6 +396,30 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
             sampled_trace.append(next_symbol)
             length_of_trace += 1
+
+            # we need to generate a trace with probability > 0, so if we
+            # hit the max trace length limit while sampling, we need to try
+            # sampling a whole new trace again.
+            if length_of_trace == N:
+                curr_state = start_state
+                length_of_trace = 0
+                trace_prob = 1.0
+                sampled_trace = []
+
+                num_times_restarted += 1
+
+            if num_times_restarted == max_resamples:
+                msg = f'tried resampling a non-zero probability trace ' + \
+                      f'{max_resamples} times and failed. ' + \
+                      f'Try increasing the current max trace length {N} ' + \
+                      f'and checking that at least one reachable state ' + \
+                      f'has a non-zero final-state probability.'
+                warnings.warn(msg, RuntimeWarning)
+
+                if not return_whatever_you_got:
+                    return None, None, None
+                else:
+                    break
 
         return sampled_trace, length_of_trace, trace_prob
 
