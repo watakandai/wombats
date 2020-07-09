@@ -185,7 +185,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """symbol to use as the empty (a.k.a. lambda) symbol"""
 
         self.start_state = start_state
-        """unique start state string label of pdfa"""
+        """unique start state string label of automaton"""
 
         self.is_stochastic = is_stochastic
         """whether symbol probabilities are given for string generation"""
@@ -277,8 +277,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
     def draw(self, filename: {str, None}=None, should_display: bool = True,
              img_format='png') -> None:
         """
-        Draws the pdfa structure in a way compatible with a jupyter / IPython
-        notebook
+        Draws (can save) the automaton structure in a way compatible with a
+        jupyter / IPython notebook
 
         :param      filename:  The filename to save the automaton image
         """
@@ -320,7 +320,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
     def generate_traces(self, num_samples: int, N: int) -> GeneratedTraceData:
         """
-        generates num_samples random traces from the pdfa
+        generates num_samples random traces from the automaton
 
         :param      num_samples:  The number of trace samples to generate
         :param      N:            maximum length of trace
@@ -377,8 +377,13 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                               seed to reset.
 
         :returns:   the sequence of symbols emitted, the length of the trace,
-                    the probability of the trace in the language of the pdfa
+                    the probability of the trace in the language of the
+                    automaton
         """
+
+        if not self.is_sampleable:
+            msg = 'Cannot generate traces in a non-sampleable automaton'
+            raise ValueError(msg)
 
         curr_state = start_state
         length_of_trace = 1
@@ -640,9 +645,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      pred_method:   The method used to choose the next state:
                                    'sample':
                                    sample from the transition
-                                   distribution of the casual state of the PDFA
-                                   (the state the machine is left in after the
-                                   sequence of observations). makes
+                                   distribution of the casual state of the
+                                   automaton (the state the machine is left in
+                                   after the sequence of observations). Makes
                                    non-deterministic predictions.
                                    'max_prob':
                                    like many language models, the selection of
@@ -822,7 +827,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                          edge_weight_key: str = None,
                                          **node_data_args: dict) -> None:
         """
-        Initializes the node and edge data properties correctly for a pdfa.
+        Initializes the node and edge data properties correctly.
 
 
         :param      initial_weight_key:        key in the automaton's node data
