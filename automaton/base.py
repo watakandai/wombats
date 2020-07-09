@@ -266,7 +266,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         for node in graph.nodes(data=True):
             print(node)
 
-    def draw(self, filename=None, img_format='png') -> None:
+    def draw(self, filename: {str, None}=None, should_display: bool = True,
+             img_format='png') -> None:
         """
         Draws the pdfa structure in a way compatible with a jupyter / IPython
         notebook
@@ -278,13 +279,18 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         if filename:
             graph = gv.Source(graph)
+
             fpath = os.path.join(AUTOMATON_DISPLAY_HOME, filename)
             Path(AUTOMATON_DISPLAY_HOME).mkdir(parents=True, exist_ok=True)
             path = graph.render(format=img_format, filename=fpath)
-            display(Image(filename=path))
+
+            if should_display:
+                display(Image(filename=path))
         else:
             dot_string = graph.to_string()
-            display(gv.Source(dot_string))
+
+            if should_display:
+                display(gv.Source(dot_string))
 
     def plot_node_trans_dist(self, curr_state: Node) -> None:
         """
