@@ -228,10 +228,9 @@ class FlexfringeInterface():
         """
 
         filepath = self.output_filepath
-        f_dir, full_fname = os.path.split(filepath)
-        fname, ext = os.path.splitext(full_fname)
+        f_dir, _ = os.path.split(filepath)
 
-        full_model_filename = fname + addon_name + '.dot'
+        full_model_filename = self._get_model_filename(addon_name)
         full_model_filepath = os.path.join(f_dir, full_model_filename)
 
         return full_model_filepath
@@ -258,6 +257,24 @@ class FlexfringeInterface():
         base_model_filepath = os.path.join(f_dir, fname)
 
         return base_model_filepath
+
+    def _get_model_filename(self, addon_name: str) -> str:
+        """
+        Gets the model filename, with the model type given by addon_name.
+
+        :param      addon_name:  The name to append to the base model name
+                                 to access the certain model file
+
+        :returns:   The model filename string.
+        """
+
+        filepath = self.output_filepath
+        f_dir, full_fname = os.path.split(filepath)
+        fname, ext = os.path.splitext(full_fname)
+
+        full_model_filename = fname + addon_name + '.dot'
+
+        return full_model_filename
 
     def _read_model_data(self, model_file: str) -> str:
         """
