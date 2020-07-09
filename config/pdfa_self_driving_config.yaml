@@ -8,10 +8,10 @@ alphabet_size: 8
 num_states: 3
 
 # symbol to use as the transition to a final state
-final_transition_sym: -1000
+final_transition_sym: '$'
 
 # symbol to use as the empty (a.k.a. lambda) symbol
-empty_transition_sym: -1
+empty_transition_sym: 'lambda'
 
 # unique start state string label of pdfa
 start_state: 'q1'
@@ -45,24 +45,24 @@ edges:
 
     'q1':
       symbols:
-        - 0
+        - '0'
       probabilities:
         - 0.74
 
     'q0':
       symbols:
-        - 4
+        - '4'
       probabilities:
         - 0.20
 
     'q2':
       symbols:
-        - 1
-        - 2
-        - 3
-        - 5
-        - 6
-        - 7
+        - '1'
+        - '2'
+        - '3'
+        - '5'
+        - '6'
+        - '7'
       probabilities:
         - 0.01
         - 0.01
@@ -75,18 +75,18 @@ edges:
 
     'q0':
       symbols:
-        - 4
+        - '4'
       probabilities:
         - 0.05
 
     'q2':
       symbols:
-        - 1
-        - 2
-        - 3
-        - 5
-        - 6
-        - 7
+        - '1'
+        - '2'
+        - '3'
+        - '5'
+        - '6'
+        - '7'
       probabilities:
         - 0.01
         - 0.01

@@ -9,10 +9,10 @@ alphabet_size: 3
 num_states: 2
 
 # symbol to use as the transition to a final state
-final_transition_sym: -1000
+final_transition_sym: '$'
 
 # symbol to use as the empty (a.k.a. lambda) symbol
-empty_transition_sym: lambda
+empty_transition_sym: 'lambda'
 
 # unique start state string label of pdfa
 start_state: 'q0'
