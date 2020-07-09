@@ -43,14 +43,15 @@ Weights = Iterable[Weight]
 Probabilities = Iterable[Probability]
 
 Trans_data = (Weights, Nodes, Symbols)
-Sampled_Trans_Data = (Node, Symbol, Probability)
+SampledTransData = (Node, Symbol, Probability)
+GeneratedTraceData = (List[Symbols], List[int], Probabilities)
 
 Heap = List
-Inverse_Probability = Probability
-ViableStringsHeap = Heap[Tuple[Inverse_Probability, Tuple[Symbols,
-                                                          Probabilities]]]
-SWDFA_ConsesusData = Tuple[Symbols, Probability, Dict[Node, Symbols],
-                           Dict[Node, Probability]]
+InverseProbability = Probability
+ViableStringsHeap = Heap[Tuple[InverseProbability, Tuple[Symbols,
+                                                         Probabilities]]]
+SWDFAConsesusData = Tuple[Symbols, Probability, Dict[Node, Symbols],
+                          Dict[Node, Probability]]
 
 # constants
 SMOOTHING_AMOUNT = 0.0001
@@ -317,9 +318,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                   colors='r', lw=4)
         plt.show()
 
-    def generate_traces(self, num_samples: int, N: int) -> (List[Symbols],
-                                                            List[int],
-                                                            Probabilities):
+    def generate_traces(self, num_samples: int, N: int) -> GeneratedTraceData:
         """
         generates num_samples random traces from the pdfa
 
@@ -615,7 +614,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                         node_index_map=self._node_index_map,
                                         trans_prob_fcn=trans_prob_fcn,
                                         transition_map=self._transition_map)
-            viable_strings = None
 
         if mps is not None:
 
@@ -629,7 +627,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
     def _choose_next_state(self, curr_state: Node,
                            random_state: {None, int, Iterable}=None,
-                           pred_method: str = 'sample') -> Sampled_Trans_Data:
+                           pred_method: str = 'sample') -> SampledTransData:
         """
         Chooses the next state based on curr_state's transition distribution
 
@@ -1829,7 +1827,7 @@ def SWDFA_MPS(states: Set[Node],
               empty_symbol: Symbol,
               node_index_map: bidict,
               trans_prob_fcn: Callable,
-              transition_map: Callable) -> SWDFA_ConsesusData:
+              transition_map: Callable) -> SWDFAConsesusData:
     """
     Computes the EXACT consensus string (the actual most probable string (MPS))
     for a stochastically weighted DETERMINISTIC finite automaton (SWDFA).
