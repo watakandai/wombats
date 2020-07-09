@@ -14,7 +14,7 @@ class FlexfringeInterface():
     """
 
     def __init__(self, binary_location: str = 'dfasat/flexfringe',
-                 output_directory: str = './') -> 'FlexfringeInterface':
+                 output_directory: str = './'):
         """
         constructs an instance of the Flexfringe interface class instance
 
@@ -28,8 +28,15 @@ class FlexfringeInterface():
         self.num_training_examples: int
         self.num_symbols: int
         self.total_symbols_in_examples: int
+        self.output_filepath: str
+        self.learned_model_filepath: str
+        self.initial_model_filepath: str
 
         self._output_filename = 'dfa'
+        self._final_output_addon_name = 'final'
+        self._learned_model_filepath: str
+        self._initial_output_addon_name = 'init_dfa'
+        self._initial_model_filepath: str
         self._output_base_filepath = None
         self._output_directory = output_directory
         self._flexfringe_output_dir_popt_str = 'o'
@@ -54,6 +61,8 @@ class FlexfringeInterface():
         else:
             flexfringe_call = [self.binary_location] + cmd + [training_file]
 
+            # get summary statistics of learning data and save them for later
+            # use of the inference interface
             with open(training_file) as fh:
                 content = fh.readlines()
                 first_line = content[0]
@@ -79,14 +88,12 @@ class FlexfringeInterface():
                             stdout=sp.PIPE, stderr=sp.PIPE).stdout.decode()
         print('%s' % callString)
 
-        try:
-            with open(output_file) as fh:
-                return fh.read()
-
-        except FileNotFoundError:
-            print('No output file was generated.')
-
-        return None
+        model_data = self._read_model_data(output_file)
+        if model_data is not None:
+            return model_data
+        else:
+            print('No model output generated')
+            return None
 
     def draw_IPython(self, dot_file_data: str) -> None:
         """
@@ -101,6 +108,22 @@ class FlexfringeInterface():
             g = graphviz.Source(dot_file_data, format='png')
             g.render()
             display(Image(g.render()))
+
+    def draw_initial_model(self) -> None:
+        """
+        Draws the initial (prefix-tree) model
+        """
+
+        dot_file = self.initial_model_filepath
+        self.draw_IPython(self._read_model_data(dot_file))
+
+    def draw_learned_model(self) -> None:
+        """
+        Draws the final, learned model
+        """
+
+        dot_file = self.learned_model_filepath
+        self.draw_IPython(self._read_model_data(dot_file))
 
     @property
     def output_filepath(self) -> str:
@@ -129,35 +152,112 @@ class FlexfringeInterface():
         :returns:   The learned model filepath.
         """
 
-        filepath = self.output_filepath
+        addon_name = self._final_output_addon_name
+        self._learned_model_filepath = self._get_model_file(addon_name)
 
-        f_dir, full_fname = os.path.split(filepath)
-        fname, ext = os.path.splitext(full_fname)
-        full_learned_model_filename = fname + 'final' + '.dot'
-
-        full_learned_model_filepath = os.path.join(f_dir,
-                                                   full_learned_model_filename)
-        self._learned_model_filepath = full_learned_model_filepath
         return self._learned_model_filepath
 
     @learned_model_filepath.setter
     def learned_model_filepath(self, filepath: str) -> None:
         """
-        sets the learned_model_filepath
+        sets the learned_model_filepath and the base model's filepath
 
         :param      filepath:  The new learned model filepath.
         """
 
+        addon_name = self._final_output_addon_name
+        base_model_filepath = self._strip_model_file(filepath, addon_name)
+
+        self._learned_model_filepath = filepath
+        self.output_filepath = base_model_filepath
+
+    @property
+    def initial_model_filepath(self) -> str:
+        """
+        the output filename for the unlearned, initial model, as this is a
+        different from the inputted "output-dir".
+
+        In this case, it will be a prefix tree from the given learning data.
+
+        :returns:   The initial model filepath.
+        """
+
+        addon_name = self._initial_output_addon_name
+        self._initial_model_filepath = self._get_model_file(addon_name)
+
+        return self._initial_model_filepath
+
+    @initial_model_filepath.setter
+    def initial_model_filepath(self, filepath: str) -> None:
+        """
+        sets the initial_model_filepath and the base model's filepath
+
+        :param      filepath:  The new initial model filepath.
+        """
+
+        addon_name = self._initial_model_filepath
+        base_model_filepath = self._strip_model_file(filepath, addon_name)
+
+        self._learned_model_filepath = filepath
+        self.output_filepath = base_model_filepath
+
+    def _get_model_file(self, addon_name: str) -> str:
+        """
+        Gets the full model filepath, with the model type given by addon_name.
+
+        :param      addon_name:  The name to append to the base model name
+                                 to access the certain model file
+
+        :returns:   The full model filepath string.
+        """
+
+        filepath = self.output_filepath
         f_dir, full_fname = os.path.split(filepath)
         fname, ext = os.path.splitext(full_fname)
 
-        # output filepath is just the basename, before the 'final' model is
-        # outputted
-        if fname.endswith('final'):
-            fname = fname[:-len('final')]
+        full_model_filename = fname + addon_name + '.dot'
+        full_model_filepath = os.path.join(f_dir, full_model_filename)
 
-        self._learned_model_filepath = filepath
-        self.output_filepath = os.path.join(f_dir, fname)
+        return full_model_filepath
+
+    def _strip_model_file(self, model_filepath: str, addon_name: str) -> str:
+        """
+        Strips the full model filepath of its addon_name to get the base model
+        filepath
+
+        :param      model_filepath:  The full model filepath
+        :param      addon_name:      The name to strip from the full model file
+
+        :returns:   The base model filepath string.
+        """
+
+        f_dir, full_fname = os.path.split(model_filepath)
+        fname, ext = os.path.splitext(full_fname)
+
+        # base filepath is just the basename, before the "addon" model type
+        # is added to the base model name
+        if fname.endswith(addon_name):
+            fname = fname[:-len(addon_name)]
+
+        base_model_filepath = os.path.join(f_dir, fname)
+
+        return base_model_filepath
+
+    def _read_model_data(self, model_file: str) -> str:
+        """
+        Reads in the model data as a string.
+
+        :param      model_file:  The model filepath
+
+        :returns:   The model data as a string
+        """
+
+        try:
+            with open(model_file) as fh:
+                return fh.read()
+
+        except FileNotFoundError:
+            print('No model file was found.')
 
     def _get_command(self, kwargs: dict) -> list:
         """

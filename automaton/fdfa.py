@@ -493,7 +493,7 @@ class FDFABuilder(Builder):
         elif graph_data_format == 'learning_interface':
             learning_interface = graph_data
             graph = read_dot(learning_interface.learned_model_filepath)
-            number_input_symbols = learning_interface.total_symbols_in_examples
+            number_input_symbols = learning_interface.num_training_examples
             has_number_input_symbols = True
         else:
             msg = 'graph_data_format ({}) must be one of: "dot_file", ' + \
