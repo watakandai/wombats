@@ -1,4 +1,4 @@
-from gym_minigrid.minigrid import MiniGridEnv, Grid, Lava, Goal
+from gym_minigrid.minigrid import MiniGridEnv, Grid, Lava, Goal, Floor
 from gym_minigrid.wrappers import (ReseedWrapper, FullyObsWrapper,
                                    ViewSizeWrapper)
 from gym_minigrid.minigrid import (IDX_TO_COLOR, IDX_TO_OBJECT, STATE_TO_IDX,
@@ -1045,7 +1045,7 @@ class LavaComparison(MiniGridEnv):
     ):
         self.agent_start_pos = agent_start_pos
         self.agent_start_dir = agent_start_dir
-        self.goal_pos = [(1, 1), (1, 8), (8, 1), (8, 8)]
+        self.goal_pos = [(1, 1), (1, 8), (8, 8)]
         self.drying_off_task = drying_off_task
         self.directionless_agent = False
 
@@ -1069,7 +1069,9 @@ class LavaComparison(MiniGridEnv):
 
         # Place a goal square in the bottom-right corner
         for goal_pos in self.goal_pos:
-            self.put_obj(Goal(), *goal_pos)
+            self.put_obj(Floor(color='green'), *goal_pos)
+
+        self.put_obj(Floor(color='blue'), 8, 1)
 
         # left Lava block
         self.put_obj(Lava(), 1, 3)
