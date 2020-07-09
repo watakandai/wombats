@@ -241,7 +241,7 @@ class FDFA(Automaton):
             # initial state
             initial_frequency = 0
 
-            new_node_label = state_label[0]
+            new_node_label = 'q' + state_label[0]
             new_node_data = {'final_frequency': 0,
                              'initial_frequency': initial_frequency,
                              'trans_distribution': None,
@@ -369,7 +369,6 @@ class FDFA(Automaton):
         #
         # inflow and outflow must not include self transitions, as it self
         # transitions are not true flow
-        print(curr_node, init_trans, number_trans_in, number_trans_out)
         curr_node_final_freq = init_trans + number_trans_in - number_trans_out
 
         # no node is allowed to "create" transitions
@@ -431,16 +430,7 @@ class FDFA(Automaton):
 
             for _, curr_out_edge_data in curr_edges.items():
                 frequency = curr_out_edge_data['frequency']
-
-                # we don't want to count inward flow from self-loops,
-                # as we cannot "make-up" flow
-                if node == curr_node:
-                    if flow_type == 'in':
-                        number_trans += 0
-                    else:
-                        number_trans += frequency
-                else:
-                    number_trans += frequency
+                number_trans += frequency
 
         return number_trans
 
