@@ -8,7 +8,6 @@ import multiprocessing
 import warnings
 import os
 import copy
-import heapq
 import queue
 from pathlib import Path
 from numpy.random import RandomState
@@ -20,6 +19,9 @@ from IPython.display import display, Image
 from pydot import Dot
 from typing import Hashable, List, Tuple, Iterable, Dict, Callable, Set
 from bidict import bidict
+
+# local packages
+from wombats.utils import MaxHeap
 
 # needed for multi-threaded sampling routine
 NUM_CORES = multiprocessing.cpu_count()
@@ -507,23 +509,45 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                              is_deterministic, as the
                                              deterministic algorithm is exact.
                                              (default 0.0)
-        :param      max_string_length:       The maximum string length.
-                                             This setting does nothing if
+        :param      max_string_length:       The maximum string length. This
+                                             setting does nothing if
                                              is_deterministic, as the
                                              deterministic algorithm is exact.
                                              (default 100)
-        :param     is_deterministic:         whether the automaton has
+        :param      allow_empty_symbol:      Indicates if the empty symbol is
+                                             allowed
+        :param      try_to_use_greedy:       whether to try using the MUCH
+                                             faster greedy search algorithm.
+                                             only possible if the automaton has
                                              deterministic transitions. Only
                                              set this to False if the automaton
                                              actually is non-deterministic, as
-                                             the non-deterministic solver is
-                                             an approximation and MUCH slower.
+                                             the non-deterministic solver is an
+                                             approximation and MUCH slower.
+                                             This setting is ignored if you set
+                                             num_strings_to_return > 1, as we
+                                             then must use BMPS to sample.
+        :param      num_strings_to_return:   The number of viable strings to
+                                             return. Defaults to only return
+                                             the ONE, highest probability
+                                             string encountered thus far in the
+                                             search, which means the algorithm
+                                             is the original BMPS_exact. If >1,
+                                             then the algorithm returns the
+                                             num_strings_to_return most
+                                             probable, viable strings from the
+                                             search heap.
 
-        :returns:   sequence of control symbols to input to produce the BMPS,
-                    probability of producing the output string
+        :returns:   most probable string,
+                    probability of producing the most probable string,
+                    num_strings_to_return (viable strings, their probs.)
+                    ranked by each string's probability
+
+        :raises     ValueError:              Cannot be computed for
+                                             non-stochastic automaton
         """
 
-        if not self._is_stochastic:
+        if not self.is_stochastic:
             msg = 'Cannot compute most probable string for a ' + \
                   'non-stochastic automaton'
             raise ValueError(msg)
@@ -535,6 +559,19 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         if max_string_length is None:
             max_string_length = 100
 
+        # switch the solvers based on the type of automaton we have and what
+        # we actually want to solve for
+        if num_strings_to_return > 1:
+            use_BMPS_exact = True
+        else:
+            if try_to_use_greedy:
+                if self.is_deterministic:
+                    use_BMPS_exact = False
+                else:
+                    use_BMPS_exact = True
+            else:
+                use_BMPS_exact = True
+
         empty_symbol = self._empty_transition_sym
         empty_sym_idx = self._symbol_display_map[empty_symbol]
 
@@ -544,8 +581,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             symbols = [symbol for symbol in self.symbols
                        if symbol != empty_symbol]
 
-        # switch the solvers based on the type of automaton we have
-        if not is_deterministic:
+        if use_BMPS_exact:
             symbol_idxs = [self._symbol_display_map[symbol]
                            for symbol in symbols]
 
@@ -558,26 +594,28 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                 trans_mat[:, :, sym_idx] = trans_mat_dict[symbol]
 
             min_string_prob = min_string_probability
-            sym_idxs, prob, _ = BMPS_exact(symbols=symbol_idxs,
-                                           M=trans_mat,
-                                           S=self._initial_state_distribution,
-                                           F=self._final_state_distribution,
-                                           d=self._num_states,
-                                           empty_symbol=empty_sym_idx,
-                                           min_string_prob=min_string_prob,
-                                           max_string_length=max_string_length,
-                                           return_all_viable_strings=False)
+            (sym_idxs,
+             prob,
+             viable_strings) = BMPS_exact(symbols=symbol_idxs,
+                                          M=trans_mat,
+                                          S=self._initial_state_distribution,
+                                          F=self._final_state_distribution,
+                                          d=self._num_states,
+                                          empty_symbol=empty_sym_idx,
+                                          min_string_prob=min_string_prob,
+                                          max_string_length=max_string_length)
             mps = self._convert_symbol_idxs(sym_idxs)
 
         else:
             trans_prob_fcn = self._get_trans_probabilities
-            mps, prob, _, _ = PWDFA_MPS(states=self.state_labels,
+            mps, prob, _, _ = SWDFA_MPS(states=self.state_labels,
                                         start_state=self.start_state,
                                         F=self._final_state_distribution,
                                         empty_symbol=empty_symbol,
                                         node_index_map=self._node_index_map,
                                         trans_prob_fcn=trans_prob_fcn,
                                         transition_map=self._transition_map)
+            viable_strings = None
 
         if mps is not None:
 
@@ -585,7 +623,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             if not allow_empty_symbol:
                 mps = mps[1:]
 
-            return mps, prob
+            return mps, prob, viable_strings
         else:
             return None, None
 
@@ -1729,21 +1767,21 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
                  the viable strings max heap)
     """
 
-    search_heap = []
+    # search_heap is a max heap so we can always try the next most probable
+    # string to check for viability
+    search_heap = MaxHeap()
+    viable_strings = MaxHeap()
 
     string = [empty_symbol]
     p_empty = (S @ F).item()
     if p_empty > min_string_prob:
         return string, p_empty, None
 
-    # search_heap is a min heap, so we must use (1 - p_string) as the key to
-    # pop the best running MPS estimate out to try
-    heapq.heappush(search_heap, (1 - p_empty, (string, S)))
+    search_heap.heappush((p_empty, (string, S)))
     one_vec = np.ones(shape=(d, 1))
-    viable_strings = []
 
     while search_heap:
-        _, (string, state_probabilities) = heapq.heappop(search_heap)
+        _, (string, state_probabilities) = search_heap.heappop()
 
         for symbol in symbols:
             # need to make a copy here so we don't add invalid symbols to the
@@ -1762,15 +1800,12 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
             have_enough_strings = len(viable_strings) == num_strings_to_return
 
             if is_viable_string and have_enough_strings:
-                # as we heapq maintains a MIN heap, we've been adding the
-                # stringsd viable
-
                 return string_new, new_string_prob, viable_strings
 
             elif is_viable_string:
-                queue_item = (string_new, state_probabilities_new)
-                queue_weight = 1 - new_string_prob
-                heapq.heappush(viable_strings, (queue_weight, queue_item))
+                heap_item = (string_new, state_probabilities_new)
+                heap_weight = new_string_prob
+                viable_strings.heappush((heap_weight, heap_item))
 
             # only keep a possible new symbol if it's (non-final) emission
             # probability is above the minimum probability threshold and
@@ -1780,9 +1815,9 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
             string_could_be_mps = curr_emis_prob > min_string_prob
 
             if string_length_below_bound and string_could_be_mps:
-                queue_item = (string_new, state_probabilities_new)
-                queue_weight = 1 - curr_emis_prob
-                heapq.heappush(search_heap, (queue_weight, queue_item))
+                heap_item = (string_new, state_probabilities_new)
+                heap_weight = curr_emis_prob
+                search_heap.heappush((heap_weight, heap_item))
 
     # no viable string found
     return None, None, None

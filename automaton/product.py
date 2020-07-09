@@ -103,8 +103,8 @@ class Product(Automaton):
         """
 
         (controls_symbols,
-         obs_prob) = self.most_probable_string(min_string_probability,
-                                               max_string_length)
+         obs_prob, _) = self.most_probable_string(min_string_probability,
+                                                  max_string_length)
 
         # None -> completely incompatible
         if controls_symbols is None:
