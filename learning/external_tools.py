@@ -42,11 +42,18 @@ class FlexfringeInterface():
         self._flexfringe_output_dir_popt_str = 'o'
 
     def infer_model(self, training_file: str = None,
-                    get_help: bool = False, **kwargs) -> {str, None}:
+                    get_help: bool = False,
+                    go_fast: bool = False, **kwargs) -> {str, None}:
         """
         calls the flexfringe binary given the data in the training file
 
         :param      training_file:  The full filename path to the training data
+        :param      get_help:       Whether or not to print the flexfringe
+                                    usage help memu
+        :param      go_fast:        optimizes this call to make it as fast
+                                    as possible, at the expensive of usability.
+                                    use for benchmarking / Hyperparam
+                                    optimization.
         :param      kwargs:         keyword arguments to pass to flexfringe
                                     controlling the learning process
 
@@ -61,22 +68,23 @@ class FlexfringeInterface():
         else:
             flexfringe_call = [self.binary_location] + cmd + [training_file]
 
-            # get summary statistics of learning data and save them for later
-            # use of the inference interface
-            with open(training_file) as fh:
-                content = fh.readlines()
-                first_line = content[0]
-                N, num_symbols_str = re.match(r'(\d*)\s(\d*)',
-                                              first_line).groups()
-                self.num_training_examples = int(N)
-                self.num_symbols = int(num_symbols_str)
+            if not go_fast:
+                # get summary statistics of learning data and save them for
+                # later use of the inference interface
+                with open(training_file) as fh:
+                    content = fh.readlines()
+                    first_line = content[0]
+                    N, num_symbols_str = re.match(r'(\d*)\s(\d*)',
+                                                  first_line).groups()
+                    self.num_training_examples = int(N)
+                    self.num_symbols = int(num_symbols_str)
 
-                self.total_symbols_in_examples = 0
-                if self.num_training_examples > 0:
-                    for line in content[1:]:
-                        _, line_len, _ = re.match(r'(\d)\s(\d*)\s(.*)',
-                                                  line).groups()
-                        self.total_symbols_in_examples += int(line_len)
+                    self.total_symbols_in_examples = 0
+                    if self.num_training_examples > 0:
+                        for line in content[1:]:
+                            _, line_len, _ = re.match(r'(\d)\s(\d*)\s(.*)',
+                                                      line).groups()
+                            self.total_symbols_in_examples += int(line_len)
 
         if output_file is not None:
             try:
@@ -84,16 +92,24 @@ class FlexfringeInterface():
             except OSError:
                 pass
 
-        callString = sp.run(flexfringe_call,
-                            stdout=sp.PIPE, stderr=sp.PIPE).stdout.decode()
-        print('%s' % callString)
-
-        model_data = self._read_model_data(output_file)
-        if model_data is not None:
-            return model_data
+        if go_fast:
+            stdout = sp.DEVNULL
         else:
-            print('No model output generated')
-            return None
+            stdout = sp.PIPE
+
+        completed_process = sp.run(flexfringe_call,
+                                   stdout=stdout, stderr=sp.PIPE)
+        if not go_fast:
+            call_string = completed_process.stdout.decode()
+            print('%s' % call_string)
+
+        if not go_fast:
+            model_data = self._read_model_data(output_file)
+            if model_data is not None:
+                return model_data
+            else:
+                print('No model output generated')
+                return None
 
     def draw_IPython(self, dot_file_data: str) -> None:
         """
