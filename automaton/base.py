@@ -51,8 +51,8 @@ SDFA_ConsesusData = Tuple[Symbols, Probability, Dict[Node, Symbols],
 
 # constants
 SMOOTHING_AMOUNT = 0.0001
-DEFAULT_FINAL_TRANS_SYMBOL = -1000
-DEFAULT_EMPTY_TRANS_SYMBOL = -1
+DEFAULT_FINAL_TRANS_SYMBOL = '$'
+DEFAULT_EMPTY_TRANS_SYMBOL = 'lambda'
 AUTOMATON_DISPLAY_HOME = 'automaton_images'
 
 
@@ -689,6 +689,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                     probabilities = dest_edges_data[dest_node]['probabilities']
 
                 for symbol_idx, symbol in enumerate(symbols):
+
+                    symbol = str(symbol)
+
                     # need to store new symbols in a map for display
                     if symbol not in seen_symbols:
                         seen_symbols.append(symbol)

@@ -5,10 +5,12 @@ import networkx as nx
 from networkx.drawing.nx_pydot import read_dot
 from networkx.drawing import nx_agraph
 from bidict import bidict
+from typing import Tuple
 
 # local packages
 from wombats.factory.builder import Builder
-from .base import Automaton, NXNodeList, NXEdgeList, Node, Symbol
+from .base import (Automaton, NXNodeList, NXEdgeList, Node, Symbol,
+                   DEFAULT_FINAL_TRANS_SYMBOL, DEFAULT_EMPTY_TRANS_SYMBOL)
 
 
 class FDFA(Automaton):
@@ -252,7 +254,7 @@ class FDFA(Automaton):
                 if symbol not in seen_symbols:
                     seen_symbols.append(symbol)
 
-                new_edge_data = {'symbol': symbol,
+                new_edge_data = {'symbol': str(symbol),
                                  'frequency': int(frequency)}
 
                 src_FF_node_label = node_ID_to_node_label[src_FF_node_ID]
@@ -457,8 +459,8 @@ class FDFABuilder(Builder):
 
         # these are not things that are a part of flexfringe's automaton
         # data model, so give them default values
-        final_transition_sym = -1000
-        empty_transition_sym = -1
+        final_transition_sym = DEFAULT_FINAL_TRANS_SYMBOL
+        empty_transition_sym = DEFAULT_EMPTY_TRANS_SYMBOL
         config_data = FDFA.load_flexfringe_data(graph,
                                                 number_input_symbols,
                                                 final_transition_sym,
