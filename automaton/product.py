@@ -293,7 +293,7 @@ class Product(Automaton):
                      edges,
                      _, _) = \
                         cls._add_product_edge(
-                            nodes, edges,
+                            T, nodes, edges,
                             x_src=x, x_dest=x_prime,
                             q_src=q, q_dest=q_prime,
                             q_src_final_prob=q_final_prob,
@@ -302,6 +302,7 @@ class Product(Automaton):
                             observation_dest=o_x_prime,
                             sigma=sigma,
                             trans_prob=trans_prob)
+
                     prod_dest_state = (x_prime, q_prime)
                     if prod_dest_state not in visited:
                         visited.add(prod_dest_state)
@@ -348,25 +349,27 @@ class Product(Automaton):
         return x, q
 
     @classmethod
-    def _add_product_node(cls, nodes: dict, x: Node, q: Node,
+    def _add_product_node(cls, dynamical_system: TransitionSystem,
+                          nodes: dict, x: Node, q: Node,
                           q_final_prob: Probability,
                           observation: Observation) -> Tuple[dict, Node]:
         """
         Adds a newly identified product state to the nodes dict w/ needed data
 
-        :param      nodes:         dict of nodes to build the product out of.
-                                   must be in the format needed by
-                                   networkx.add_nodes_from()
-        :param      x:             state label in the dynamical system
-        :param      q:             state label in the specification
-        :param      q_final_prob:  the probability of terminating at q in the
-                                   specification
-        :param      observation:   The observation emitted by the dynamical
-                                   system / product at the dynamical
-                                   system state (x)
+        :param      dynamical_system:  The dynamical system
+        :param      nodes:             dict of nodes to build the product out
+                                       of. must be in the format needed by
+                                       networkx.add_nodes_from()
+        :param      x:                 state label in the dynamical system
+        :param      q:                 state label in the specification
+        :param      q_final_prob:      the probability of terminating at q in
+                                       the specification
+        :param      observation:       The observation emitted by the dynamical
+                                       system / product at the dynamical system
+                                       state (x)
 
-        :returns:   nodes dict populated with all of the given data, and
-                    the label of the newly added product state
+        :returns:   nodes dict populated with all of the given data, and the
+                    label of the newly added product state
         """
 
         prod_state = cls._get_product_state_label(x, q)
@@ -378,12 +381,18 @@ class Product(Automaton):
                                'is_violating': is_violating,
                                'is_accepting': None,
                                'observation': observation}
+
+            if 'color' in dynamical_system.nodes[x]:
+                color = dynamical_system.nodes[x]['color']
+                prod_state_data.update({'color': color})
+
             nodes[prod_state] = prod_state_data
 
         return nodes, prod_state
 
     @classmethod
-    def _add_product_edge(cls, nodes: dict, edges: dict,
+    def _add_product_edge(cls, dynamical_system: TransitionSystem,
+                          nodes: dict, edges: dict,
                           x_src: Node, x_dest: Node,
                           q_src: Node, q_dest: Node,
                           q_src_final_prob: Probability,
@@ -396,6 +405,7 @@ class Product(Automaton):
         """
         Adds a newly identified product edge to the nodes & edges dicts
 
+        :param      dynamical_system:   The dynamical system
         :param      nodes:              dict of nodes to build the product out
                                         of. Must be in the format needed by
                                         networkx.add_nodes_from()
@@ -430,10 +440,12 @@ class Product(Automaton):
                     the label of the newly added product state
         """
 
-        nodes, prod_src = cls._add_product_node(nodes, x_src, q_src,
+        nodes, prod_src = cls._add_product_node(dynamical_system,
+                                                nodes, x_src, q_src,
                                                 q_src_final_prob,
                                                 observation_src)
-        nodes, prod_dest = cls._add_product_node(nodes, x_dest, q_dest,
+        nodes, prod_dest = cls._add_product_node(dynamical_system,
+                                                 nodes, x_dest, q_dest,
                                                  q_dest_final_prob,
                                                  observation_dest)
         prod_edge_data = {'symbols': [sigma],
