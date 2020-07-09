@@ -1,6 +1,7 @@
 # 3rd-party packages
 import numpy as np
 import os
+import warnings
 from typing import List, Callable
 from bidict import bidict
 
@@ -204,8 +205,13 @@ class PDFA(Automaton):
         trace_prob = 1.0
 
         for symbol in trace:
-            next_state, trans_probability = self._get_next_state(curr_state,
-                                                                 symbol)
+
+            try:
+                (next_state,
+                 trans_probability) = self._get_next_state(curr_state, symbol)
+            except ValueError as e:
+                warnings.warn(str(e))
+                return 0
 
             trace_prob *= trans_probability
             curr_state = next_state
