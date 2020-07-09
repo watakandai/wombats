@@ -846,7 +846,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         if self._is_stochastic:
             self._node_index_map = bidict({state: index
                                            for index, state
-                                           in enumerate(self.nodes())})
+                                           in enumerate(self.nodes)})
             self._initial_state_distribution = self._make_initial_state_dist(
                 self._node_index_map)
             self._final_state_distribution = self._make_final_state_dist(
@@ -865,7 +865,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         :returns:   The node data properties.
         """
-
         # acceptance property shouldn't change after load in
         self._set_state_acceptance(node)
 
