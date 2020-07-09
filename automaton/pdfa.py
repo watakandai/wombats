@@ -209,6 +209,7 @@ class PDFA(Automaton):
             try:
                 (next_state,
                  trans_probability) = self._get_next_state(curr_state, symbol)
+
             except ValueError as e:
                 warnings.warn(str(e))
                 return 0
@@ -310,7 +311,7 @@ class PDFA(Automaton):
         Speech and Language Processing (SLP), 3 ed., Ch3
         (https://web.stanford.edu/~jurafsky/slp3/3.pdf)
 
-        :param      traces:              The list of sequence of symbols to
+        :param      traces:              The list of sequences of symbols to
                                          evaluate the model's actual cross
                                          entropy on.
         :param      actual_trace_probs:  The actual probability of each trace
@@ -341,7 +342,7 @@ class PDFA(Automaton):
         Speech and Language Processing (SLP), 3 ed., Ch3
         (https://web.stanford.edu/~jurafsky/slp3/3.pdf)
 
-        :param      traces:              The list of sequence of symbols to
+        :param      traces:              The list of sequences of symbols to
                                          evaluate the model's actual cross
                                          entropy on.
         :param      actual_trace_probs:  The actual probability of each trace
