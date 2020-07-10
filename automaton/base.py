@@ -628,7 +628,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         for sym_idx in symbol_idxs:
             symbol = self._convert_symbol_idxs(sym_idx)
-            trans_mat[:, :, sym_idx] = trans_mat_dict[symbol].T
+            trans_mat[:, :, sym_idx] = trans_mat_dict[symbol]
 
         if backwards_search:
             # we are going to change the search from start to goal, to goal
@@ -639,7 +639,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             # for sym_idx in symbol_idxs:
             #     symbol = self._convert_symbol_idxs(sym_idx)
             #     trans_mat[:, :, sym_idx] = trans_mat_dict[symbol].T
-            print(trans_mat.shape)
+            trans_mat = trans_mat.swapaxes(0, 1)
 
             S = self._final_state_distribution.T
             F = self._initial_state_distribution.T

@@ -98,9 +98,7 @@ def postprocess_MPS(mps_symbols: Iterable[int],
                 # state, we must now reverse the order of each sequence of
                 # symbols
                 if backwards_search:
-                    print('b:', symbols)
                     symbols.reverse()
-                    print('a:', symbols)
 
                 symbols = idx_to_symbol(symbols)
 
@@ -116,9 +114,7 @@ def postprocess_MPS(mps_symbols: Iterable[int],
         new_viable_strings = MaxHeap()
 
         for prob, string in viable_strings:
-            print(string)
             string = process_string(string)
-            print(string)
             new_viable_strings.heappush((prob, string))
 
         viable_strings = new_viable_strings
@@ -133,7 +129,8 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
                d: int, empty_symbol: int,
                min_string_prob: Probability,
                max_string_length: int,
-               num_strings_to_find: int = 1) -> MPSReturnData:
+               num_strings_to_find: int = 1,
+               add_entropy: bool = True) -> MPSReturnData:
     """
     Finds the bounded, most probable string(s) (MPS) in a stochastically
     weighted finite automaton (SWFA).
@@ -191,6 +188,7 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
     search_heap = MinHeap()
     viable_strings = MaxHeap()
     seen = set()
+    viable_str_probabilities = set()
 
     string = [empty_symbol]
     p_empty = (S @ F).item()
@@ -202,7 +200,7 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
 
     while search_heap:
         _, (string, state_probabilities) = search_heap.heappop()
-        # print(len(search_heap), len(string), len(viable_strings), num_strings_to_find)
+
         for symbol in symbols:
             # need to make a copy here so we don't add invalid symbols to the
             # search
@@ -213,10 +211,17 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
             new_string_prob = (state_probabilities_new @ F).item()
             is_viable_string = new_string_prob > min_string_prob
 
+            if add_entropy:
+                same_probability = new_string_prob in viable_str_probabilities
+                is_viable_string = is_viable_string and not same_probability
+
             if is_viable_string:
                 heap_item = string_new
                 heap_weight = new_string_prob
                 viable_strings.heappush((heap_weight, heap_item))
+
+                if add_entropy:
+                    viable_str_probabilities.add(new_string_prob)
 
                 # if the string is viable, we can actually return it. We will
                 # always return the most probable string encountered thus far
@@ -242,7 +247,7 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
             string_still_viable = curr_emis_prob > min_string_prob
             string_could_be_mps = hasnt_terminated and string_still_viable
             is_new = tuple(string_new) not in seen
-            # print(string_new, string_length_below_bound, hasnt_terminated, string_still_viable, is_new)
+
             if string_length_below_bound and string_could_be_mps and is_new:
                 seen.add(tuple(string_new))
                 heap_item = (string_new, state_probabilities_new)
