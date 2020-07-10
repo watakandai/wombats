@@ -221,12 +221,14 @@ class MinigridTransitionSystem(TransitionSystem):
 
         self.reset()
 
-    def reset(self) -> None:
+    def reset(self, new_monitor_file: bool = False) -> None:
         """
         Resets both the transition system's state and the Minigrid env itself.
+
+        :param      new_monitor_file:  whether to create a new monitor file
         """
 
-        self.env.reset()
+        self.env.reset(new_monitor_file=new_monitor_file)
         self.current_state = self.start_state
         self.agent_state = self.env._get_state_from_str(self.current_state)
 
@@ -267,26 +269,26 @@ class MinigridTransitionSystem(TransitionSystem):
     def run(self,
             word: {EnvAct, EnvActs, Symbol, Symbols},
             record_video: bool = False,
+            overwrite_old_video: bool = False,
             show_steps: bool = False) -> Tuple[Symbols, Nodes, str]:
         """
         processes a input word and produces a output word & state sequence
 
-        :param      word:          The word to process
-        :param      record_video:  toggles recording of the run on the env
-        :param      show_steps:    whether or not to print out images of the
-                                   env as it is given each symbol.
+        :param      word:                 The word to process
+        :param      record_video:         toggles recording of the run on the
+                                          env
+        :param      overwrite_old_video:  don't record and create a new video
+        :param      show_steps:           whether or not to print out images of
+                                          the env as it is given each symbol.
 
-        :returns:   output word (list of symbols), list of states visited,
-                    path to recorded video (None if no video recorded)
-
-        :raises     ValueError:  Catches and re-raises exceptions from invalid
-                                 symbol use
+        :returns:   output word (list of symbols), list of states visited, path
+                    to recorded video (None if no video recorded)
         """
 
         if record_video:
             self.env._toggle_video_recording(record_video)
 
-        self.reset()
+        self.reset(new_monitor_file=overwrite_old_video)
 
         if show_steps:
             self.env.render_notebook()

@@ -17,7 +17,7 @@ from collections import defaultdict
 from bidict import bidict
 from typing import Type, List, Tuple
 from gym import wrappers
-from gym.wrappers.monitor import disable_videos
+from gym.wrappers.monitor import disable_videos, monitor_closer
 from enum import IntEnum
 
 # define these type defs for method annotation type hints
@@ -343,10 +343,19 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         plt.axis('off')
         plt.show()
 
-    def reset(self, **kwargs):
+    def reset(self, new_monitor_file: bool = False, **kwargs) -> np.ndarray:
+        """
+        Wrapper for the reset function that manages the monitor wrapper
+
+        :param      new_monitor_file:  whether to create a new monitor file
+        :param      kwargs:            The keywords arguments to pass on to the
+                                       next wrapper's reset()
+
+        :returns:   env observation
+        """
 
         self.close()
-        self._start_monitor()
+        self._start_monitor(new_monitor_file)
         observation = self.env.reset(**kwargs)
 
         return observation
@@ -902,18 +911,41 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         else:
             self.env.video_callable = lambda episode_id: True
 
-    def _start_monitor(self) -> None:
+    def _start_monitor(self, new_monitor_file: bool) -> None:
         """
         (Re)-Starts a the env's monitor wrapper
+
+        :param      new_monitor_file:  whether to create a new Monitor file
+
+        :returns:   basically re-runs the Monitor's __init__ function
         """
 
-        self.env._start(self.env.directory,
-                        self.env.video_callable,
-                        self._force_monitor,
-                        self._resume_monitor,
-                        self.env.write_upon_reset,
-                        self._uid_monitor,
-                        self._mode)
+        env = self.env
+
+        if new_monitor_file:
+            env.videos = []
+            env.stats_recorder = None
+            env.video_recorder = None
+            env.enabled = False
+            env.episode_id = 0
+            env._monitor_id = None
+
+            self.env._start(self.env.directory,
+                            self.env.video_callable,
+                            self._force_monitor,
+                            self._resume_monitor,
+                            self.env.write_upon_reset,
+                            self._uid_monitor,
+                            self._mode)
+        else:
+
+            self.env._start(self.env.directory,
+                            self.env.video_callable,
+                            self._force_monitor,
+                            self._resume_monitor,
+                            self.env.write_upon_reset,
+                            self._uid_monitor,
+                            self._mode)
 
     def _get_video_path(self) -> str:
         """
