@@ -133,6 +133,29 @@ class Product(Automaton):
 
         return controls_symbols, obs_prob
 
+    def generate_traces(self, num_samples: int, N: int,
+                        min_string_probability: Probability,
+                        num_strings_to_find: int) -> GeneratedTraceData:
+        """
+        generates num_samples random traces from the product
+
+        :param      num_samples:  The number of trace samples to generate
+        :param      N:            maximum length of trace
+
+        :returns:   list of sampled traces,
+                    list of the associated trace lengths,
+                    list of the associated trace probabilities
+        :rtype:     tuple(list(list(int)), list(int), list(float))
+        """
+
+        _, _, viable_traces = self.most_probable_string(
+            min_string_probability=min_string_probability,
+            max_string_length=N,
+            num_strings_to_find=num_strings_to_find,
+            backwards_search=True)
+
+        return viable_traces
+
     def observe(self, curr_state: Node) -> Observation:
         """
         Returns the given state's observation symbol
