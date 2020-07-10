@@ -10,8 +10,9 @@ from collections.abc import Iterable
 from wombats.factory.builder import Builder
 from .transition_system import TransitionSystem
 from .pdfa import PDFA
-from .base import (Automaton, NXNodeList, NXEdgeList, Node, Probability,
-                   Observation, Symbol, Symbols)
+from .base import Automaton
+from .types import (NXNodeList, NXEdgeList, Node, Probability,
+                    Observation, Symbol, Symbols, GeneratedTraceData)
 
 # define these type defs for method annotation type hints
 TS_Trans_Data = Tuple[Node, Observation]

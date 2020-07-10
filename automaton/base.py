@@ -17,41 +17,19 @@ from scipy.stats import rv_discrete
 from networkx.drawing.nx_pydot import to_pydot
 from IPython.display import display, Image
 from pydot import Dot
-from typing import Hashable, List, Tuple, Iterable, Dict, Callable, Set
+from typing import Dict, Hashable, Iterable, Tuple, List
 from bidict import bidict
 
-# local packages
-from wombats.utils import MaxHeap
+# local packages / modules
+from .types import (NXNodeList, NXEdgeList, Node, Observation, Symbol,
+                    Probability, Nodes, Symbols,
+                    Probabilities, Trans_data, SampledTransData,
+                    GeneratedTraceData)
+from .mps import (BMPS_exact, SWDFA_MPS, should_use_BMPS_exact,
+                  postprocess_MPS, MPSReturnData)
 
 # needed for multi-threaded sampling routine
 NUM_CORES = multiprocessing.cpu_count()
-
-# define these type defs for method annotation type hints
-NXNodeList = List[Tuple[Hashable, dict]]
-NXEdgeList = List[Tuple[Hashable, Hashable, dict]]
-
-Node = Hashable
-Observation = Hashable
-Symbol = Hashable
-Weight = int
-Probability = float
-
-Nodes = Iterable[Node]
-Observations = Iterable[Observation]
-Symbols = Iterable[Symbol]
-Weights = Iterable[Weight]
-Probabilities = Iterable[Probability]
-
-Trans_data = (Weights, Nodes, Symbols)
-SampledTransData = (Node, Symbol, Probability)
-GeneratedTraceData = (List[Symbols], List[int], Probabilities)
-
-Heap = List
-InverseProbability = Probability
-ViableStringsHeap = Heap[Tuple[InverseProbability, Tuple[Symbols,
-                                                         Probabilities]]]
-SWDFAConsesusData = Tuple[Symbols, Probability, Dict[Node, Symbols],
-                          Dict[Node, Probability]]
 
 # constants
 SMOOTHING_AMOUNT = 0.0001

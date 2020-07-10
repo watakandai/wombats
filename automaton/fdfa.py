@@ -9,8 +9,9 @@ from typing import Tuple
 
 # local packages
 from wombats.factory.builder import Builder
-from .base import (Automaton, NXNodeList, NXEdgeList, Node, Symbol,
-                   DEFAULT_FINAL_TRANS_SYMBOL, DEFAULT_EMPTY_TRANS_SYMBOL)
+from .types import NXNodeList, NXEdgeList, Node, Symbol
+from .base import (Automaton, DEFAULT_FINAL_TRANS_SYMBOL,
+                   DEFAULT_EMPTY_TRANS_SYMBOL)
 
 
 class FDFA(Automaton):

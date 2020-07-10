@@ -7,8 +7,9 @@ from bidict import bidict
 
 # local packages
 from wombats.factory.builder import Builder
-from .base import (Automaton, NXNodeList, NXEdgeList, Node, Symbol, Symbols,
-                   Probabilities, SMOOTHING_AMOUNT)
+from .types import (NXNodeList, NXEdgeList, Node, Symbol, Symbols,
+                    Probabilities)
+from .base import Automaton, SMOOTHING_AMOUNT
 from .fdfa import FDFA
 
 
