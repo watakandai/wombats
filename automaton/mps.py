@@ -136,8 +136,8 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
     weighted finite automaton (SWFA).
 
     Automaton MUST have edge weights as transition probabilities, but the
-    outgoing transition weights don't necessarily need to add up to 1, i.e.
-    the transition matrices don't need to be formal Stochastic Matrices.
+    outgoing transition weights don't necessarily need to add up to 1, i.e. the
+    transition matrices don't need to be formal Stochastic Matrices.
 
     This is useful if the automaton is a product, and thus its MPS can be
     projected onto its constituent automaton and have the same probability in
@@ -150,32 +150,34 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
     Originally written as BMPS_exact in:
     "The most probable string: an algorithmic study" by de la Higuera et. al
 
-    :param      symbols:                All symbol indices in the symbol map
-    :param      M:                      a (d x d x num_symbols) tensor
-                                        containing the probabilistically
-                                        weighted (NOT NECESSARILY stochastic)
-                                        transition matrices representing the
-                                        automaton, keyed on the third index -
-                                        i.e. by symbol
-    :param      S:                      a (1 x d) vector containing the initial
-                                        state probabilities
-    :param      F:                      a (d x 1) vector containing the final
-                                        state probabilities
-    :param      d:                      the number of states in the automaton
-    :param      empty_symbol:           The "empty" symbol
-    :param      min_string_prob:        The minimum string probability
-    :param      max_string_length:      The maximum string length
-    :param      num_strings_to_find:    The number of viable strings to return.
-                                        Defaults to only return the ONE,
-                                        highest probability string encountered
-                                        thus far in the search, which means the
-                                        algorithm is the original BMPS_exact.
-                                        If >1, then the algorithm returns the
-                                        num_strings_to_find most probable,
-                                        viable strings from the search heap.
+    :param      symbols:              All symbol indices in the symbol map
+    :param      M:                    a (d x d x num_symbols) tensor containing
+                                      the probabilistically weighted (NOT
+                                      NECESSARILY stochastic) transition
+                                      matrices representing the automaton,
+                                      keyed on the third index - i.e. by symbol
+    :param      S:                    a (1 x d) vector containing the initial
+                                      state probabilities
+    :param      F:                    a (d x 1) vector containing the final
+                                      state probabilities
+    :param      d:                    the number of states in the automaton
+    :param      empty_symbol:         The "empty" symbol
+    :param      min_string_prob:      The minimum string probability
+    :param      max_string_length:    The maximum string length
+    :param      num_strings_to_find:  The number of viable strings to return.
+                                      Defaults to only return the ONE, highest
+                                      probability string encountered thus far
+                                      in the search, which means the algorithm
+                                      is the original BMPS_exact. If >1, then
+                                      the algorithm returns the
+                                      num_strings_to_find most probable, viable
+                                      strings from the search heap.
+    :param      add_entropy:          Only keeps a new viable string if it has
+                                      a previously unseen probability of being
+                                      generated
 
     :returns:   (most probable word in the SWFA, it's probability,
-                 num_strings_to_find viable strings in a max heap container)
+                num_strings_to_find viable strings in a max heap container)
     """
 
     # search_heap is a min heap keyed on string partial probability, so we can
