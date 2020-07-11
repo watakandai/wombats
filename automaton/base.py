@@ -506,7 +506,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                              allow_empty_symbol: bool = False,
                              try_to_use_greedy: bool = True,
                              backwards_search: bool = True,
-                             num_strings_to_find: int = 1) -> MPSReturnData:
+                             num_strings_to_find: int = 1,
+                             add_entropy: bool = False) -> MPSReturnData:
         """
         Computes the bounded, most probable string in the probabilistic
         language of the automaton
@@ -536,8 +537,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                              then must use BMPS to sample.
         :param      backwards_search:        Whether to search from the with
                                              final probability back to the
-                                             start state. Often will
-                                             improve performance.
+                                             start state. Often will improve
+                                             performance.
         :param      num_strings_to_find:     The number of viable strings to
                                              return. Defaults to only return
                                              the ONE, highest probability
@@ -548,6 +549,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                              num_strings_to_find most probable,
                                              viable strings from the search
                                              heap.
+        :param      add_entropy:             Only keeps a new viable string if
+                                             it has a previously unseen
+                                             probability of being generated
 
         :returns:   most probable string, probability of producing the most
                     probable string, num_strings_to_find (their probs., viable
@@ -589,7 +593,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                                  min_string_probability,
                                                  num_strings_to_find,
                                                  backwards_search,
-                                                 allow_empty_symbol)
+                                                 allow_empty_symbol,
+                                                 add_entropy)
             (mps, prob, viable_symbols) = BMPS_exact(**params)
 
         else:
@@ -611,7 +616,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                min_string_probability: Probability,
                                num_strings_to_find: int,
                                backwards_search: bool,
-                               allow_empty_symbol: bool) -> dict:
+                               allow_empty_symbol: bool,
+                               add_entropy: bool) -> dict:
         """
         Gets the BMPS_exact algorithm's parameters from the current automaton
         and the algorithm's desired usage.
@@ -635,8 +641,11 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                              performance.
         :param      allow_empty_symbol:      Indicates if the empty symbol is
                                              allowed
+        :param      add_entropy:             Only keeps a new viable string if
+                                             it has a previously unseen
+                                             probability of being generated
 
-        :returns:   The bmps exact parameters.
+        :returns:   The BMPS_exact parameters dict.
         """
 
         empty_symbol = self._empty_transition_sym
@@ -689,7 +698,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                   'empty_symbol': empty_sym_idx,
                   'min_string_prob': min_string_prob,
                   'max_string_length': max_string_length,
-                  'num_strings_to_find': num_strings_to_find}
+                  'num_strings_to_find': num_strings_to_find,
+                  'add_entropy': add_entropy}
 
         return params
 
