@@ -84,6 +84,15 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                            distributions for each state's
                                            transitions to allow for sampling of
                                            runs from the machine
+    :param      is_normalized:             whether the
+                                           edge probabilities are renormalize
+                                           such that each states has a well-
+                                           defined transition
+                                           probability distribution.
+                                           We typically DONT want to
+                                           modify the probabilities,
+                                           except if we would like
+                                           to be able to sample traces
     :param      num_obs:                   number of observation symbols
     :param      final_transition_sym:      representation of the
                                            termination symbol
@@ -125,6 +134,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                  smooth_transitions: bool,
                  is_stochastic: bool,
                  is_sampleable: bool,
+                 is_normalized: bool = False,
                  num_obs: {int, None}=None,
                  final_transition_sym: Hashable = DEFAULT_FINAL_TRANS_SYMBOL,
                  empty_transition_sym: Hashable = DEFAULT_EMPTY_TRANS_SYMBOL,
@@ -175,6 +185,10 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         self.is_sampleable = is_sampleable
         """transitions will have pre-computed, well-formed distributions"""
+
+        self.is_normalized = is_normalized
+        """ill-defined transition distributions are normalized to be proper
+           probability distributions over outgoing transitions"""
 
         self.symbols = set()
         """set of all symbols used by the automaton"""
@@ -295,16 +309,26 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                   colors='r', lw=4)
         plt.show()
 
-    def generate_traces(self, num_samples: int, N: int) -> GeneratedTraceData:
+    def generate_traces(self, num_samples: int, N: int,
+                        max_resamples: int = 10,
+                        force_multicore: bool = False) -> GeneratedTraceData:
         """
         generates num_samples random traces from the automaton
 
-        :param      num_samples:  The number of trace samples to generate
-        :param      N:            maximum length of trace
+        :param      num_samples:      The number of trace samples to generate
+        :param      N:                maximum length of trace
+        :param      max_resamples:    The maximum number of times to resample
+                                      if if we create a trace of length N that
+                                      still doesn't have a probability > 0 in
+                                      the language
+        :param      force_multicore:  whether to force use the threaded sampler
+                                      this is set by default to optimize speed,
+                                      as the threaded sampler is slower for
+                                      smaller num_samples. Force this to be
+                                      true if the automaton is slow to sample.
 
-        :returns:   list of sampled traces,
-                    list of the associated trace lengths,
-                    list of the associated trace probabilities
+        :returns:   list of sampled traces, list of the associated trace
+                    lengths, list of the associated trace probabilities
         :rtype:     tuple(list(list(int)), list(int), list(float))
         """
 
@@ -316,11 +340,14 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         # dont start a parallel job unless it's a very large one
         iters = range(0, num_samples)
-        if num_samples < 5000 or NUM_CORES == 1:
-            results = [self.generate_trace(start_state, N) for i in iters]
+        if (num_samples < 5000 or NUM_CORES == 1) and not force_multicore:
+            print('here')
+            results = [self.generate_trace(start_state, N, max_resamples)
+                       for i in iters]
         else:
             results = Parallel(n_jobs=NUM_CORES, verbose=1)(
-                delayed(self.generate_trace)(start_state, N) for i in iters)
+                delayed(self.generate_trace)(start_state, N, max_resamples)
+                for i in iters)
 
         samples, trace_lengths, trace_probs = zip(*results)
 
@@ -1104,17 +1131,24 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                                         complete,
                                                         violating_state)
 
+        if self.is_sampleable:
+            if self.is_normalized:
+                edge_probs = [p / sum(edge_probs) for p in edge_probs]
+
+            next_sym_dist = rv_discrete(name='transition',
+                                        values=(edge_symbols, edge_probs))
+        else:
+            next_sym_dist = None
+
+        # Need to update internal data structures with new node / edge data
+        # This could have been changed from things like sample-ability /
+        # stochasticity / completeness corrections.
+        #
         # completing transitions handles edge updates internally
         new_disp_symbols = self._convert_symbol_idxs(edge_symbols)
         self._update_edges_from_lists(curr_state, edge_probs,
                                       new_disp_symbols,
                                       edge_dests, edge_key_map)
-
-        if self.is_sampleable:
-            next_sym_dist = rv_discrete(name='transition',
-                                        values=(edge_symbols, edge_probs))
-        else:
-            next_sym_dist = None
         self._set_node_data(curr_state, 'trans_distribution', next_sym_dist)
 
         return edge_probs, edge_dests, edge_symbols

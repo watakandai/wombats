@@ -29,33 +29,51 @@ class Product(Automaton):
     You can use this class to compose the two automaton together and then find
     a controller for the dynamical system that satisfies the specification
 
-    :param      nodes:                 node list as expected by
-                                       networkx.add_nodes_from() (node
-                                       label, node attribute dict)
-    :param      edges:                 edge list as expected by
-                                       networkx.add_edges_from() (src node
-                                       label, dest node label, edge
-                                       attribute dict)
-    :param      symbol_display_map:    bidirectional mapping of
-                                       hashable symbols, to a unique
-                                       integer index in the symbol map.
-                                       Needed to translate between the
-                                       indices in the transition
-                                       distribution and the hashable
-                                       representation which is
-                                       meaningful to the user
-    :param      alphabet_size:         number of symbols in system alphabet
-    :param      num_states:            number of states in automaton state
-                                       space
-    :param      num_obs:               number of observation symbols
-    :param      start_state:           unique start state string label of
-                                       system
-    :param      final_transition_sym:  representation of the termination
-                                       symbol. If not given, will default
-                                       to base class default.
-    :param      empty_transition_sym:  representation of the empty symbol
-                                       (a.k.a. lambda). If not given, will
-                                       default to base class default.
+        :param      nodes:                          node list as expected by
+                                                    networkx.add_nodes_from()
+                                                    (node label, node attribute
+                                                    dict)
+        :param      edges:                          edge list as expected by
+                                                    networkx.add_edges_from()
+                                                    (src node label, dest node
+                                                    label, edge attribute dict)
+        :param      symbol_display_map:             bidirectional mapping of
+                                                    hashable symbols, to a
+                                                    unique integer index in the
+                                                    symbol map. Needed to
+                                                    translate between the
+                                                    indices in the transition
+                                                    distribution and the
+                                                    hashable representation
+                                                    which is meaningful to the
+                                                    user
+        :param      alphabet_size:                  number of symbols in system
+                                                    alphabet
+        :param      num_states:                     number of states in
+                                                    automaton state space
+        :param      start_state:                    unique start state string
+                                                    label of system
+        :param      num_obs:                        number of observation
+                                                    symbols
+        :param      final_transition_sym:           representation of the
+                                                    termination symbol. If not
+                                                    given, will default to base
+                                                    class default.
+        :param      empty_transition_sym:           representation of the empty
+                                                    symbol (a.k.a. lambda). If
+                                                    not given, will default to
+                                                    base class default.
+        :param      is_normalized:  whether to renormalize the
+                                                    edge probabilities such
+                                                    that each states has a well
+                                                    defined transition
+                                                    probability distribution.
+                                                    We typically DONT want to
+                                                    modify the probabilities of
+                                                    the product algorithm,
+                                                    except if we would like to
+                                                    be able to easily sample
+                                                    traces
     """
 
     def __init__(self,
@@ -67,17 +85,25 @@ class Product(Automaton):
                  start_state: Node,
                  num_obs: int,
                  final_transition_sym: Symbol,
-                 empty_transition_sym: Symbol) -> 'Product':
+                 empty_transition_sym: Symbol,
+                 is_normalized: bool) -> 'Product':
         """
         Constructs a new instance of an Product automaton object.
         """
+
+        # if we normalize the probabilities
+        if is_normalized:
+            is_sampleable = True
+        else:
+            is_sampleable = False
 
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, symbol_display_map,
                          alphabet_size, num_states, start_state,
                          smooth_transitions=False,
                          is_stochastic=IS_STOCHASTIC,
-                         is_sampleable=False,
+                         is_sampleable=is_sampleable,
+                         is_normalized=is_normalized,
                          num_obs=num_obs,
                          final_transition_sym=final_transition_sym,
                          empty_transition_sym=empty_transition_sym,
@@ -135,26 +161,60 @@ class Product(Automaton):
 
     def generate_traces(self, num_samples: int, N: int,
                         min_string_probability: Probability,
-                        num_strings_to_find: int) -> GeneratedTraceData:
+                        num_strings_to_find: int,
+                        max_resamples: int = 10) -> GeneratedTraceData:
         """
-        generates num_samples random traces from the product
+        generates num_samples random traces from the automaton
 
-        :param      num_samples:  The number of trace samples to generate
-        :param      N:            maximum length of trace
+        :param      num_samples:      The number of trace samples to generate
+        :param      N:                maximum length of trace
+        :param      max_resamples:    The maximum number of times to resample
+                                      if if we create a trace of length N that
+                                      still doesn't have a probability > 0 in
+                                      the language
 
-        :returns:   list of sampled traces,
-                    list of the associated trace lengths,
-                    list of the associated trace probabilities
+        :returns:   list of sampled traces, list of the associated trace
+                    lengths, list of the associated trace probabilities
         :rtype:     tuple(list(list(int)), list(int), list(float))
         """
 
-        _, _, viable_traces = self.most_probable_string(
-            min_string_probability=min_string_probability,
-            max_string_length=N,
-            num_strings_to_find=num_strings_to_find,
-            backwards_search=True)
+        if self.is_normalized:
+            results = super().generate_traces(num_samples=num_samples, N=N,
+                                              max_resamples=max_resamples,
+                                              force_multicore=True)
+            controls, _, sequence_probs = results
+            viable_traces = zip(sequence_probs, controls)
 
-        return viable_traces
+        else:
+            _, _, viable_traces = self.most_probable_string(
+                min_string_probability=min_string_probability,
+                max_string_length=N,
+                num_strings_to_find=num_strings_to_find,
+                backwards_search=True)
+
+        # need to post-process the sampled data, as this is a product
+        if viable_traces is not None:
+            samples, trace_lengths, trace_probs = [], [], []
+            for prob, controls in viable_traces:
+
+                if controls is not None:
+                    # the first control symbol is always the initialization
+                    # symbol, so we should remove it for general use
+                    if isinstance(controls, Iterable):
+                        sample = controls[1:]
+                    else:
+                        sample = controls
+
+                    sample_length = len(sample)
+                else:
+                    sample = controls
+                    sample_length = None
+
+                samples.append(sample)
+                trace_lengths.append(sample_length)
+                trace_probs.append(prob)
+
+        return samples, trace_lengths, trace_probs
 
     def observe(self, curr_state: Node) -> Observation:
         """
@@ -595,14 +655,28 @@ class ProductBuilder(Builder):
 
     def _from_automata(self, dynamical_system: TransitionSystem,
                        specification: PDFA,
+                       normalize_trans_probabilities: bool = False,
                        show_steps: bool = False) -> Product:
         """
         Returns an instance of a Product Automaton from existing automata
 
-        :param      dynamical_system:  The dynamical system automaton instance
-        :param      specification:     The specification automaton instance
-        :param      show_steps:        draw intermediate steps in the product
-                                       creation
+        :param      dynamical_system:               The dynamical system
+                                                    automaton instance
+        :param      specification:                  The specification automaton
+                                                    instance
+        :param      normalize_trans_probabilities:  whether to renormalize the
+                                                    edge probabilities such
+                                                    that each states has a well
+                                                    defined transition
+                                                    probability distribution.
+                                                    We typically DONT want to
+                                                    modify the probabilities
+                                                    of the product algorithm,
+                                                    except if we would like
+                                                    to be able to easily sample
+                                                    from the automaton.
+        :param      show_steps:                     draw intermediate steps in
+                                                    the product creation
 
         :returns:   instance of an initialized Product automaton object
         """
@@ -618,6 +692,9 @@ class ProductBuilder(Builder):
 
         config_data = Product._compute_product(augmented_dyn_sys,
                                                specification)
+
+        config_data['is_normalized'] = \
+            normalize_trans_probabilities
 
         # saving these so we can just return initialized instances if the
         # underlying data has not changed
