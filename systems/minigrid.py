@@ -17,7 +17,7 @@ from collections import defaultdict
 from bidict import bidict
 from typing import Type, List, Tuple
 from gym import wrappers
-from gym.wrappers.monitor import disable_videos, monitor_closer
+from gym.wrappers.monitor import disable_videos
 from enum import IntEnum
 
 # define these type defs for method annotation type hints
