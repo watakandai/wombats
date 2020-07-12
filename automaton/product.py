@@ -165,7 +165,8 @@ class Product(Automaton):
 
         return controls_symbols, obs_prob
 
-    def generate_traces(self, num_samples: int, N: int,
+    def generate_traces(self, num_samples: int,
+                        N: int = None,
                         num_traces_to_find: int = None,
                         min_trace_probability: Probability = None,
                         complete_samples: bool = False,
@@ -254,6 +255,11 @@ class Product(Automaton):
         :rtype:     tuple(list(list(int)), list(int), list(float))
         """
 
+        if not use_greedy_MPS_sampler and N is None:
+            msg = f'Must provide a value for N if not using the ' + \
+                  f'use_greedy_MPS_sampler'
+            raise ValueError(msg)
+
         if self.is_sampleable and not force_MPS_sampler:
             results = super().generate_traces(
                 num_samples=num_samples, N=N,
@@ -272,7 +278,7 @@ class Product(Automaton):
 
         else:
             # making sure that these params were provided if using MPS sampler
-            if num_traces_to_find is None:
+            if num_traces_to_find is None and not use_greedy_MPS_sampler:
                 num_traces_to_find = num_samples
 
                 msg = f'No value given for num_traces_to_find. Using ' + \
@@ -283,7 +289,7 @@ class Product(Automaton):
                       f'enabling complete_samples'
                 warnings.warn(msg)
 
-            if min_trace_probability is None:
+            if min_trace_probability is None and not use_greedy_MPS_sampler:
                 min_trace_probability = 0.0
 
                 msg = f'No value given for min_trace_probability. Using ' + \
