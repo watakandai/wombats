@@ -125,11 +125,104 @@ def postprocess_MPS(mps_symbols: Iterable[int],
     return mps_symbols, mps_prob, viable_strings
 
 
+def BMPS_search_step(string: List[int], symbol: Symbol,
+                     state_probabilities: np.ndarray, max_string_length: int,
+                     min_string_prob: Probability, num_strings_to_find: int,
+                     search_heap: Heap, viable_strings: Heap, seen: set,
+                     M: np.ndarray, F: np.ndarray, one_vec: np.ndarray,
+                     viable_str_probabilities: set, add_entropy: bool):
+    """
+    Makes one step of BMPS_exact search, updating all data structures.
+
+    :param      string:                    The previous search string
+    :param      symbol:                    The current symbol to try
+    :param      state_probabilities:       The probability of being in each
+                                           state under the current string
+    :param      max_string_length:         The maximum viable string length
+    :param      min_string_prob:           The minimum viable string
+                                           probability
+    :param      num_strings_to_find:       The number of strings to find
+    :param      search_heap:               The string search heap
+    :param      viable_strings:            The collection of viable strings,
+                                           meeting all requirements to be a
+                                           bmps string.
+    :param      seen:                      collection of strings already
+                                           searched
+    :param      M:                         3D Matrix with all transition
+                                           matrices, keyed on each symbol in
+                                           the 2nd axis
+    :param      F:                         probability of terminating in each
+                                           state
+    :param      one_vec:                   d x 1 vector of ones
+    :param      viable_str_probabilities:  the set of probabilities of each
+                                           viable string found thus far. needed
+                                           for adding entropy.
+    :param      add_entropy:               indicates if we should add a
+                                           normally viable string if it has the
+                                           same sting that we have already
+                                           identified as "viable"
+
+    :returns:   Updated data structures and if we have enough viable strings
+    """
+
+    # need to make a copy here so we don't add invalid symbols to the search
+    string_new = string.copy()
+    string_new.append(symbol)
+
+    # apply the symbol to the automaton and see where you would end up, and
+    # with what probability
+    state_probabilities_new = state_probabilities @ M[:, :, symbol]
+    new_string_prob = (state_probabilities_new @ F).item()
+    is_viable_string = new_string_prob > min_string_prob
+
+    if add_entropy:
+        same_probability = new_string_prob in viable_str_probabilities
+        is_viable_string = is_viable_string and not same_probability
+
+    if is_viable_string:
+        heap_item = string_new
+        heap_weight = new_string_prob
+        viable_strings.heappush((heap_weight, heap_item))
+
+        if add_entropy:
+            viable_str_probabilities.add(new_string_prob)
+
+        # if the string is viable, we can actually return it. We will always
+        # return the most probable string encountered thus far if we only want
+        # to return one string, and we will otherwise add the new viable string
+        # to the set of viable strings
+        n_viable_str = len(viable_strings)
+        have_enough_strings = n_viable_str == num_strings_to_find
+
+    else:
+        have_enough_strings = False
+
+    # only keep a possible new symbol if it's (non-final) emission probability
+    # is above the minimum probability threshold and the string isn't too long
+    curr_emis_prob = (state_probabilities_new @ one_vec).item()
+    string_still_viable = curr_emis_prob > min_string_prob
+    hasnt_terminated = new_string_prob < np.finfo(float).eps
+
+    string_could_be_mps = hasnt_terminated and string_still_viable
+    string_length_below_bound = len(string) < max_string_length
+    is_new = tuple(string_new) not in seen
+
+    if string_length_below_bound and string_could_be_mps and is_new:
+        seen.add(tuple(string_new))
+        heap_item = (string_new, state_probabilities_new)
+        heap_weight = curr_emis_prob
+        search_heap.heappush((heap_weight, heap_item))
+
+    return (search_heap, viable_strings, seen, viable_str_probabilities,
+            have_enough_strings)
+
+
 def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
                d: int, empty_symbol: int,
                min_string_prob: Probability,
                max_string_length: int,
                num_strings_to_find: int = 1,
+               depth_first: bool = False,
                add_entropy: bool = True) -> MPSReturnData:
     """
     Finds the bounded, most probable string(s) (MPS) in a stochastically
@@ -172,6 +265,16 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
                                       the algorithm returns the
                                       num_strings_to_find most probable, viable
                                       strings from the search heap.
+    :param      depth_first:          Whether to explore the automaton using a
+                                      depth-first search pattern. Using a
+                                      depth-first search pattern will be faster
+                                      for very deep, tree-shaped automaton, but
+                                      will not return the absolute best symbol
+                                      sequence for the given min_string_prob
+                                      and max_string_length. Only turn on if
+                                      you have a terminal states deep in the
+                                      automaton and you need the search to be
+                                      faster.
     :param      add_entropy:          Only keeps a new viable string if it has
                                       a previously unseen probability of being
                                       generated
@@ -180,14 +283,20 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
                 num_strings_to_find viable strings in a max heap container)
     """
 
-    # search_heap is a min heap keyed on string partial probability, so we can
-    # essentially run the search as a more depth-first search over symbols,
-    # as the automaton is likely very deep and tree-shaped
+    # if we want depth-first search, then make the search heap a min heap so
+    # it explores deeper in the automaton (lower probability traces) first.
     #
+    # if we want breadth-first search, then make the search heap a max heap so
+    # it explores more shallowly in the automaton (higher probability traces)
+    # first.
+    if depth_first:
+        search_heap = MinHeap()
+    else:
+        search_heap = MaxHeap()
+
     # viable_strings are in a max heap keyed on viable string probability,
     # as we want to return the "best" strings ranked in descending string
     # probability
-    search_heap = MinHeap()
     viable_strings = MaxHeap()
     seen = set()
     viable_str_probabilities = set()
@@ -195,7 +304,7 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
     string = [empty_symbol]
     p_empty = (S @ F).item()
     if p_empty > min_string_prob:
-        return string, p_empty, None
+        return string, p_empty, viable_strings
 
     search_heap.heappush((p_empty, (string, S)))
     one_vec = np.ones(shape=(d, 1))
@@ -204,57 +313,30 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
         _, (string, state_probabilities) = search_heap.heappop()
 
         for symbol in symbols:
-            # need to make a copy here so we don't add invalid symbols to the
-            # search
-            string_new = string.copy()
-            string_new.append(symbol)
 
-            state_probabilities_new = state_probabilities @ M[:, :, symbol]
-            new_string_prob = (state_probabilities_new @ F).item()
-            is_viable_string = new_string_prob > min_string_prob
+            (search_heap,
+             viable_strings,
+             seen,
+             viable_str_probabilities,
+             have_enough_strings) = BMPS_search_step(string, symbol,
+                                                     state_probabilities,
+                                                     max_string_length,
+                                                     min_string_prob,
+                                                     num_strings_to_find,
+                                                     search_heap,
+                                                     viable_strings,
+                                                     seen,
+                                                     M, F, one_vec,
+                                                     viable_str_probabilities,
+                                                     add_entropy)
 
-            if add_entropy:
-                same_probability = new_string_prob in viable_str_probabilities
-                is_viable_string = is_viable_string and not same_probability
-
-            if is_viable_string:
-                heap_item = string_new
-                heap_weight = new_string_prob
-                viable_strings.heappush((heap_weight, heap_item))
-
-                if add_entropy:
-                    viable_str_probabilities.add(new_string_prob)
-
-                # if the string is viable, we can actually return it. We will
-                # always return the most probable string encountered thus far
-                # if we only want to return one string, and we will otherwise
-                # add the new viable string to the set of viable strings
-                n_viable_str = len(viable_strings)
-                have_enough_strings = n_viable_str == num_strings_to_find
-
-                # the MPS is not always the most recently found string, so we
-                # instead are just going to view the first element of the max
-                # heap of viable strings, as this should be the highest
-                # probability viable string.
-                if have_enough_strings:
-                    mps_probability, mps = copy.deepcopy(viable_strings[0])
-                    return mps, mps_probability, viable_strings
-
-            # only keep a possible new symbol if it's (non-final) emission
-            # probability is above the minimum probability threshold and
-            # the string isn't too long
-            string_length_below_bound = len(string) < max_string_length
-            curr_emis_prob = (state_probabilities_new @ one_vec).item()
-            hasnt_terminated = new_string_prob < np.finfo(float).eps
-            string_still_viable = curr_emis_prob > min_string_prob
-            string_could_be_mps = hasnt_terminated and string_still_viable
-            is_new = tuple(string_new) not in seen
-
-            if string_length_below_bound and string_could_be_mps and is_new:
-                seen.add(tuple(string_new))
-                heap_item = (string_new, state_probabilities_new)
-                heap_weight = curr_emis_prob
-                search_heap.heappush((heap_weight, heap_item))
+            # the MPS is not always the most recently found string, so we
+            # instead are just going to view the first element of the max
+            # heap of viable strings, as this should be the highest
+            # probability viable string.
+            if have_enough_strings:
+                mps_probability, mps = copy.deepcopy(viable_strings[0])
+                return mps, mps_probability, viable_strings
 
     # no viable string found OR we only found < num_strings_to_find viable strs
     if viable_strings:

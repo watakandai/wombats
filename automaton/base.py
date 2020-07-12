@@ -341,7 +341,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         # dont start a parallel job unless it's a very large one
         iters = range(0, num_samples)
         if (num_samples < 5000 or NUM_CORES == 1) and not force_multicore:
-            print('here')
             results = [self.generate_trace(start_state, N, max_resamples)
                        for i in iters]
         else:
@@ -349,7 +348,35 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                 delayed(self.generate_trace)(start_state, N, max_resamples)
                 for i in iters)
 
-        samples, trace_lengths, trace_probs = zip(*results)
+        no_strings_found = all(result == (None, None, None)
+                               for result in results)
+        if not no_strings_found:
+
+            # remove any None items resulting from failed resampling
+            num_failed_samples = 0
+            samples, trace_lengths, trace_probs = [], [], []
+
+            for sample, trace_length, trace_prob in results:
+                if sample is not None:
+                    samples.append(sample)
+                    trace_lengths.append(trace_length)
+                    trace_probs.append(trace_prob)
+                else:
+                    num_failed_samples += 1
+
+            if num_failed_samples > 0:
+                num_good_samples = num_samples - num_failed_samples
+                msg = f'only sampled {num_good_samples} non-zero ' + \
+                      f'probability strings when {num_samples} strings ' + \
+                      f'were requested. Try increasing ' + \
+                      f'the number of resample attempts from {max_resamples}.'
+                warnings.warn(msg)
+        else:
+            msg = f'No non-zero probability strings found. Try increasing ' + \
+                  f'the number of resample attempts from {max_resamples}.'
+            warnings.warn(msg)
+
+            samples, trace_lengths, trace_probs = results[0]
 
         return samples, trace_lengths, trace_probs
 
@@ -437,10 +464,10 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                       f'has a non-zero final-state probability.'
                 warnings.warn(msg, RuntimeWarning)
 
-                if not return_whatever_you_got:
-                    return None, None, None
-                else:
+                if return_whatever_you_got:
                     break
+                else:
+                    return None, None, None
 
         return sampled_trace, length_of_trace, trace_prob
 
@@ -507,10 +534,11 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                              try_to_use_greedy: bool = True,
                              backwards_search: bool = True,
                              num_strings_to_find: int = 1,
+                             depth_first: bool = False,
                              add_entropy: bool = False) -> MPSReturnData:
         """
         Computes the bounded, most probable string in the probabilistic
-        language of the automaton
+        language of the automaton.
 
         :param      min_string_probability:  The minimum string probability.
                                              This setting does nothing if
@@ -549,13 +577,25 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                              num_strings_to_find most probable,
                                              viable strings from the search
                                              heap.
+        :param      depth_first:             Whether to explore the automaton
+                                             using a depth-first search
+                                             pattern. Using a depth-first
+                                             search pattern will be faster for
+                                             very deep, tree-shaped automaton,
+                                             but will not return the absolute
+                                             best symbol sequence for the given
+                                             min_string_prob and
+                                             max_string_length. Only turn on if
+                                             you have a terminal states deep in
+                                             the automaton and you need the
+                                             search to be faster.
         :param      add_entropy:             Only keeps a new viable string if
                                              it has a previously unseen
                                              probability of being generated
 
         :returns:   most probable string, probability of producing the most
                     probable string, num_strings_to_find (their probs., viable
-                    strings) ranked by each string's probability
+                    strings) ranked by each string's probability.
 
         :raises     ValueError:              Cannot be computed for
                                              non-stochastic automaton
@@ -594,6 +634,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                                  num_strings_to_find,
                                                  backwards_search,
                                                  allow_empty_symbol,
+                                                 depth_first,
                                                  add_entropy)
             (mps, prob, viable_symbols) = BMPS_exact(**params)
 
@@ -617,6 +658,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                num_strings_to_find: int,
                                backwards_search: bool,
                                allow_empty_symbol: bool,
+                               depth_first: bool,
                                add_entropy: bool) -> dict:
         """
         Gets the BMPS_exact algorithm's parameters from the current automaton
@@ -641,6 +683,18 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                              performance.
         :param      allow_empty_symbol:      Indicates if the empty symbol is
                                              allowed
+        :param      depth_first:             Whether to explore the automaton
+                                             using a depth-first search
+                                             pattern. Using a depth-first
+                                             search pattern will be faster for
+                                             very deep, tree-shaped automaton,
+                                             but will not return the absolute
+                                             best symbol sequence for the given
+                                             min_string_prob and
+                                             max_string_length. Only turn on if
+                                             you have a terminal states deep in
+                                             the automaton and you need the
+                                             search to be faster.
         :param      add_entropy:             Only keeps a new viable string if
                                              it has a previously unseen
                                              probability of being generated
@@ -699,6 +753,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                   'min_string_prob': min_string_prob,
                   'max_string_length': max_string_length,
                   'num_strings_to_find': num_strings_to_find,
+                  'depth_first': depth_first,
                   'add_entropy': add_entropy}
 
         return params

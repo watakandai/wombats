@@ -1,13 +1,16 @@
 import copy
-from typing import Tuple
-from bidict import bidict
 import re
 import queue
 import warnings
+from typing import Tuple
+from bidict import bidict
 from collections.abc import Iterable
+from scipy.stats import rv_discrete
 
 # local packages
 from wombats.factory.builder import Builder
+from wombats.utils import MaxHeap
+
 from .transition_system import TransitionSystem
 from .pdfa import PDFA
 from .base import Automaton
@@ -129,9 +132,11 @@ class Product(Automaton):
                     of the dynamical system under the control symbols.
         """
 
+        # using DFS for BMPS as products are often very deep, tree-like
         (controls_symbols,
          obs_prob, _) = self.most_probable_string(min_string_probability,
-                                                  max_string_length)
+                                                  max_string_length,
+                                                  depth_first=True)
 
         # None -> completely incompatible
         if controls_symbols is None:
@@ -160,9 +165,10 @@ class Product(Automaton):
         return controls_symbols, obs_prob
 
     def generate_traces(self, num_samples: int, N: int,
-                        min_string_probability: Probability,
-                        num_strings_to_find: int,
-                        max_resamples: int = 10) -> GeneratedTraceData:
+                        min_string_probability: Probability = None,
+                        num_strings_to_find: int = None,
+                        max_resamples: int = 100,
+                        force_MPS_sampler: bool = False) -> GeneratedTraceData:
         """
         generates num_samples random traces from the automaton
 
@@ -178,25 +184,63 @@ class Product(Automaton):
         :rtype:     tuple(list(list(int)), list(int), list(float))
         """
 
-        if self.is_normalized:
+        if self.is_normalized and not force_MPS_sampler:
             results = super().generate_traces(num_samples=num_samples, N=N,
                                               max_resamples=max_resamples,
                                               force_multicore=True)
+
             controls, _, sequence_probs = results
-            viable_traces = zip(sequence_probs, controls)
+            if controls is not None:
+                # convert to max heap to match MPS sampling returns
+                viable_traces = MaxHeap()
+                for prob, control in zip(sequence_probs, controls):
+                    viable_traces.heappush((prob, control))
+            else:
+                viable_traces = None
 
         else:
-            _, _, viable_traces = self.most_probable_string(
+            # making sure that these params were provided if using MPS sampler
+            if num_strings_to_find is None:
+                raise ValueError('must give value for num_strings_to_find')
+            if min_string_probability is None:
+                raise ValueError('must give value for min_string_probability')
+
+            # we want to sample from both the most and least likely traces to
+            # get some diversity for resampling
+            _, _, viable_traces_min = self.most_probable_string(
                 min_string_probability=min_string_probability,
-                max_string_length=N,
+                max_string_length=int(N / 2),
                 num_strings_to_find=num_strings_to_find,
-                backwards_search=True)
+                backwards_search=True,
+                depth_first=True,
+                add_entropy=True)
+
+            # resampling the viable traces to ensure we always have num_samples
+            # samples
+            if viable_traces is not None and len(viable_traces) < num_samples:
+                probs, symbols = zip(*viable_traces)
+
+                # need to normalize the probabilities, as we won't have the
+                # full trace distribution
+                normalized_probs = [prob / sum(probs) for prob in probs]
+                trace_idxs = list(range(len(symbols)))
+
+                trace_dist = rv_discrete(values=(trace_idxs, normalized_probs))
+                sampled_trace_idxs = trace_dist.rvs(size=num_samples)
+
+                new_traces = [symbols[idx] for idx in sampled_trace_idxs]
+                new_probs = [probs[idx] for idx in sampled_trace_idxs]
+
+                viable_traces = MaxHeap()
+                for prob, trace in zip(new_probs, new_traces):
+                    viable_traces.heappush((prob, trace))
 
         # need to post-process the sampled data, as this is a product
         if viable_traces is not None:
-            samples, trace_lengths, trace_probs = [], [], []
-            for prob, controls in viable_traces:
 
+            samples, trace_lengths, trace_probs = [], [], []
+
+            for prob, controls in viable_traces:
                 if controls is not None:
                     # the first control symbol is always the initialization
                     # symbol, so we should remove it for general use
@@ -213,6 +257,8 @@ class Product(Automaton):
                 samples.append(sample)
                 trace_lengths.append(sample_length)
                 trace_probs.append(prob)
+        else:
+            samples, trace_lengths, trace_probs = None, None, None
 
         return samples, trace_lengths, trace_probs
 
