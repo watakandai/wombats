@@ -3,6 +3,7 @@ import queue
 import copy
 import warnings
 import bidict
+from tqdm.auto import tqdm
 from typing import List, Tuple, Callable, Set, Iterable
 import numpy as np
 
@@ -31,10 +32,7 @@ def should_use_BMPS_exact(num_strings_to_find: int,
     :param      try_to_use_greedy:    whether to try using the MUCH faster
                                       greedy search algorithm. only possible if
                                       the automaton has deterministic
-                                      transitions. This
-                                      setting is ignored if you set
-                                      num_strings_to_find > 1, as we then must
-                                      use BMPS to sample.
+                                      transitions.
     :param      is_deterministic:     if the automaton is deterministic.
                                       SWDFA_MPS only works on deterministic
                                       automata.
@@ -42,16 +40,13 @@ def should_use_BMPS_exact(num_strings_to_find: int,
     :returns:   whether to use the BMPS_exact solver or the SWDFA_MPS solver
     """
 
-    if num_strings_to_find > 1:
-        use_BMPS_exact = True
-    else:
-        if try_to_use_greedy:
-            if is_deterministic:
-                use_BMPS_exact = False
-            else:
-                use_BMPS_exact = True
+    if try_to_use_greedy:
+        if is_deterministic:
+            use_BMPS_exact = False
         else:
             use_BMPS_exact = True
+    else:
+        use_BMPS_exact = True
 
     return use_BMPS_exact
 
@@ -130,7 +125,8 @@ def BMPS_search_step(string: List[int], symbol: Symbol,
                      min_string_prob: Probability, num_strings_to_find: int,
                      search_heap: Heap, viable_strings: Heap, seen: set,
                      M: np.ndarray, F: np.ndarray, one_vec: np.ndarray,
-                     viable_str_probabilities: set, add_entropy: bool):
+                     viable_str_probabilities: set, add_entropy: bool,
+                     pbar: tqdm):
     """
     Makes one step of BMPS_exact search, updating all data structures.
 
@@ -161,6 +157,7 @@ def BMPS_search_step(string: List[int], symbol: Symbol,
                                            normally viable string if it has the
                                            same sting that we have already
                                            identified as "viable"
+    :param      pbar:                      tqdm progress bar
 
     :returns:   Updated data structures and if we have enough viable strings
     """
@@ -194,8 +191,10 @@ def BMPS_search_step(string: List[int], symbol: Symbol,
         n_viable_str = len(viable_strings)
         have_enough_strings = n_viable_str == num_strings_to_find
 
+        pbar.update(1)
     else:
         have_enough_strings = False
+        pbar.update(0)
 
     # only keep a possible new symbol if it's (non-final) emission probability
     # is above the minimum probability threshold and the string isn't too long
@@ -299,7 +298,7 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
     # probability
     viable_strings = MaxHeap()
     seen = set()
-    viable_str_probabilities = set()
+    viable_str_probs = set()
 
     string = [empty_symbol]
     p_empty = (S @ F).item()
@@ -309,34 +308,38 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
     search_heap.heappush((p_empty, (string, S)))
     one_vec = np.ones(shape=(d, 1))
 
-    while search_heap:
-        _, (string, state_probabilities) = search_heap.heappop()
+    with tqdm(total=num_strings_to_find) as pbar:
+        while search_heap:
+            _, (string, state_probabilities) = search_heap.heappop()
 
-        for symbol in symbols:
+            for symbol in symbols:
 
-            (search_heap,
-             viable_strings,
-             seen,
-             viable_str_probabilities,
-             have_enough_strings) = BMPS_search_step(string, symbol,
-                                                     state_probabilities,
-                                                     max_string_length,
-                                                     min_string_prob,
-                                                     num_strings_to_find,
-                                                     search_heap,
-                                                     viable_strings,
-                                                     seen,
-                                                     M, F, one_vec,
-                                                     viable_str_probabilities,
-                                                     add_entropy)
+                (search_heap,
+                 viable_strings,
+                 seen,
+                 viable_str_probs,
+                 have_enough_strings) = BMPS_search_step(string, symbol,
+                                                         state_probabilities,
+                                                         max_string_length,
+                                                         min_string_prob,
+                                                         num_strings_to_find,
+                                                         search_heap,
+                                                         viable_strings,
+                                                         seen,
+                                                         M, F, one_vec,
+                                                         viable_str_probs,
+                                                         add_entropy,
+                                                         pbar)
 
-            # the MPS is not always the most recently found string, so we
-            # instead are just going to view the first element of the max
-            # heap of viable strings, as this should be the highest
-            # probability viable string.
-            if have_enough_strings:
-                mps_probability, mps = copy.deepcopy(viable_strings[0])
-                return mps, mps_probability, viable_strings
+                # the MPS is not always the most recently found string, so we
+                # instead are just going to view the first element of the max
+                # heap of viable strings, as this should be the highest
+                # probability viable string.
+                if have_enough_strings:
+                    mps_probability, mps = copy.deepcopy(viable_strings[0])
+                    return mps, mps_probability, viable_strings
+
+    pbar.close()
 
     # no viable string found OR we only found < num_strings_to_find viable strs
     if viable_strings:
@@ -406,25 +409,33 @@ def SWDFA_MPS(states: Set[Node],
     best_state_probs = {state: 0.0 for state in states}
     best_state_probs[init_state] = 1.0
 
-    while not search_queue.empty():
-        src_state, dest_state, symbol, trans_prob = search_queue.get()
-        visited.add(dest_state)
+    with tqdm(total=len(states) - 1) as pbar:
+        while not search_queue.empty():
+            src_state, dest_state, symbol, trans_prob = search_queue.get()
+            visited.add(dest_state)
 
-        new_dest_prob = best_state_probs[src_state] * trans_prob
-        if new_dest_prob > best_state_probs[dest_state]:
-            best_state_probs[dest_state] = new_dest_prob
+            new_dest_prob = best_state_probs[src_state] * trans_prob
+            if new_dest_prob > best_state_probs[dest_state]:
+                best_state_probs[dest_state] = new_dest_prob
 
-            best_symbols[dest_state] = best_symbols[src_state].copy()
-            best_symbols[dest_state].append(symbol)
+                best_symbols[dest_state] = best_symbols[src_state].copy()
+                best_symbols[dest_state].append(symbol)
+                pbar.update(1)
 
-        # now, we add any new transitions that we have not seen before
-        symbols, trans_probs = trans_prob_fcn(dest_state)
-        for symbol, trans_prob in zip(symbols, trans_probs):
-            new_dest_state = transition_map[(dest_state, symbol)]
+            else:
+                pbar.update(0)
 
-            if new_dest_state not in visited:
-                queue_item = (dest_state, new_dest_state, symbol, trans_prob)
-                search_queue.put(queue_item)
+            # now, we add any new transitions that we have not seen before
+            symbols, trans_probs = trans_prob_fcn(dest_state)
+            for symbol, trans_prob in zip(symbols, trans_probs):
+                new_dest_state = transition_map[(dest_state, symbol)]
+
+                if new_dest_state not in visited:
+                    queue_item = (dest_state, new_dest_state, symbol,
+                                  trans_prob)
+                    search_queue.put(queue_item)
+
+    pbar.close()
 
     # terminate all of the strings, and then find the best one using a max heap
     # sort, as we also want to return this heap

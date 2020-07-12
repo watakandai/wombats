@@ -18,6 +18,7 @@ from IPython.display import display, Image
 from pydot import Dot
 from typing import Dict, Hashable, Iterable, Tuple, List
 from bidict import bidict
+from tqdm.auto import tqdm
 
 # local packages / modules
 from .types import (NXNodeList, NXEdgeList, Node, Observation, Symbol,
@@ -311,21 +312,30 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
     def generate_traces(self, num_samples: int, N: int,
                         max_resamples: int = 10,
+                        return_whatever_you_got: bool = False,
                         force_multicore: bool = False) -> GeneratedTraceData:
         """
         generates num_samples random traces from the automaton
 
-        :param      num_samples:      The number of trace samples to generate
-        :param      N:                maximum length of trace
-        :param      max_resamples:    The maximum number of times to resample
-                                      if if we create a trace of length N that
-                                      still doesn't have a probability > 0 in
-                                      the language
-        :param      force_multicore:  whether to force use the threaded sampler
-                                      this is set by default to optimize speed,
-                                      as the threaded sampler is slower for
-                                      smaller num_samples. Force this to be
-                                      true if the automaton is slow to sample.
+        :param      num_samples:              The number of trace samples to
+                                              generate
+        :param      N:                        maximum length of trace
+        :param      max_resamples:            The maximum number of times to
+                                              resample if if we create a trace
+                                              of length N that still doesn't
+                                              have a probability > 0 in the
+                                              language
+        :param      return_whatever_you_got:  Whether to return a string with a
+                                              zero probability after all
+                                              resampling attempts are
+                                              exhausted.
+        :param      force_multicore:          whether to force use the threaded
+                                              sampler this is set by default to
+                                              optimize speed, as the threaded
+                                              sampler is slower for smaller
+                                              num_samples. Force this to be
+                                              true if the automaton is slow to
+                                              sample.
 
         :returns:   list of sampled traces, list of the associated trace
                     lengths, list of the associated trace probabilities
@@ -340,13 +350,16 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         # dont start a parallel job unless it's a very large one
         iters = range(0, num_samples)
-        if (num_samples < 5000 or NUM_CORES == 1) and not force_multicore:
-            results = [self.generate_trace(start_state, N, max_resamples)
+        if (num_samples < 500 or NUM_CORES == 1) and not force_multicore:
+            results = [self.generate_trace(start_state, N, max_resamples,
+                                           return_whatever_you_got)
                        for i in iters]
         else:
-            results = Parallel(n_jobs=NUM_CORES, verbose=1)(
-                delayed(self.generate_trace)(start_state, N, max_resamples)
-                for i in iters)
+            runner = Parallel(n_jobs=NUM_CORES, verbose=50)
+            job = delayed(self.generate_trace)
+            results = runner(job(start_state, N, max_resamples,
+                                 return_whatever_you_got)
+                             for i in iters)
 
         no_strings_found = all(result == (None, None, None)
                                for result in results)
@@ -397,9 +410,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                               of length N that still doesn't
                                               have a probability > 0 in the
                                               language
-        :param      return_whatever_you_got:  Whether to return a string with
-                                              a non-zero probability after
-                                              all resampling attempts are
+        :param      return_whatever_you_got:  Whether to return a string with a
+                                              zero probability after all
+                                              resampling attempts are
                                               exhausted.
         :param      random_state:             The np.random.RandomState() seed
                                               parameter for sampling from the
@@ -410,6 +423,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :returns:   the sequence of symbols emitted, the length of the trace,
                     the probability of the trace in the language of the
                     automaton
+
+        :raises     ValueError:               if you try to generate a trace
+                                              from a non-sampleable automaton
         """
 
         if not self.is_sampleable:
@@ -459,9 +475,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             if num_times_restarted == max_resamples:
                 msg = f'tried resampling a non-zero probability trace ' + \
                       f'{max_resamples} times and failed. ' + \
-                      f'Try increasing the current max trace length {N} ' + \
-                      f'and checking that at least one reachable state ' + \
-                      f'has a non-zero final-state probability.'
+                      f'Try increasing the current max trace length ' + \
+                      f'{N} and checking that at least one reachable ' + \
+                      f'state has a non-zero final-state probability.'
                 warnings.warn(msg, RuntimeWarning)
 
                 if return_whatever_you_got:
@@ -560,9 +576,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                              actually is non-deterministic, as
                                              the non-deterministic solver is an
                                              approximation and MUCH slower.
-                                             This setting is ignored if you set
-                                             num_strings_to_find > 1, as we
-                                             then must use BMPS to sample.
         :param      backwards_search:        Whether to search from the with
                                              final probability back to the
                                              start state. Often will improve

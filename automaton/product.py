@@ -2,6 +2,7 @@ import copy
 import re
 import queue
 import warnings
+import math
 from typing import Tuple
 from bidict import bidict
 from collections.abc import Iterable
@@ -66,7 +67,7 @@ class Product(Automaton):
                                                     symbol (a.k.a. lambda). If
                                                     not given, will default to
                                                     base class default.
-        :param      is_normalized:  whether to renormalize the
+        :param      is_normalized:                  whether to renormalize the
                                                     edge probabilities such
                                                     that each states has a well
                                                     defined transition
@@ -165,29 +166,100 @@ class Product(Automaton):
         return controls_symbols, obs_prob
 
     def generate_traces(self, num_samples: int, N: int,
-                        min_string_probability: Probability = None,
-                        num_strings_to_find: int = None,
+                        num_traces_to_find: int = None,
+                        min_trace_probability: Probability = None,
+                        complete_samples: bool = False,
                         max_resamples: int = 100,
-                        force_MPS_sampler: bool = False) -> GeneratedTraceData:
+                        use_greedy_MPS_sampler: bool = True,
+                        force_MPS_sampler: bool = False,
+                        return_whatever_you_got: bool = False,
+                        force_multicore: bool = True,
+                        show_progress_bar: bool = True) -> GeneratedTraceData:
         """
-        generates num_samples random traces from the automaton
+        Tries to generate num_samples random traces from the product.
 
-        :param      num_samples:      The number of trace samples to generate
-        :param      N:                maximum length of trace
-        :param      max_resamples:    The maximum number of times to resample
-                                      if if we create a trace of length N that
-                                      still doesn't have a probability > 0 in
-                                      the language
+        :param      num_samples:              The number of trace samples to
+                                              generate
+        :param      N:                        maximum length of any trace
+        :param      num_traces_to_find:       the number of base random traces
+                                              to find in the automaton when
+                                              using the MPS sampler. This is
+                                              not necessarily the same as
+                                              num_samples, as often the MPS
+                                              sampler is too slow to return
+                                              that many samples. Thus, if you
+                                              allow for it, the MPS samples can
+                                              be resampled to return
+                                              num_samples samples after the MPS
+                                              sampler is done.
+        :param      min_trace_probability:    The minimum trace probability.
+                                              only needed when using the MPS
+                                              sampler. Lowering this will
+                                              result in more random (less
+                                              representative traces), but will
+                                              make the algorithm much faster.
+                                              If set TOO high, you will find no
+                                              traces meeting this requirement.
+                                              (default 0.0)
+        :param      complete_samples:         If enabled, if the underlying
+                                              sampler fails to generate
+                                              num_samples, then any samples it
+                                              does find will be resampled to
+                                              create num_samples samples
+                                              occurring with correct RELATIVE
+                                              frequencies.
+        :param      max_resamples:            The maximum number of times to
+                                              resample if if we create a trace
+                                              of length N that still doesn't
+                                              have a probability > 0 in the
+                                              language
+        :param      use_greedy_MPS_sampler:   whether to try using the MUCH
+                                              faster greedy search algorithm.
+                                              only possible if the automaton
+                                              has deterministic transitions.
+                                              Only set this to False if the
+                                              automaton actually is
+                                              non-deterministic, as the
+                                              non-deterministic solver is an
+                                              approximation and MUCH slower.
+        :param      force_MPS_sampler:        by default, IF THE PRODUCT HAS
+                                              BEEN NORMALIZED (and thus is
+                                              sampleable), then it will fall
+                                              back on the base class' sampler.
+                                              Not available if the product is
+                                              not is_sampleable. This sampler
+                                              is truly a random MC sampler, and
+                                              thus is appropriate if you want
+                                              to generate traces with more
+                                              randomness than the MPS sampler.
+        :param      return_whatever_you_got:  Whether to return a string with a
+                                              zero probability after all
+                                              resampling attempts are
+                                              exhausted.
+        :param      force_multicore:          whether to force use the threaded
+                                              sampler this is set by default to
+                                              optimize speed, as the threaded
+                                              sampler is slower for smaller
+                                              num_samples. Force this to be
+                                              true if the automaton is slow to
+                                              sample.
+        :param      show_progress_bar:        whether to show a tqdm progress
+                                              bar for each sampled trace. Only
+                                              turn this on if you're sampling a
+                                              few traces from a very
+                                              expensive-to-sample automaton.
 
         :returns:   list of sampled traces, list of the associated trace
                     lengths, list of the associated trace probabilities
         :rtype:     tuple(list(list(int)), list(int), list(float))
         """
 
-        if self.is_normalized and not force_MPS_sampler:
-            results = super().generate_traces(num_samples=num_samples, N=N,
-                                              max_resamples=max_resamples,
-                                              force_multicore=True)
+        if self.is_sampleable and not force_MPS_sampler:
+            results = super().generate_traces(
+                num_samples=num_samples, N=N,
+                max_resamples=max_resamples,
+                return_whatever_you_got=return_whatever_you_got,
+                force_multicore=force_multicore)
 
             controls, _, sequence_probs = results
             if controls is not None:
@@ -200,24 +272,62 @@ class Product(Automaton):
 
         else:
             # making sure that these params were provided if using MPS sampler
-            if num_strings_to_find is None:
-                raise ValueError('must give value for num_strings_to_find')
-            if min_string_probability is None:
-                raise ValueError('must give value for min_string_probability')
+            if num_traces_to_find is None:
+                num_traces_to_find = num_samples
 
-            # we want to sample from both the most and least likely traces to
-            # get some diversity for resampling
-            _, _, viable_traces_min = self.most_probable_string(
-                min_string_probability=min_string_probability,
-                max_string_length=int(N / 2),
-                num_strings_to_find=num_strings_to_find,
-                backwards_search=True,
-                depth_first=True,
-                add_entropy=True)
+                msg = f'No value given for num_traces_to_find. Using ' + \
+                      f'default value of num_traces_to_find = num_samples ' + \
+                      f'({num_samples}). This may be too slow for large ' + \
+                      f'product automata. Try providing a value of ' + \
+                      f'num_traces_to_find less than num_samples and ' + \
+                      f'enabling complete_samples'
+                warnings.warn(msg)
+
+            if min_trace_probability is None:
+                min_trace_probability = 0.0
+
+                msg = f'No value given for min_trace_probability. Using ' + \
+                      f'default value of {min_trace_probability}'
+                warnings.warn(msg)
+
+            if use_greedy_MPS_sampler:
+                _, _, viable_traces = self.most_probable_string(
+                    try_to_use_greedy=use_greedy_MPS_sampler)
+            else:
+                # we want to sample from both the most and least likely traces
+                # to get some diversity for resampling
+                N_DFS = math.ceil(num_traces_to_find / 2)
+                _, _, viable_traces_min = self.most_probable_string(
+                    min_string_probability=min_trace_probability,
+                    max_string_length=N,
+                    num_strings_to_find=N_DFS,
+                    try_to_use_greedy=False,
+                    backwards_search=True,
+                    depth_first=True,
+                    add_entropy=True)
+                N_BFS = math.ceil(num_traces_to_find / 2)
+                _, _, viable_traces_max = self.most_probable_string(
+                    min_string_probability=min_trace_probability,
+                    max_string_length=N,
+                    num_strings_to_find=N_BFS,
+                    try_to_use_greedy=False,
+                    backwards_search=True,
+                    depth_first=False,
+                    add_entropy=True)
+
+                # merge the two heaps
+                viable_traces = MaxHeap()
+                for item_1 in viable_traces_min:
+                    viable_traces.heappush(item_1)
+                for item_2 in viable_traces_max:
+                    viable_traces.heappush(item_2)
+
+        # need to post-process the sampled data, as this is a product
+        if viable_traces is not None:
 
             # resampling the viable traces to ensure we always have num_samples
             # samples
-            if viable_traces is not None and len(viable_traces) < num_samples:
+            if len(viable_traces) < num_samples and complete_samples:
                 probs, symbols = zip(*viable_traces)
 
                 # need to normalize the probabilities, as we won't have the
@@ -234,9 +344,6 @@ class Product(Automaton):
                 viable_traces = MaxHeap()
                 for prob, trace in zip(new_probs, new_traces):
                     viable_traces.heappush((prob, trace))
-
-        # need to post-process the sampled data, as this is a product
-        if viable_traces is not None:
 
             samples, trace_lengths, trace_probs = [], [], []
 
