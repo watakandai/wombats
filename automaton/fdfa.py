@@ -242,7 +242,7 @@ class FDFA(Automaton):
             # initial state
             initial_frequency = 0
 
-            new_node_label = 'q' + state_label[0]
+            new_node_label = 'q' + str(node_ID)
             new_node_data = {'final_frequency': 0,
                              'initial_frequency': initial_frequency,
                              'trans_distribution': None,
