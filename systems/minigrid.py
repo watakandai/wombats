@@ -299,7 +299,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
                                            'default'])
         if actions_type not in self._allowed_actions_types:
             msg = f'actions_type ({actions_type}) must be one of: ' + \
-                  f'{actions_type}'
+                  f'{self._allowed_actions_types}'
             raise ValueError(msg)
 
         if actions_type == 'simple_static':
