@@ -137,32 +137,6 @@ class PDFA(Automaton):
                          edge_weight_key='probability',
                          smoothing_amount=smoothing_amount)
 
-    def write_traces_to_file(self, traces: List[Symbols], num_samples: int,
-                             trace_lengths: List[int], f_name: str) -> None:
-        """
-        Writes trace samples to a file in the abbadingo format for use in
-        grammatical inference tools like flexfringe
-
-        :param      traces:         The traces to write to a file
-        :param      num_samples:    The number sampled traces
-        :param      trace_lengths:  list of sampled trace lengths
-        :param      f_name:         The file name to write to
-        """
-
-        # make sure the num_samples is an int, so you don't have to wrap shit
-        # in an 'int()' every time...
-        num_samples = int(num_samples)
-
-        with open(f_name, 'w+') as f:
-
-            # need the header to be:
-            # number_of_training_samples size_of_alphabet
-            f.write(str(num_samples) + ' ' + str(self._alphabet_size) + '\n')
-
-            for trace, trace_length in zip(traces, trace_lengths):
-                f.write(self._get_abbadingo_string(trace, trace_length,
-                                                   is_pos_example=True))
-
     def predict(self, symbols: Symbols,
                 pred_method: str = 'max_prob') -> Symbol:
         """
@@ -406,24 +380,6 @@ class PDFA(Automaton):
             state_accepts = False
 
         self._set_node_data(curr_state, 'is_accepting', state_accepts)
-
-    def _get_abbadingo_string(self, trace: Symbols, trace_length: int,
-                              is_pos_example: bool) -> str:
-        """
-        Returns the Abbadingo (sigh) formatted string given a trace string and
-        the label for the trace
-
-        :param      trace:           The trace string to represent in Abbadingo
-        :param      trace_length:    The trace length
-        :param      is_pos_example:  Indicates if the trace is a positive
-                                     example of the pdfa
-
-        :returns:   The abbadingo formatted string for the given trace
-        """
-        trace = ' '.join(str(x) for x in trace)
-
-        trace_label = {False: '0', True: '1'}[is_pos_example]
-        return trace_label + ' ' + str(trace_length) + ' ' + trace + '\n'
 
 
 class PDFABuilder(Builder):
