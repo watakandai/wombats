@@ -1,4 +1,47 @@
 import heapq
+import os
+from wombats.systems.minigrid import GYM_MONITOR_LOG_DIR_NAME
+
+
+def get_experiment_paths(EXPERIMENT_NAME: str):
+
+    # setting all paths
+    EXPERIMENTS_BASE = 'experiments'
+    EXPERIMENT_DIR = os.path.join(EXPERIMENTS_BASE, EXPERIMENT_NAME)
+
+    LEARNER_DATA_DIR_NAME = 'flexfringe_data'
+    LEARNER_DATA_DIR = os.path.join(EXPERIMENT_DIR, LEARNER_DATA_DIR_NAME)
+    LEARNING_TRAIN_DATA_NAME = EXPERIMENT_NAME + '_train'
+    LEARNING_TEST_DATA_NAME = EXPERIMENT_NAME + '_test'
+    LEARNING_TRAIN_DATA_REL_FILEPATH = os.path.join(LEARNER_DATA_DIR_NAME,
+                                                    LEARNING_TRAIN_DATA_NAME)
+    LEARNING_TEST_DATA_REL_FILEPATH = os.path.join(LEARNER_DATA_DIR_NAME,
+                                                   LEARNING_TEST_DATA_NAME)
+
+    LIB_BASE_NAME = 'wombats'
+    LIB_CONFIG_NAME = 'config'
+    LIB_CONFIG_DIR = os.path.join(LIB_BASE_NAME, LIB_CONFIG_NAME)
+
+    PDFA_MODEL_CONFIG_FILE = os.path.join(LIB_CONFIG_DIR,
+                                          'PDFA_' + EXPERIMENT_NAME + '.yaml')
+    TS_MODEL_CONFIG_FILE = os.path.join(LIB_CONFIG_DIR,
+                                        'TS_' + EXPERIMENT_NAME + '.yaml')
+
+    GYM_MONITOR_LOG_DIR = os.path.join(EXPERIMENT_DIR,
+                                       GYM_MONITOR_LOG_DIR_NAME)
+
+    # put it all into a dictionary so we don't need to change interface for
+    # new path I/O
+    path_data = {
+        'EXPERIMENT_DIR': EXPERIMENT_DIR,
+        'PDFA_MODEL_CONFIG_FILE': PDFA_MODEL_CONFIG_FILE,
+        'TS_MODEL_CONFIG_FILE': TS_MODEL_CONFIG_FILE,
+        'GYM_MONITOR_LOG_DIR': GYM_MONITOR_LOG_DIR,
+        'LEARNER_DATA_DIR': LEARNER_DATA_DIR,
+        'LEARNING_TRAIN_DATA_REL_FILEPATH': LEARNING_TRAIN_DATA_REL_FILEPATH,
+        'LEARNING_TEST_DATA_REL_FILEPATH': LEARNING_TEST_DATA_REL_FILEPATH}
+
+    return path_data
 
 
 class MaxHeapObj(object):

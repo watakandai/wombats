@@ -3,6 +3,7 @@ import graphviz
 import os
 import re
 from IPython.display import Image, display
+from pathlib import Path
 
 
 class FlexfringeInterface():
@@ -20,8 +21,7 @@ class FlexfringeInterface():
 
         :param      binary_location:   (absolute / relative) filepath to the
                                        flexfringe binary
-        :param      output_directory:  The output directory of the learned
-                                       model
+        :param      output_directory:  The flexfringe output directory
         """
 
         self.binary_location = binary_location
@@ -40,6 +40,8 @@ class FlexfringeInterface():
         self._output_base_filepath = None
         self._output_directory = output_directory
         self._flexfringe_output_dir_popt_str = 'o'
+
+        Path(output_directory).mkdir(parents=True, exist_ok=True)
 
     def infer_model(self, training_file: str = None,
                     get_help: bool = False,
@@ -121,7 +123,9 @@ class FlexfringeInterface():
         if dot_file_data == '':
             pass
         else:
-            g = graphviz.Source(dot_file_data, format='png')
+            output_file = os.path.join(self._output_directory, 'Source.gv')
+            g = graphviz.Source(dot_file_data,
+                                filename=output_file, format='png')
             g.render()
             display(Image(g.render()))
 

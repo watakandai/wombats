@@ -34,7 +34,6 @@ NUM_CORES = multiprocessing.cpu_count()
 SMOOTHING_AMOUNT = 0.0001
 DEFAULT_FINAL_TRANS_SYMBOL = '$'
 DEFAULT_EMPTY_TRANS_SYMBOL = 'lambda'
-AUTOMATON_DISPLAY_HOME = 'automaton_images'
 
 
 class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
@@ -125,6 +124,10 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
     :param      smoothing_amount:          probability mass to re-assign to
                                            unseen symbols at each node
     """
+
+    # file I/O
+    automata_display_data_dir_name = 'automata_images'
+    automata_data_dir = 'automaton_data'
 
     def __init__(self,
                  nodes: NXNodeList,
@@ -224,6 +227,12 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """a (_num_states x 1) ndarray containing the pmf for terminating
            at each state's index."""
 
+        self._automata_display_dir = os.path.join(
+            self.automata_data_dir,
+            self.automata_display_data_dir_name)
+        Path(self._automata_display_dir).mkdir(parents=True, exist_ok=True)
+        """the base directory for all output data for the automaton"""
+
         # need to start with a fully initialized networkx digraph
         super().__init__()
 
@@ -282,9 +291,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         if filename:
             graph = gv.Source(graph)
-
-            fpath = os.path.join(AUTOMATON_DISPLAY_HOME, filename)
-            Path(AUTOMATON_DISPLAY_HOME).mkdir(parents=True, exist_ok=True)
+            fpath = os.path.join(self._automata_display_dir, filename)
             path = graph.render(format=img_format, filename=fpath)
 
             if should_display:
@@ -313,31 +320,50 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                   colors='r', lw=4)
         plt.show()
 
-    def write_traces_to_file(self, traces: List[Symbols], num_samples: int,
-                             trace_lengths: List[int], f_name: str) -> None:
+    def write_traces_to_file(self, traces: List[Symbols], file: str,
+                             base_file_dir: {str, None}=None) -> str:
         """
         Writes trace samples to a file in the abbadingo format for use in
         grammatical inference tools like flexfringe
 
         :param      traces:         The traces to write to a file
-        :param      num_samples:    The number sampled traces
-        :param      trace_lengths:  list of sampled trace lengths
-        :param      f_name:         The file name to write to
+        :param      file:           The file name to write to. Can be a partial
+                                    path.
+        :param      base_file_dir:  Provide this if you want to output the
+                                    file to a different location than
+                                    self.automata_data_dir.
+
+        :returns:   the absolute filepath to the traces. Will be:
+                        abs_filepath(self.automata_data_dir/file)
+                    if base_file_dir is None.
+                    Else, will be:
+                        abs_filepath(base_file_dir/file)
         """
+
+        # make sure the output traces always go to the automaton's data dir
+        if base_file_dir is None:
+            base_file_dir = self.automata_data_dir
+
+        filepath = os.path.join(base_file_dir, file)
+        file_dir, _ = os.path.split(filepath)
+        Path(file_dir).mkdir(parents=True, exist_ok=True)
 
         # make sure the num_samples is an int, so you don't have to wrap shit
         # in an 'int()' every time...
-        num_samples = int(num_samples)
+        num_samples = len(traces)
 
-        with open(f_name, 'w+') as f:
+        with open(filepath, 'w+') as f:
 
             # need the header to be:
             # number_of_training_samples size_of_alphabet
             f.write(str(num_samples) + ' ' + str(self._alphabet_size) + '\n')
 
-            for trace, trace_length in zip(traces, trace_lengths):
+            for trace in traces:
+                trace_length = len(trace)
                 f.write(self._get_abbadingo_string(trace, trace_length,
                                                    is_pos_example=True))
+
+        return os.path.abspath(filepath)
 
     def generate_traces(self, num_samples: int, N: int,
                         max_resamples: int = 10,
@@ -494,25 +520,27 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             # hit the max trace length limit while sampling, we need to try
             # sampling a whole new trace again.
             if length_of_trace == N:
-                curr_state = start_state
-                length_of_trace = 0
-                trace_prob = 1.0
-                sampled_trace = []
 
                 num_times_restarted += 1
 
-            if num_times_restarted == max_resamples:
-                msg = f'tried resampling a non-zero probability trace ' + \
-                      f'{max_resamples} times and failed. ' + \
-                      f'Try increasing the current max trace length ' + \
-                      f'{N} and checking that at least one reachable ' + \
-                      f'state has a non-zero final-state probability.'
-                warnings.warn(msg, RuntimeWarning)
+                if num_times_restarted == max_resamples:
+                    msg = f'tried resampling a non-zero probability trace ' + \
+                          f'{max_resamples} times and failed. ' + \
+                          f'Try increasing the current max trace length ' + \
+                          f'{N} and checking that at least one reachable ' + \
+                          f'state has a non-zero final-state probability.'
+                    warnings.warn(msg, RuntimeWarning)
 
-                if return_whatever_you_got:
-                    break
+                    if return_whatever_you_got:
+                        trace_prob *= 0.0
+                        break
+                    else:
+                        return None, None, None
                 else:
-                    return None, None, None
+                    curr_state = start_state
+                    length_of_trace = 0
+                    trace_prob = 1.0
+                    sampled_trace = []
 
         return sampled_trace, length_of_trace, trace_prob
 

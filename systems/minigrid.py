@@ -42,6 +42,8 @@ MINIGRID_TO_GRAPHVIZ_COLOR = {'red': 'firebrick',
                               'yellow': 'yellow',
                               'grey': 'gray60'}
 
+GYM_MONITOR_LOG_DIR_NAME = 'minigrid_env_logs'
+
 
 class ModifyActionsWrapper(gym.core.Wrapper):
     """
@@ -260,22 +262,24 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
     This means that the environment must be STATIC -> no keys or doors opening
     as this would require a reactive synthesis formulation.
 
-    :param      env:           The gym environment to wrap and compute
-                               transitions on
-    :param      seeds:         The random seeds given to the Minigrid
-                               environment, so when the environment is reset(),
-                               it remains the same.
-    :param      actions_type:  The actions type string
-                               {'static', 'simple_static', 'default'}
-                               'static':
-                               use a directional agent only capable of going
-                               forward and turning
-                               'simple_static':
-                               use a non-directional agent which can only move
-                               in cardinal directions in the grid
-                               'default':
-                               use an agent which has the default MinigridEnv
-                               actions, suitable for dynamic environments.
+        :param      env:                   The gym environment to wrap and
+                                           compute transitions on
+        :param      seeds:                 The random seeds given to the
+                                           Minigrid environment, so when the
+                                           environment is reset(), it remains
+                                           the same.
+        :param      actions_type:          The actions type string {'static',
+                                           'simple_static', 'default'}
+                                           'static': use a directional agent
+                                           only capable of going forward and
+                                           turning 'simple_static': use a
+                                           non-directional agent which can only
+                                           move in cardinal directions in the
+                                           grid 'default': use an agent which
+                                           has the default MinigridEnv actions,
+                                           suitable for dynamic environments.
+        :param      monitor_log_location:  The location to save gym env
+                                           monitor logs & videos
     """
 
     env: EnvType
@@ -287,9 +291,10 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         env: EnvType,
         seeds: List[int] = [0],
         actions_type: str = 'static',
+        monitor_log_location: str = GYM_MONITOR_LOG_DIR_NAME
     ) -> 'StaticMinigridTSWrapper':
 
-        self._monitor_log_location = 'minigrid_env_logs'
+        self.monitor_log_location = monitor_log_location
         self._force_monitor = False
         self._resume_monitor = True
         self._uid_monitor = None
@@ -312,7 +317,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         env = ViewSizeWrapper(env, agent_view_size=3)
         env = ModifyActionsWrapper(env, actions_type)
         env = FullyObsWrapper(ReseedWrapper(env, seeds=seeds))
-        env = wrappers.Monitor(env, self._monitor_log_location,
+        env = wrappers.Monitor(env, self.monitor_log_location,
                                video_callable=False,
                                force=self._force_monitor,
                                resume=self._resume_monitor,

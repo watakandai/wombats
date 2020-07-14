@@ -1,5 +1,6 @@
 from .pdfa import PDFABuilder, PDFA
 from .fdfa import FDFABuilder, FDFA
+from .base import Automaton
 from .transition_system import (TSBuilder, TransitionSystem,
                                 MinigridTransitionSystem)
 from .product import ProductBuilder, Product

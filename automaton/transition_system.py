@@ -217,7 +217,7 @@ class MinigridTransitionSystem(TransitionSystem):
         self.actions = self.env.actions
         """actions available in the gym env. Can be fed into the TS or env"""
 
-        self.video_location = self.env._monitor_log_location
+        self.video_location = self.env.monitor_log_location
 
         self.reset()
 
