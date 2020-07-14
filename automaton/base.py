@@ -18,7 +18,6 @@ from IPython.display import display, Image
 from pydot import Dot
 from typing import Dict, Hashable, Iterable, Tuple, List
 from bidict import bidict
-from tqdm.auto import tqdm
 
 # local packages / modules
 from .types import (NXNodeList, NXEdgeList, Node, Observation, Symbol,
@@ -117,6 +116,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                            display of the automaton
     :param      can_have_accepting_nodes:  Indicates if the automata can
                                            have accepting nodes
+    :param      merge_sinks:               whether to combine all states
+                                           together that have no outgoing edges
     :param      edge_weight_key:           The key in each edge's data dict
                                            for edge weight / prob. If None,
                                            don't include this info in the
@@ -143,6 +144,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                  final_weight_key: str = None,
                  state_observation_key: str = None,
                  can_have_accepting_nodes: bool = True,
+                 merge_sinks: bool = False,
                  edge_weight_key: str = None,
                  smoothing_amount: float = SMOOTHING_AMOUNT) -> 'Automaton':
 
@@ -233,7 +235,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             final_weight_key=final_weight_key,
             initial_weight_key=initial_weight_key,
             can_have_accepting_nodes=can_have_accepting_nodes,
-            edge_weight_key=edge_weight_key)
+            edge_weight_key=edge_weight_key,
+            merge_sinks=merge_sinks)
 
     def disp_edges(self, graph: {None, nx.MultiDiGraph}=None) -> None:
         """
@@ -992,10 +995,10 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                          state_observation_key: str = None,
                                          can_have_accepting_nodes: bool = True,
                                          edge_weight_key: str = None,
+                                         merge_sinks: bool = False,
                                          **node_data_args: dict) -> None:
         """
         Initializes the node and edge data properties correctly.
-
 
         :param      initial_weight_key:        key in the automaton's node data
                                                corresponding to the weight /
@@ -1019,9 +1022,15 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                                for edge weight / prob. If None,
                                                don't include this info in the
                                                display of the automaton
+        :param      merge_sinks:               whether to combine all states
+                                               together that have no outgoing
+                                               edges
         :param      node_data_args:            keyword arguments to pass to
                                                _compute_node_data_properties()
         """
+
+        if merge_sinks:
+            self._nx_merge_sinks()
 
         # do batch computations at initialization, as these shouldn't
         # frequently change
@@ -1101,6 +1110,35 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                             **node_data_args)
 
         self._set_trans_map(node, edge_symbols, edge_dests)
+
+    def _nx_merge_sinks(self) -> None:
+        """
+        merges all sink states (states with no outgoing edges)
+
+        DOES not update all internal data structures, just the NX data
+        """
+
+        # Select all nodes with only 2 neighbors
+        all_sinks = [n for n in self.nodes
+                     if len(list(self.neighbors(n))) == 0]
+
+        if len(all_sinks) > 0:
+            new_global_sink = all_sinks[0]
+
+            for sink in all_sinks:
+                if sink == new_global_sink:
+                    continue
+
+                curr_pred_nodes = list(self.predecessors(sink))
+                for source in curr_pred_nodes:
+                    edge_data = self.get_edge_data(source, sink).values()
+                    old_edges = [(source, sink) for _ in edge_data]
+                    new_edges = [(source, new_global_sink, data)
+                                 for data in edge_data]
+
+                    self.remove_edges_from(old_edges)
+                    self.remove_nodes_from([edge[1] for edge in old_edges])
+                    self.add_edges_from(new_edges)
 
     def _set_trans_map(self, curr_state: Node,
                        edge_symbols: Symbols, edge_dests: Nodes) -> None:
@@ -1786,15 +1824,13 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         return edge_data
 
     def _set_edge_data(self, src_node_label: Node, dest_node_label: Node,
-                       symbol: Symbol, data_key: str, data,
+                       data: dict,
                        graph: {None, nx.MultiDiGraph}=None) -> None:
         """
         Sets the edge's data_key with given data
 
         :param      src_node_label:   The edge's source node edge label
         :param      dest_node_label:  The edge's destination node label
-        :param      symbol:           The symbol
-        :param      data_key:         The desired edge data's key name
         :param      data:             The data to associate with data_key
         :param      graph:            The graph to access.
                                       Default = None => use instance
@@ -1803,7 +1839,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         if graph is None:
             graph = self
 
-        graph[src_node_label][dest_node_label][symbol][data_key] = data
+        graph[src_node_label][dest_node_label] = data
 
     def _update_edges(self, node_label: Node,
                       new_edge_data: Dict[Node, Dict[Symbol, Dict]],

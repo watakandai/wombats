@@ -430,8 +430,8 @@ class Product(Automaton):
         specification.add_node(violating_state, **violating_state_props)
 
         specification._initialize_node_edge_properties(
-            can_have_accepting_nodes=True,
             final_weight_key='final_probability',
+            can_have_accepting_nodes=True,
             edge_weight_key='probability',
             should_complete=True,
             violating_state=violating_state,

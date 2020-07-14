@@ -105,6 +105,9 @@ class PDFA(Automaton):
                                        default to base class default.
     :param      beta:                  the final state probability needed
                                        for a state to accept.
+    :param      merge_sinks:           whether to combine all states
+                                       together that have no outgoing
+                                       edges
     """
 
     def __init__(self,
@@ -118,7 +121,8 @@ class PDFA(Automaton):
                  smoothing_amount: float = SMOOTHING_AMOUNT,
                  final_transition_sym: {Symbol, None}=None,
                  empty_transition_sym: {Symbol, None}=None,
-                 beta: float = 0.95) -> 'PDFA':
+                 beta: float = 0.95,
+                 merge_sinks: bool = False) -> 'PDFA':
 
         self._beta = beta
         """the final state probability needed for a state to accept"""
@@ -135,7 +139,8 @@ class PDFA(Automaton):
                          final_weight_key='final_probability',
                          can_have_accepting_nodes=True,
                          edge_weight_key='probability',
-                         smoothing_amount=smoothing_amount)
+                         smoothing_amount=smoothing_amount,
+                         merge_sinks=merge_sinks)
 
     def predict(self, symbols: Symbols,
                 pred_method: str = 'max_prob') -> Symbol:
@@ -489,6 +494,7 @@ class PDFABuilder(Builder):
         return self._instance
 
     def _from_fdfa(self, fdfa: FDFA,
+                   merge_sinks: bool = False,
                    smooth_transitions: bool = False,
                    smoothing_amount: float = SMOOTHING_AMOUNT) -> PDFA:
         """
@@ -496,6 +502,9 @@ class PDFABuilder(Builder):
 
         :param      fdfa:                initialized fdfa instance to convert
                                          to a pdfa
+        :param      merge_sinks:         whether to combine all states
+                                         together that have no outgoing
+                                         edges
         :param      smooth_transitions:  whether or not to smooth the input
                                          sym. transition distributions
         :param      smoothing_amount:    probability mass to re-assign to
@@ -524,6 +533,7 @@ class PDFABuilder(Builder):
             empty_transition_sym=fdfa._empty_transition_sym,
             start_state=fdfa.start_state,
             smooth_transitions=smooth_transitions,
-            smoothing_amount=smoothing_amount)
+            smoothing_amount=smoothing_amount,
+            merge_sinks=merge_sinks)
 
         return instance
