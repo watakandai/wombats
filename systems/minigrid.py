@@ -51,7 +51,8 @@ class ModifyActionsWrapper(gym.core.Wrapper):
 
     :param      env:           The gym environment to wrap
     :param      actions_type:  The actions type string
-                               {'static', 'simple_static', 'default'}
+                               {'static', 'simple_static', 'diag_static',
+                                'default'}
                                'static':
                                use a directional agent only capable of going
                                forward and turning
@@ -81,6 +82,27 @@ class ModifyActionsWrapper(gym.core.Wrapper):
 
     # Enumeration of possible actions
     # as this is a static environment, we will only allow for movement actions
+    # For a simple environment, we only allow the agent to move:
+    # Northeast, Northwest, Southeast, or Southwest
+    class DiagStaticActions(IntEnum):
+        # move in this direction on the grid
+        northeast = 0
+        northwest = 1
+        southeast = 2
+        southwest = 3
+
+    DIAG_ACTION_TO_SIMPLE_ACTIONS = {
+        DiagStaticActions.northeast: [SimpleStaticActions.north,
+                                      SimpleStaticActions.east],
+        DiagStaticActions.northwest: [SimpleStaticActions.north,
+                                      SimpleStaticActions.west],
+        DiagStaticActions.southeast: [SimpleStaticActions.south,
+                                      SimpleStaticActions.east],
+        DiagStaticActions.southwest: [SimpleStaticActions.south,
+                                      SimpleStaticActions.west]}
+
+    # Enumeration of possible actions
+    # as this is a static environment, we will only allow for movement actions
     class StaticActions(IntEnum):
         # Turn left, turn right, move forward
         left = 0
@@ -93,7 +115,7 @@ class ModifyActionsWrapper(gym.core.Wrapper):
         super().__init__(env)
 
         self._allowed_actions_types = set(['static', 'simple_static',
-                                           'default'])
+                                           'diag_static', 'default'])
         if actions_type not in self._allowed_actions_types:
             msg = f'actions_type ({actions_type}) must be one of: ' + \
                   f'{actions_type}'
@@ -103,15 +125,20 @@ class ModifyActionsWrapper(gym.core.Wrapper):
         # This also changes the "step" behavior, so we also change that out
         # to match the new set of actions
         self._actions_type = actions_type
+
         if actions_type == 'static':
             actions = ModifyActionsWrapper.StaticActions
             step_function = self._step_default
         elif actions_type == 'simple_static':
             actions = ModifyActionsWrapper.SimpleStaticActions
             step_function = self._step_simple_static
+        elif actions_type == 'diag_static':
+            actions = ModifyActionsWrapper.DiagStaticActions
+            step_function = self._step_diag_static
         elif actions_type == 'default':
             actions = MiniGridEnv.Actions
             step_function = self._step_default
+
         self.unwrapped.actions = actions
         self._step_function = step_function
 
@@ -142,6 +169,34 @@ class ModifyActionsWrapper(gym.core.Wrapper):
 
         return obs, reward, done, {}
 
+    def _step_diag_static(self, action: IntEnum) -> Tuple[Done, Reward]:
+
+        reward = 0
+        done = False
+
+        # all of these changes must affect the base environment to be seen
+        # across all other wrappers
+        base_env = self.unwrapped
+
+        start_pos = base_env.agent_pos
+
+        # a diagonal action is really just two simple actions :)
+        actions = ModifyActionsWrapper.DIAG_ACTION_TO_SIMPLE_ACTIONS[action]
+        for simple_action in actions:
+            step_done, step_reward = self._step_simple_static(simple_action)
+
+            # check if you bounced off a wall with the first part of the
+            # intercardinal movement. If so, just stop, you can't move
+            new_pos = base_env.agent_pos
+            if tuple(start_pos) == tuple(new_pos):
+                break
+
+            # update the done and reward
+            done = done or step_done
+            reward += step_reward
+
+        return done, reward
+
     def _step_simple_static(self, action: IntEnum) -> Tuple[Done, Reward]:
 
         # all of these changes must affect the base environment to be seen
@@ -150,11 +205,6 @@ class ModifyActionsWrapper(gym.core.Wrapper):
 
         reward = 0
         done = False
-
-        # ensure valid action is selected
-        if action not in base_env.actions:
-            msg = f'action ({action}) must be one of: {base_env.actions}'
-            raise ValueError(msg)
 
         # save the original direction so we can reset it after moving
         old_dir = base_env.agent_dir
@@ -268,14 +318,21 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
                                            Minigrid environment, so when the
                                            environment is reset(), it remains
                                            the same.
-        :param      actions_type:          The actions type string {'static',
-                                           'simple_static', 'default'}
+        :param      actions_type:          The actions type string
+                                           {'static', 'simple_static',
+                                           'diag_static', 'default'}
                                            'static': use a directional agent
                                            only capable of going forward and
-                                           turning 'simple_static': use a
+                                           turning
+                                           'simple_static': use a
                                            non-directional agent which can only
                                            move in cardinal directions in the
-                                           grid 'default': use an agent which
+                                           grid
+                                           'diag_static': use a
+                                           non-directional agent which can only
+                                           move in intercardinal directions
+                                           (diagonally) in the grid
+                                           'default': use an agent which
                                            has the default MinigridEnv actions,
                                            suitable for dynamic environments.
         :param      monitor_log_location:  The location to save gym env
@@ -301,17 +358,15 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         self._mode = None
 
         self._allowed_actions_types = set(['static', 'simple_static',
-                                           'default'])
+                                           'diag_static', 'default'])
         if actions_type not in self._allowed_actions_types:
             msg = f'actions_type ({actions_type}) must be one of: ' + \
                   f'{self._allowed_actions_types}'
             raise ValueError(msg)
 
-        if actions_type == 'simple_static':
+        if actions_type == 'simple_static' or actions_type == 'diag_static':
             env.directionless_agent = True
-        elif actions_type == 'static':
-            env.directionless_agent = False
-        elif actions_type == 'default':
+        elif actions_type == 'static' or actions_type == 'default':
             env.directionless_agent = False
 
         env = ViewSizeWrapper(env, agent_view_size=3)
@@ -344,7 +399,8 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         Wrapper for the env.render() that works in notebooks
         """
 
-        plt.imshow(self.env.render(mode='rgb_image'), interpolation='bilinear')
+        plt.imshow(self.env.render(mode='rgb_image', tile_size=64),
+                   interpolation='bilinear')
         plt.axis('off')
         plt.show()
 
@@ -979,6 +1035,8 @@ class NoDirectionAgentGrid(Grid):
     This class overrides the drawing of direction-less agents
     """
 
+    tile_cache = {}
+
     def __init__(self, width: int, height: int):
         super().__init__(width, height)
 
@@ -1081,7 +1139,7 @@ class NoDirectionAgentGrid(Grid):
 
 class LavaComparison(MiniGridEnv):
     """
-    Environment to try comparing with MIT Shah paper
+    Environment to try comparing with Sheshia paper
     """
 
     def __init__(
@@ -1184,7 +1242,117 @@ class LavaComparison(MiniGridEnv):
         else:
             self.place_agent()
 
-        self.mission = "get to a green goal squares without touching lava"
+        self.mission = 'get to a green goal squares, don"t touch lava, ' + \
+                       'must dry off if you get wet'
+
+
+class AlternateLavaComparison(MiniGridEnv):
+    """
+    Very different Environment to the Seshia Paper to show environmental indep.
+    """
+
+    def __init__(
+        self,
+        width=10,
+        height=10,
+        agent_start_pos=(3, 5),
+        agent_start_dir=0,
+        drying_off_task=False,
+        path_only_through_water=False
+    ):
+        self.agent_start_pos = agent_start_pos
+        self.agent_start_dir = agent_start_dir
+        self.goal_pos = [(1, 1), (1, 8), (8, 8)]
+        self.drying_off_task = drying_off_task
+        self.directionless_agent = False
+        self.path_only_through_water = path_only_through_water
+
+        super().__init__(
+            width=width,
+            height=height,
+            max_steps=4 * width * height,
+            # Set this to True for maximum speed
+            see_through_walls=True
+        )
+
+    def _gen_grid(self, width, height):
+
+        if self.directionless_agent:
+            self.grid = NoDirectionAgentGrid(width, height)
+        else:
+            self.grid = Grid(width, height)
+
+        # Generate the surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # Place a goal square in the bottom-right corner
+        for goal_pos in self.goal_pos:
+            self.put_obj(Floor(color='green'), *goal_pos)
+
+        if self.drying_off_task:
+            self.put_obj(Floor(color='green'), 8, 1)
+        else:
+            self.put_obj(Floor(color='blue'), 8, 1)
+
+        # left Lava block
+        self.put_obj(Lava(), 1, 3)
+        self.put_obj(Lava(), 1, 4)
+        self.put_obj(Lava(), 2, 3)
+        self.put_obj(Lava(), 2, 4)
+
+        # right Lava block
+        self.put_obj(Lava(), 7, 3)
+        self.put_obj(Lava(), 7, 4)
+        self.put_obj(Lava(), 8, 3)
+        self.put_obj(Lava(), 8, 4)
+
+        # bottom left Lava blocking goal
+        self.put_obj(Lava(), 1, 7)
+        self.put_obj(Lava(), 2, 7)
+        self.put_obj(Lava(), 2, 8)
+
+        # bottom right Lava blocking goal
+        self.put_obj(Lava(), 8, 7)
+        self.put_obj(Lava(), 7, 7)
+        self.put_obj(Lava(), 7, 8)
+
+        # place the water
+        if self.drying_off_task:
+
+            if self.path_only_through_water:
+                self.put_obj(Lava(), 3, 3)
+                self.put_obj(Lava(), 6, 3)
+
+            self.put_obj(Floor(color='blue'), 4, 6)
+            self.put_obj(Floor(color='blue'), 4, 5)
+            self.put_obj(Floor(color='blue'), 4, 4)
+            self.put_obj(Floor(color='blue'), 4, 3)
+            self.put_obj(Floor(color='blue'), 5, 6)
+            self.put_obj(Floor(color='blue'), 5, 5)
+            self.put_obj(Floor(color='blue'), 5, 4)
+            self.put_obj(Floor(color='blue'), 5, 3)
+
+            # bottom carpet
+            self.put_obj(Floor(color='yellow'), 3, 1)
+            self.put_obj(Floor(color='yellow'), 4, 1)
+            self.put_obj(Floor(color='yellow'), 5, 1)
+            self.put_obj(Floor(color='yellow'), 6, 1)
+
+            # top carpet
+            self.put_obj(Floor(color='yellow'), 3, 8)
+            self.put_obj(Floor(color='yellow'), 4, 8)
+            self.put_obj(Floor(color='yellow'), 5, 8)
+            self.put_obj(Floor(color='yellow'), 6, 8)
+
+        # Place the agent
+        if self.agent_start_pos is not None:
+            self.agent_pos = self.agent_start_pos
+            self.agent_dir = self.agent_start_dir
+        else:
+            self.place_agent()
+
+        self.mission = 'get to a green goal squares, don"t touch lava, ' + \
+                       'must dry off if you get wet'
 
 
 class LavaComparison_noDryingOff(LavaComparison):
