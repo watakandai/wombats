@@ -519,31 +519,43 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         :raises     ValueError:  If the agent can't do anything at reset()
         """
 
+        self.reset()
         init_state = (self.agent_start_pos, self.agent_start_dir)
 
         # sigh.... Well, we know that if you can't move within 3 steps, then
         # the environment is completely unsolvable, or you start on the goal
         # state.
         for a1 in self.actions:
-            self._set_agent_props(*init_state)
-            self.state_only_obs_step(a1)
-            agent_pos1, agent_dir1 = self._get_agent_props()
+            (agent_pos1,
+             agent_dir1,
+             done) = self._make_transition(a1, *init_state)
             s1 = (agent_pos1, agent_dir1)
 
+            if done:
+                self.reset()
+
             for a2 in self.actions:
-                self._set_agent_props(*s1)
-                self.state_only_obs_step(a2)
-                agent_pos2, agent_dir2 = self._get_agent_props()
+                (agent_pos2,
+                 agent_dir2,
+                 done) = self._make_transition(a2, *s1)
                 s2 = (agent_pos2, agent_dir2)
+
+                if done:
+                    self.reset()
 
                 for a3 in self.actions:
                     self._set_agent_props(*s2)
-                    obs, _, _, _ = self.state_only_obs_step(a3)
+                    obs, _, done, _ = self.state_only_obs_step(a3)
                     agent_pos3, _ = self._get_agent_props()
                     at_new_cell = agent_pos3 != init_state[0]
 
+                    if done:
+                        self.reset()
+
                     if at_new_cell:
-                        return self._obs_to_prop_str(obs, *init_state[0])
+                        obs_str = self._obs_to_prop_str(obs, *init_state[0])
+                        self.reset()
+                        return obs_str
 
         msg = f'No actions allow the agent to make any progress in the env.'
         raise ValueError(msg)
@@ -1078,13 +1090,15 @@ class LavaComparison(MiniGridEnv):
         height=10,
         agent_start_pos=(3, 5),
         agent_start_dir=0,
-        drying_off_task=False
+        drying_off_task=False,
+        path_only_through_water=False
     ):
         self.agent_start_pos = agent_start_pos
         self.agent_start_dir = agent_start_dir
         self.goal_pos = [(1, 1), (1, 8), (8, 8)]
         self.drying_off_task = drying_off_task
         self.directionless_agent = False
+        self.path_only_through_water = path_only_through_water
 
         super().__init__(
             width=width,
@@ -1108,7 +1122,10 @@ class LavaComparison(MiniGridEnv):
         for goal_pos in self.goal_pos:
             self.put_obj(Floor(color='green'), *goal_pos)
 
-        self.put_obj(Floor(color='blue'), 8, 1)
+        if self.drying_off_task:
+            self.put_obj(Floor(color='green'), 8, 1)
+        else:
+            self.put_obj(Floor(color='blue'), 8, 1)
 
         # left Lava block
         self.put_obj(Lava(), 1, 3)
@@ -1132,6 +1149,34 @@ class LavaComparison(MiniGridEnv):
         self.put_obj(Lava(), 7, 7)
         self.put_obj(Lava(), 7, 8)
 
+        # place the water
+        if self.drying_off_task:
+
+            if self.path_only_through_water:
+                self.put_obj(Lava(), 3, 3)
+                self.put_obj(Lava(), 6, 3)
+
+            self.put_obj(Floor(color='blue'), 4, 6)
+            self.put_obj(Floor(color='blue'), 4, 5)
+            self.put_obj(Floor(color='blue'), 4, 4)
+            self.put_obj(Floor(color='blue'), 4, 3)
+            self.put_obj(Floor(color='blue'), 5, 6)
+            self.put_obj(Floor(color='blue'), 5, 5)
+            self.put_obj(Floor(color='blue'), 5, 4)
+            self.put_obj(Floor(color='blue'), 5, 3)
+
+            # bottom carpet
+            self.put_obj(Floor(color='yellow'), 3, 1)
+            self.put_obj(Floor(color='yellow'), 4, 1)
+            self.put_obj(Floor(color='yellow'), 5, 1)
+            self.put_obj(Floor(color='yellow'), 6, 1)
+
+            # top carpet
+            self.put_obj(Floor(color='yellow'), 3, 8)
+            self.put_obj(Floor(color='yellow'), 4, 8)
+            self.put_obj(Floor(color='yellow'), 5, 8)
+            self.put_obj(Floor(color='yellow'), 6, 8)
+
         # Place the agent
         if self.agent_start_pos is not None:
             self.agent_pos = self.agent_start_pos
@@ -1147,7 +1192,27 @@ class LavaComparison_noDryingOff(LavaComparison):
         super().__init__(drying_off_task=False)
 
 
+class LavaComparison_seshia(LavaComparison):
+    def __init__(self):
+        super().__init__(drying_off_task=True)
+
+
+class LavaComparison_SeshiaOnlyWaterPath(LavaComparison):
+    def __init__(self):
+        super().__init__(drying_off_task=True, path_only_through_water=True)
+
+
 register(
     id='MiniGrid-LavaComparison_noDryingOff-v0',
     entry_point='wombats.systems.minigrid:LavaComparison_noDryingOff'
+)
+
+register(
+    id='MiniGrid-LavaComparison_seshia-v0',
+    entry_point='wombats.systems.minigrid:LavaComparison_seshia'
+)
+
+register(
+    id='MiniGrid-LavaComparison_SeshiaOnlyWaterPath-v0',
+    entry_point='wombats.systems.minigrid:LavaComparison_SeshiaOnlyWaterPath'
 )
