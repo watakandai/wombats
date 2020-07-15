@@ -727,7 +727,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         :returns:   the agent's grid cell position, the agent's direction index
         """
 
-        m = re.match(r'\(([\d]), ([\d])\), ([a-z]*)', state)
+        m = re.match(r'\(([\d]*), ([\d]*)\), ([a-z]*)', state)
 
         pos = (int(m.group(1)), int(m.group(2)))
         direction = self.DIR_TO_STRING.inv[m.group(3)]
@@ -772,9 +772,9 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         """
 
         state = self._get_state_str(pos, direction)
-
         color = self._get_state_obs_color(state)
         empty_cell_str = self._get_cell_str('empty', self.obs_str_idxs_map)
+
         if obs_str == empty_cell_str:
             color = 'gray'
         else:
