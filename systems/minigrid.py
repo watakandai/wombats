@@ -620,13 +620,13 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
                     agent_pos3, _ = self._get_agent_props()
                     at_new_cell = agent_pos3 != init_state[0]
 
-                    if done:
-                        self.reset()
-
                     if at_new_cell:
                         obs_str = self._obs_to_prop_str(obs, *init_state[0])
                         self.reset()
                         return obs_str
+
+                    if done:
+                        self.reset()
 
         msg = f'No actions allow the agent to make any progress in the env.'
         raise ValueError(msg)
@@ -665,9 +665,9 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
                 obj = obs[col_idx, row_idx][0]
 
                 is_agent = IDX_TO_OBJECT[obj] == 'agent'
-                # is_wall = IDX_TO_OBJECT[obj] == 'wall'
+                is_wall = IDX_TO_OBJECT[obj] == 'wall'
 
-                if not is_agent:
+                if not is_agent and not is_wall:
                     obs_str_idxs_map[obs_str] = tuple(obs[col_idx, row_idx])
                     cell_obs_map[obs_str].append((col_idx, row_idx))
                     cell_to_obs[(col_idx, row_idx)] = obs_str
