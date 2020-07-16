@@ -8,6 +8,7 @@ import multiprocessing
 import warnings
 import os
 import copy
+import queue
 from pathlib import Path
 from numpy.random import RandomState
 from joblib import Parallel, delayed
@@ -1158,11 +1159,17 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                     continue
 
                 curr_pred_nodes = list(self.predecessors(sink))
+                job_queue = queue.Queue()
                 for source in curr_pred_nodes:
                     edge_data = self.get_edge_data(source, sink).values()
                     old_edges = [(source, sink) for _ in edge_data]
                     new_edges = [(source, new_global_sink, data)
                                  for data in edge_data]
+
+                    job_queue.put((edge_data, old_edges, new_edges))
+
+                while not job_queue.empty():
+                    edge_data, old_edges, new_edges = job_queue.get()
 
                     self.remove_edges_from(old_edges)
                     self.remove_nodes_from([edge[1] for edge in old_edges])
