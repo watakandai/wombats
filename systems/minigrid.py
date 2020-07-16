@@ -1418,6 +1418,65 @@ class AlternateLavaComparison(MiniGridEnv):
                        'must dry off if you get wet'
 
 
+class MyDistShift(MiniGridEnv):
+    """
+    Customized distributional shift environment.
+    """
+
+    def __init__(
+        self,
+        width=6,
+        height=5,
+        agent_start_pos=(1, 1),
+        agent_start_dir=0,
+        strip2_row=3
+    ):
+        self.agent_start_pos = agent_start_pos
+        self.agent_start_dir = agent_start_dir
+        self.goal_1_pos = (width - 2, 1)
+        self.goal_2_pos = (width - 2, height - 2)
+        self.strip2_row = strip2_row
+
+        self.directionless_agent = False
+
+        super().__init__(
+            width=width,
+            height=height,
+            max_steps=4 * width * height,
+            # Set this to True for maximum speed
+            see_through_walls=True
+        )
+
+    def _gen_grid(self, width, height):
+
+        # create an empty grid with different types of agents
+        if self.directionless_agent:
+            self.grid = NoDirectionAgentGrid(width, height)
+        else:
+            self.grid = Grid(width, height)
+
+        # Generate the surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # Place the two goal squares in the bottom-right corner
+        self.put_obj(Floor(color='green'), *self.goal_1_pos)
+        self.put_obj(Floor(color='purple'), *self.goal_2_pos)
+
+        # Place the lava rows
+        for i in range(self.width - 4):
+            self.grid.set(2 + i, 1, Lava())
+            self.grid.set(2 + i, self.strip2_row, Lava())
+
+        # Place the agent
+        if self.agent_start_pos is not None:
+            self.agent_pos = self.agent_start_pos
+            self.agent_dir = self.agent_start_dir
+        else:
+            self.place_agent()
+
+        self.mission = "get to both the green and purple squares"
+
+
 class WorldObj:
     """
     Base class for grid world objects
@@ -1606,4 +1665,9 @@ register(
 register(
     id='MiniGrid-AlternateLavaComparison_OnlyWaterPath_Narrow-v0',
     entry_point='wombats.systems.minigrid:AlternateLavaComparison_OnlyWaterPath_Narrow'
+)
+
+register(
+    id='MiniGrid-MyDistShift-v0',
+    entry_point='wombats.systems.minigrid:MyDistShift'
 )
