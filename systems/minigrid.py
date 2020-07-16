@@ -110,15 +110,11 @@ class ModifyActionsWrapper(gym.core.Wrapper):
         southeast = 2
         southwest = 3
 
-    DIAG_ACTION_TO_SIMPLE_ACTIONS = {
-        DiagStaticActions.northeast: [SimpleStaticActions.north,
-                                      SimpleStaticActions.east],
-        DiagStaticActions.northwest: [SimpleStaticActions.north,
-                                      SimpleStaticActions.west],
-        DiagStaticActions.southeast: [SimpleStaticActions.south,
-                                      SimpleStaticActions.east],
-        DiagStaticActions.southwest: [SimpleStaticActions.south,
-                                      SimpleStaticActions.west]}
+    DIAG_ACTION_TO_POS_DELTA = {
+        DiagStaticActions.northeast: (1, -1),
+        DiagStaticActions.northwest: (-1, -1),
+        DiagStaticActions.southeast: (1, 1),
+        DiagStaticActions.southwest: (-1, 1)}
 
     # Enumeration of possible actions
     # as this is a static environment, we will only allow for movement actions
@@ -200,19 +196,19 @@ class ModifyActionsWrapper(gym.core.Wrapper):
         start_pos = base_env.agent_pos
 
         # a diagonal action is really just two simple actions :)
-        actions = ModifyActionsWrapper.DIAG_ACTION_TO_SIMPLE_ACTIONS[action]
-        for simple_action in actions:
-            step_done, step_reward = self._step_simple_static(simple_action)
+        pos_delta = ModifyActionsWrapper.DIAG_ACTION_TO_POS_DELTA[action]
 
-            # check if you bounced off a wall with the first part of the
-            # intercardinal movement. If so, just stop, you can't move
-            new_pos = base_env.agent_pos
-            if tuple(start_pos) == tuple(new_pos):
-                break
+        # Get the contents of the new cell of the agent
+        new_pos = tuple(np.add(start_pos, pos_delta))
+        new_cell = base_env.grid.get(*new_pos)
 
-            # update the done and reward
-            done = done or step_done
-            reward += step_reward
+        if new_cell is None or new_cell.can_overlap():
+            base_env.agent_pos = new_pos
+        if new_cell is not None and new_cell.type == 'goal':
+            done = True
+            reward = base_env._reward()
+        if new_cell is not None and new_cell.type == 'lava':
+            done = True
 
         return done, reward
 
