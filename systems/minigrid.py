@@ -1,8 +1,9 @@
-from gym_minigrid.minigrid import MiniGridEnv, Grid, Lava, Floor, Wall
+from gym_minigrid.minigrid import (MiniGridEnv, Grid, Lava, Floor,
+                                   Ball, Key, Door, Goal, Wall, Box)
 from gym_minigrid.wrappers import (ReseedWrapper, FullyObsWrapper,
                                    ViewSizeWrapper)
-from gym_minigrid.minigrid import (IDX_TO_COLOR, IDX_TO_OBJECT, STATE_TO_IDX,
-                                   OBJECT_TO_IDX, TILE_PIXELS)
+from gym_minigrid.minigrid import (IDX_TO_COLOR, STATE_TO_IDX,
+                                   TILE_PIXELS, COLORS, COLOR_TO_IDX)
 from gym_minigrid.register import register
 from gym_minigrid.rendering import (point_in_rect, point_in_circle,
                                     fill_coords, highlight_img, downsample)
@@ -41,6 +42,24 @@ MINIGRID_TO_GRAPHVIZ_COLOR = {'red': 'firebrick',
                               'purple': 'mediumpurple1',
                               'yellow': 'yellow',
                               'grey': 'gray60'}
+
+# Map of object type to integers
+OBJECT_TO_IDX = {
+    'unseen': 0,
+    'empty': 1,
+    'wall': 2,
+    'floor': 3,
+    'door': 4,
+    'key': 5,
+    'ball': 6,
+    'box': 7,
+    'goal': 8,
+    'lava': 9,
+    'agent': 10,
+    'carpet': 11,
+    'water': 12,
+}
+IDX_TO_OBJECT = dict(zip(OBJECT_TO_IDX.values(), OBJECT_TO_IDX.keys()))
 
 GYM_MONITOR_LOG_DIR_NAME = 'minigrid_env_logs'
 
@@ -1370,6 +1389,126 @@ class AlternateLavaComparison(MiniGridEnv):
 
         self.mission = 'get to a green goal squares, don"t touch lava, ' + \
                        'must dry off if you get wet'
+
+
+class WorldObj:
+    """
+    Base class for grid world objects
+    """
+
+    def __init__(self, type, color):
+        assert type in OBJECT_TO_IDX, type
+        assert color in COLOR_TO_IDX, color
+        self.type = type
+        self.color = color
+        self.contains = None
+
+        # Initial position of the object
+        self.init_pos = None
+
+        # Current position of the object
+        self.cur_pos = None
+
+    def can_overlap(self):
+        """Can the agent overlap with this?"""
+        return False
+
+    def can_pickup(self):
+        """Can the agent pick this up?"""
+        return False
+
+    def can_contain(self):
+        """Can this contain another object?"""
+        return False
+
+    def see_behind(self):
+        """Can the agent see behind this object?"""
+        return True
+
+    def toggle(self, env, pos):
+        """Method to trigger/toggle an action this object performs"""
+        return False
+
+    def encode(self):
+        """Encode the a description of this object as a 3-tuple of integers"""
+        return (OBJECT_TO_IDX[self.type], COLOR_TO_IDX[self.color], 0)
+
+    @staticmethod
+    def decode(type_idx, color_idx, state):
+        """Create an object from a 3-tuple state description"""
+
+        obj_type = IDX_TO_OBJECT[type_idx]
+        color = IDX_TO_COLOR[color_idx]
+
+        if obj_type == 'empty' or obj_type == 'unseen':
+            return None
+
+        # State, 0: open, 1: closed, 2: locked
+        is_open = state == 0
+        is_locked = state == 2
+
+        if obj_type == 'wall':
+            v = Wall(color)
+        elif obj_type == 'floor':
+            v = Floor(color)
+        elif obj_type == 'ball':
+            v = Ball(color)
+        elif obj_type == 'key':
+            v = Key(color)
+        elif obj_type == 'box':
+            v = Box(color)
+        elif obj_type == 'door':
+            v = Door(color, is_open, is_locked)
+        elif obj_type == 'goal':
+            v = Goal()
+        elif obj_type == 'lava':
+            v = Lava()
+        elif obj_type == 'carpet':
+            v = Carpet()
+        elif obj_type == 'water':
+            v = Water()
+        else:
+            assert False, "unknown object type in decode '%s'" % obj_type
+
+        return v
+
+    def render(self, r):
+        """Draw this object with the given renderer"""
+        raise NotImplementedError
+
+
+class Carpet(WorldObj):
+    """
+    Yellow carpet (floor) tile the agent can walk over
+    """
+
+    def __init__(self):
+        super().__init__('carpet', color='yellow')
+
+    def can_overlap(self):
+        return True
+
+    def render(self, img):
+        # Give the floor a pale color
+        color = COLORS[self.color] / 2
+        fill_coords(img, point_in_rect(0.031, 1, 0.031, 1), color)
+
+
+class Water(WorldObj):
+    """
+    A floor tile with water on it that the agent can walk over
+    """
+
+    def __init__(self):
+        super().__init__('water', color='blue')
+
+    def can_overlap(self):
+        return True
+
+    def render(self, img):
+        # Give the floor a pale color
+        color = COLORS[self.color] / 3
+        fill_coords(img, point_in_rect(0.031, 1, 0.031, 1), color)
 
 
 class LavaComparison_noDryingOff(LavaComparison):

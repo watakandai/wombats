@@ -52,7 +52,7 @@ edges:
 
     'q2':
       symbols:
-        - 'floor_blue_open'
+        - 'water_blue_open'
       probabilities:
         - 0.15
 
@@ -66,14 +66,14 @@ edges:
 
     'q0':
       symbols:
-        - 'floor_yellow_open'
+        - 'carpet_yellow_open'
       probabilities:
         - 0.2
 
     'q2':
       symbols:
         - 'empty_red_open'
-        - 'floor_blue_open'
+        - 'water_blue_open'
       probabilities:
         - 0.75
         - 0.05
