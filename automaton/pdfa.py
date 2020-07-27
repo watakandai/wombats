@@ -527,10 +527,10 @@ class PDFABuilder(Builder):
             # just choose a default value, FDFAs have no notion of acceptance
             # this at the moment
             beta=0.95,
-            alphabet_size=fdfa._alphabet_size,
-            num_states=fdfa._num_states,
-            final_transition_sym=fdfa._final_transition_sym,
-            empty_transition_sym=fdfa._empty_transition_sym,
+            alphabet_size=fdfa.alphabet_size,
+            num_states=fdfa.num_states,
+            final_transition_sym=fdfa.final_transition_sym,
+            empty_transition_sym=fdfa.empty_transition_sym,
             start_state=fdfa.start_state,
             smooth_transitions=smooth_transitions,
             smoothing_amount=smoothing_amount,

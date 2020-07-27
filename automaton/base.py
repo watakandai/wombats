@@ -163,19 +163,19 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """bidirectional mapping from symbol labels to an int index in
            transition dists."""
 
-        self._alphabet_size = alphabet_size
+        self.alphabet_size = alphabet_size
         """number of symbols in automaton alphabet"""
 
-        self._num_states = num_states
+        self.num_states = num_states
         """number of states in automaton state space"""
 
-        self._num_obs = num_obs
+        self.num_obs = num_obs
         """number of state observations in TS obs. space"""
 
-        self._final_transition_sym = final_transition_sym
+        self.final_transition_sym = final_transition_sym
         """representation of the termination symbol"""
 
-        self._empty_transition_sym = empty_transition_sym
+        self.empty_transition_sym = empty_transition_sym
         """symbol to use as the empty (a.k.a. lambda) symbol"""
 
         self.start_state = start_state
@@ -211,7 +211,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
            Defaults to true and is falsified later during initialization."""
 
         self._transition_matrices = dict()
-        """a dict (keyed on symbol) of (_num_states x _num_states)
+        """a dict (keyed on symbol) of (num_states x num_states)
            probabilistic transition matrix
            (NOT always a proper stochastic mat)"""
 
@@ -220,12 +220,12 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
            representation of the automaton"""
 
         self._initial_state_distribution: np.ndarray
-        """a (1 x _num_states) ndarray containing the pmf for the initial
+        """a (1 x num_states) ndarray containing the pmf for the initial
            starting state. For most machines, this simply the indicator
            function with a one at the index of the state"""
 
         self._final_state_distribution: np.ndarray
-        """a (_num_states x 1) ndarray containing the pmf for terminating
+        """a (num_states x 1) ndarray containing the pmf for terminating
            at each state's index."""
 
         self._automata_display_dir = os.path.join(
@@ -500,7 +500,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         sampled_trace = [next_symbol]
         curr_state = next_state
-        at_terminal_state = next_symbol == self._final_transition_sym
+        at_terminal_state = next_symbol == self.final_transition_sym
         trace_prob *= trans_probability
 
         while not at_terminal_state:
@@ -512,7 +512,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             curr_state = next_state
             trace_prob *= trans_probability
 
-            if next_symbol == self._final_transition_sym:
+            if next_symbol == self.final_transition_sym:
                 break
 
             sampled_trace.append(next_symbol)
@@ -598,7 +598,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         doesn't change on mutables.
         """
 
-        self._num_states += 1
+        self.num_states += 1
 
         return super(nx.MultiDiGraph, self).add_node(node_for_adding, **attr)
 
@@ -692,7 +692,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         # if the empty symbol isn't allowed to be in the MPS, then we should
         # remove it from all of the viable symbols before we even start the
         # search
-        empty_symbol = self._empty_transition_sym
+        empty_symbol = self.empty_transition_sym
         if allow_empty_symbol:
             symbols = [symbol for symbol in self.symbols]
         else:
@@ -774,7 +774,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :returns:   The BMPS_exact parameters dict.
         """
 
-        empty_symbol = self._empty_transition_sym
+        empty_symbol = self.empty_transition_sym
         empty_sym_idx = self._symbol_display_map[empty_symbol]
 
         # numba pre-processing
@@ -782,9 +782,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                        for symbol in symbols]
 
         trans_mat_dict = self._transition_matrices
-        num_states = self._num_states
-        trans_mat = np.empty((num_states, num_states,
-                              self._alphabet_size))
+        num_states = self.num_states
+        trans_mat = np.empty((num_states, num_states, self.alphabet_size))
 
         min_string_prob = min_string_probability
 
@@ -820,7 +819,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                   'M': trans_mat,
                   'S': S,
                   'F': F,
-                  'd': self._num_states,
+                  'd': self.num_states,
                   'empty_symbol': empty_sym_idx,
                   'min_string_prob': min_string_prob,
                   'max_string_length': max_string_length,
@@ -1076,30 +1075,30 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             self.symbols.add(symbol)
             self.state_labels.add(state)
 
-        # _final_transition_sym is just an internal not user-facing symbol
-        if self._final_transition_sym in self.symbols:
-            self.symbols.remove(self._final_transition_sym)
+        # final_transition_sym is just an internal not user-facing symbol
+        if self.final_transition_sym in self.symbols:
+            self.symbols.remove(self.final_transition_sym)
 
         # if we used smoothing, these might be larger, so we should expand them
-        self._alphabet_size = len(self.symbols)
-        self._num_states = len(self.state_labels)
+        self.alphabet_size = len(self.symbols)
+        self.num_states = len(self.state_labels)
 
         # not all automaton have observations, and this needs to be computed
         # after self.state_labels exists
-        if self._num_obs is not None:
+        if self.num_obs is not None:
 
             for state in self.state_labels:
                 self.observations.add(self.observe(state))
 
             N_actual_obs = len(self.observations)
-            if N_actual_obs != self._num_obs:
-                msg = f'given num_obs ({self._num_obs}) ' + \
+            if N_actual_obs != self.num_obs:
+                msg = f'given num_obs ({self.num_obs}) ' + \
                       f'is different than the actual number of unique ' + \
                       f'observations seen ({N_actual_obs}) in the given ' + \
                       f'graph data. proceeding using ' + \
-                      f'self._num_obs = {N_actual_obs}.'
+                      f'self.num_obs = {N_actual_obs}.'
                 warnings.warn(msg, RuntimeWarning)
-            self._num_obs = N_actual_obs
+            self.num_obs = N_actual_obs
 
         # wait until all node computations are done to make the vectorized rep.
         if self.is_stochastic:
@@ -1268,7 +1267,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         original_edge_symbols = [edge[2]['symbol'] for edge in edge_data]
         edge_symbols = [self._symbol_display_map[symbol] for symbol in
                         original_edge_symbols]
-        final_sym = self._final_transition_sym
+        final_sym = self.final_transition_sym
         final_trans_symbol_idx = self._symbol_display_map[final_sym]
 
         if stochastic:
@@ -1404,7 +1403,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
             # distribution over all possible symbols, except for the
             # "termination" symbol - violating state never terminates.
             if dest_state == curr_state:
-                prob_to_add = 1.0 / self._alphabet_size
+                prob_to_add = 1.0 / self.alphabet_size
             else:
                 prob_to_add = 0.0
 
@@ -1470,7 +1469,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         """
 
         start_state_index = node_index_map[self.start_state]
-        initial_state_distribution = np.zeros(shape=(1, self._num_states))
+        initial_state_distribution = np.zeros(shape=(1, self.num_states))
         initial_state_distribution[0, start_state_index] = 1.0
 
         return initial_state_distribution
@@ -1487,7 +1486,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                     distribution of terminating at each state's index
         """
 
-        final_state_distribution = np.zeros(shape=(self._num_states, 1))
+        final_state_distribution = np.zeros(shape=(self.num_states, 1))
 
         for node, node_index in node_index_map.items():
             final_prob = self._get_node_data(node, 'final_probability')
@@ -1523,7 +1522,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         transition_matrices = dict()
 
         for symbol in self.symbols:
-            A = np.full((self._num_states, self._num_states), np.nan)
+            A = np.full((self.num_states, self.num_states), np.nan)
             transition_matrices[symbol] = copy.deepcopy(A)
 
         for u, v, attrs in self.edges(data=True):
@@ -1941,7 +1940,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
             # final transitions are handled by the node's final probability,
             # so don't manually add these transitions
-            if not symbol == self._final_transition_sym:
+            if not symbol == self.final_transition_sym:
                 edge_data = {'symbol': symbol, 'probability': prob}
                 new_edges.append((curr_state, dest_state, edge_data))
 
