@@ -454,11 +454,11 @@ class Product(Automaton):
 
         initialization_state = 'x_init'
 
-        spec_empty_symbol = specification._empty_transition_sym
+        spec_empty_symbol = specification.empty_transition_sym
         initialization_state_props = {'observation': spec_empty_symbol}
         if spec_empty_symbol not in dynamical_system.observations:
             dynamical_system.observations.add(spec_empty_symbol)
-            dynamical_system._num_obs += 1
+            dynamical_system.num_obs += 1
 
         dynamical_system.add_node(initialization_state,
                                   **initialization_state_props)
@@ -719,9 +719,9 @@ class Product(Automaton):
 
         config_data = {}
 
-        final_sym = dynamical_system._final_transition_sym
+        final_sym = dynamical_system.final_transition_sym
         config_data['final_transition_sym'] = final_sym
-        empty_sym = dynamical_system._empty_transition_sym
+        empty_sym = dynamical_system.empty_transition_sym
         config_data['empty_transition_sym'] = empty_sym
 
         # can directly compute these from the graph data

@@ -3,10 +3,10 @@
 beta: 0.90
 
 # number of symbols in pdfa alphabet
-alphabet_size: 4
+alphabet_size: 3
 
 # number of states in pdfa state space
-num_states: 3
+num_states: 4
 
 # symbol to use as the transition to a final state
 final_transition_sym: '$'
@@ -15,7 +15,7 @@ final_transition_sym: '$'
 empty_transition_sym: 'lambda'
 
 # unique start state string label of pdfa
-start_state: 'q0'
+start_state: 'q2'
 
 # whether or not to smooth the input sym. transition distributions
 smooth_transitions: False
@@ -25,16 +25,21 @@ smooth_transitions: False
 nodes:
 
   'q0':
-    final_probability: 0.00
-    trans_distribution: null
-    is_accepting: null
-
-  'q1':
     final_probability: 1.00
     trans_distribution: null
     is_accepting: null
 
+  'q1':
+    final_probability: 0.00
+    trans_distribution: null
+    is_accepting: null
+
   'q2':
+    final_probability: 0.00
+    trans_distribution: null
+    is_accepting: null
+
+  'q3':
     final_probability: 0.00
     trans_distribution: null
     is_accepting: null
@@ -42,40 +47,52 @@ nodes:
 # define the edges of the graph
 edges:
 
-  'q0':
+  'q2':
 
-    'q0':
+    'q2':
       symbols:
         - 'empty_red_open'
       probabilities:
         - 0.8
 
-    'q2':
+    'q1':
       symbols:
-        - 'water_blue_open'
+        - 'floor_purple_open'
       probabilities:
         - 0.15
 
-    'q1':
+    'q3':
       symbols:
         - 'floor_green_open'
       probabilities:
         - 0.05
 
-  'q2':
+  'q1':
 
     'q0':
       symbols:
-        - 'carpet_yellow_open'
+        - 'floor_green_open'
       probabilities:
         - 0.2
 
-    'q2':
+    'q1':
       symbols:
         - 'empty_red_open'
-        - 'water_blue_open'
       probabilities:
-        - 0.75
-        - 0.05
+        - 0.8
 
-  'q1':
+  'q3':
+
+    'q3':
+      symbols:
+        - 'empty_red_open'
+      probabilities:
+        - 0.8
+
+    'q0':
+      symbols:
+        - 'floor_purple_open'
+      probabilities:
+        - 0.2
+
+  'q0':

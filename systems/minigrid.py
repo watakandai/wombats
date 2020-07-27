@@ -1,8 +1,9 @@
-from gym_minigrid.minigrid import MiniGridEnv, Grid, Lava, Floor, Wall
+from gym_minigrid.minigrid import (MiniGridEnv, Grid, Lava, Floor,
+                                   Ball, Key, Door, Goal, Wall, Box)
 from gym_minigrid.wrappers import (ReseedWrapper, FullyObsWrapper,
                                    ViewSizeWrapper)
-from gym_minigrid.minigrid import (IDX_TO_COLOR, IDX_TO_OBJECT, STATE_TO_IDX,
-                                   OBJECT_TO_IDX, TILE_PIXELS)
+from gym_minigrid.minigrid import (IDX_TO_COLOR, STATE_TO_IDX,
+                                   TILE_PIXELS, COLORS, COLOR_TO_IDX)
 from gym_minigrid.register import register
 from gym_minigrid.rendering import (point_in_rect, point_in_circle,
                                     fill_coords, highlight_img, downsample)
@@ -41,6 +42,24 @@ MINIGRID_TO_GRAPHVIZ_COLOR = {'red': 'firebrick',
                               'purple': 'mediumpurple1',
                               'yellow': 'yellow',
                               'grey': 'gray60'}
+
+# Map of object type to integers
+OBJECT_TO_IDX = {
+    'unseen': 0,
+    'empty': 1,
+    'wall': 2,
+    'floor': 3,
+    'door': 4,
+    'key': 5,
+    'ball': 6,
+    'box': 7,
+    'goal': 8,
+    'lava': 9,
+    'agent': 10,
+    'carpet': 11,
+    'water': 12,
+}
+IDX_TO_OBJECT = dict(zip(OBJECT_TO_IDX.values(), OBJECT_TO_IDX.keys()))
 
 GYM_MONITOR_LOG_DIR_NAME = 'minigrid_env_logs'
 
@@ -91,15 +110,11 @@ class ModifyActionsWrapper(gym.core.Wrapper):
         southeast = 2
         southwest = 3
 
-    DIAG_ACTION_TO_SIMPLE_ACTIONS = {
-        DiagStaticActions.northeast: [SimpleStaticActions.north,
-                                      SimpleStaticActions.east],
-        DiagStaticActions.northwest: [SimpleStaticActions.north,
-                                      SimpleStaticActions.west],
-        DiagStaticActions.southeast: [SimpleStaticActions.south,
-                                      SimpleStaticActions.east],
-        DiagStaticActions.southwest: [SimpleStaticActions.south,
-                                      SimpleStaticActions.west]}
+    DIAG_ACTION_TO_POS_DELTA = {
+        DiagStaticActions.northeast: (1, -1),
+        DiagStaticActions.northwest: (-1, -1),
+        DiagStaticActions.southeast: (1, 1),
+        DiagStaticActions.southwest: (-1, 1)}
 
     # Enumeration of possible actions
     # as this is a static environment, we will only allow for movement actions
@@ -181,19 +196,19 @@ class ModifyActionsWrapper(gym.core.Wrapper):
         start_pos = base_env.agent_pos
 
         # a diagonal action is really just two simple actions :)
-        actions = ModifyActionsWrapper.DIAG_ACTION_TO_SIMPLE_ACTIONS[action]
-        for simple_action in actions:
-            step_done, step_reward = self._step_simple_static(simple_action)
+        pos_delta = ModifyActionsWrapper.DIAG_ACTION_TO_POS_DELTA[action]
 
-            # check if you bounced off a wall with the first part of the
-            # intercardinal movement. If so, just stop, you can't move
-            new_pos = base_env.agent_pos
-            if tuple(start_pos) == tuple(new_pos):
-                break
+        # Get the contents of the new cell of the agent
+        new_pos = tuple(np.add(start_pos, pos_delta))
+        new_cell = base_env.grid.get(*new_pos)
 
-            # update the done and reward
-            done = done or step_done
-            reward += step_reward
+        if new_cell is None or new_cell.can_overlap():
+            base_env.agent_pos = new_pos
+        if new_cell is not None and new_cell.type == 'goal':
+            done = True
+            reward = base_env._reward()
+        if new_cell is not None and new_cell.type == 'lava':
+            done = True
 
         return done, reward
 
@@ -605,13 +620,13 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
                     agent_pos3, _ = self._get_agent_props()
                     at_new_cell = agent_pos3 != init_state[0]
 
-                    if done:
-                        self.reset()
-
                     if at_new_cell:
                         obs_str = self._obs_to_prop_str(obs, *init_state[0])
                         self.reset()
                         return obs_str
+
+                    if done:
+                        self.reset()
 
         msg = f'No actions allow the agent to make any progress in the env.'
         raise ValueError(msg)
@@ -650,9 +665,9 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
                 obj = obs[col_idx, row_idx][0]
 
                 is_agent = IDX_TO_OBJECT[obj] == 'agent'
-                # is_wall = IDX_TO_OBJECT[obj] == 'wall'
+                is_wall = IDX_TO_OBJECT[obj] == 'wall'
 
-                if not is_agent:
+                if not is_agent and not is_wall:
                     obs_str_idxs_map[obs_str] = tuple(obs[col_idx, row_idx])
                     cell_obs_map[obs_str].append((col_idx, row_idx))
                     cell_to_obs[(col_idx, row_idx)] = obs_str
@@ -1189,15 +1204,15 @@ class LavaComparison(MiniGridEnv):
         if self.drying_off_task:
             self.put_obj(Floor(color='green'), 8, 1)
         else:
-            self.put_obj(Floor(color='blue'), 8, 1)
+            self.put_obj(Water(), 8, 1)
 
-        # left Lava block
+        # top left Lava block
         self.put_obj(Lava(), 1, 3)
         self.put_obj(Lava(), 1, 4)
         self.put_obj(Lava(), 2, 3)
         self.put_obj(Lava(), 2, 4)
 
-        # right Lava block
+        # top right Lava block
         self.put_obj(Lava(), 7, 3)
         self.put_obj(Lava(), 7, 4)
         self.put_obj(Lava(), 8, 3)
@@ -1208,38 +1223,50 @@ class LavaComparison(MiniGridEnv):
         self.put_obj(Lava(), 2, 7)
         self.put_obj(Lava(), 2, 8)
 
-        # bottom right Lava blocking goal
-        self.put_obj(Lava(), 8, 7)
-        self.put_obj(Lava(), 7, 7)
-        self.put_obj(Lava(), 7, 8)
-
         # place the water
         if self.drying_off_task:
-
             if self.path_only_through_water:
+                # new top left
                 self.put_obj(Lava(), 3, 3)
-                self.put_obj(Lava(), 6, 3)
+                self.put_obj(Lava(), 1, 2)
+                self.put_obj(Lava(), 2, 2)
+                self.put_obj(Lava(), 2, 1)
 
-            self.put_obj(Floor(color='blue'), 4, 6)
-            self.put_obj(Floor(color='blue'), 4, 5)
-            self.put_obj(Floor(color='blue'), 4, 4)
-            self.put_obj(Floor(color='blue'), 4, 3)
-            self.put_obj(Floor(color='blue'), 5, 6)
-            self.put_obj(Floor(color='blue'), 5, 5)
-            self.put_obj(Floor(color='blue'), 5, 4)
-            self.put_obj(Floor(color='blue'), 5, 3)
+                # new top right
+                self.put_obj(Lava(), 6, 3)
+                self.put_obj(Lava(), 7, 2)
+                self.put_obj(Lava(), 8, 2)
+                self.put_obj(Lava(), 7, 1)
+
+            self.put_obj(Water(), 4, 6)
+            self.put_obj(Water(), 4, 5)
+            self.put_obj(Water(), 4, 4)
+            self.put_obj(Water(), 4, 3)
+            self.put_obj(Water(), 5, 6)
+            self.put_obj(Water(), 5, 5)
+            self.put_obj(Water(), 5, 4)
+            self.put_obj(Water(), 5, 3)
 
             # bottom carpet
-            self.put_obj(Floor(color='yellow'), 3, 1)
-            self.put_obj(Floor(color='yellow'), 4, 1)
-            self.put_obj(Floor(color='yellow'), 5, 1)
-            self.put_obj(Floor(color='yellow'), 6, 1)
+            self.put_obj(Carpet(), 3, 1)
+            self.put_obj(Carpet(), 4, 1)
+            self.put_obj(Carpet(), 5, 1)
+            self.put_obj(Carpet(), 6, 1)
 
             # top carpet
-            self.put_obj(Floor(color='yellow'), 3, 8)
-            self.put_obj(Floor(color='yellow'), 4, 8)
-            self.put_obj(Floor(color='yellow'), 5, 8)
-            self.put_obj(Floor(color='yellow'), 6, 8)
+            self.put_obj(Carpet(), 3, 8)
+            self.put_obj(Carpet(), 4, 8)
+            self.put_obj(Carpet(), 5, 8)
+            self.put_obj(Carpet(), 6, 8)
+
+        if self.path_only_through_water:
+            # opened up bottom right Lava blocking goal
+            self.put_obj(Lava(), 6, 7)
+        else:
+            # bottom right Lava blocking goal
+            self.put_obj(Lava(), 8, 7)
+            self.put_obj(Lava(), 7, 7)
+            self.put_obj(Lava(), 7, 8)
 
         # Place the agent
         if self.agent_start_pos is not None:
@@ -1259,22 +1286,30 @@ class AlternateLavaComparison(MiniGridEnv):
 
     def __init__(
         self,
-        width=16,
-        height=9,
-        agent_start_pos=(1, 7),
-        agent_start_dir=0,
+        narrow=False,
         path_only_through_water=False
     ):
-        self.agent_start_pos = agent_start_pos
-        self.agent_start_dir = agent_start_dir
-        self.goal_pos = (6, 10)
-        self.directionless_agent = False
+
+        self.width = 20
+
+        if narrow:
+            self.corridor_size = 1
+            self.height = 9
+        else:
+            self.corridor_size = 2
+            self.height = 13
+
+        self.agent_start_pos = (2, self.height - 2)
+        self.agent_start_dir = 0
+        self.num_empty_left_side_cells = 2 * self.corridor_size
         self.path_only_through_water = path_only_through_water
 
+        self.directionless_agent = False
+
         super().__init__(
-            width=width,
-            height=height,
-            max_steps=4 * width * height,
+            width=self.width,
+            height=self.height,
+            max_steps=4 * self.width * self.height,
             # Set this to True for maximum speed
             see_through_walls=True
         )
@@ -1289,77 +1324,91 @@ class AlternateLavaComparison(MiniGridEnv):
         # Generate the surrounding walls
         self.grid.wall_rect(0, 0, width, height)
 
+        corridor_size = self.corridor_size
+        wall = 1
+        first_empty_col = wall
+        first_empty_row = wall
+        last_empty_col = self.width - (wall * 2)
+        last_empty_row = self.height - (wall * 2)
+        num_empty_left_side_cells = self.num_empty_left_side_cells
+
+        # place the water blocks by flooding the whole area
+        water_start_row = 2 * wall + corridor_size
+        water_end_row = last_empty_row
+        water_col_start = first_empty_col + num_empty_left_side_cells + wall
+        corridor_base_len = self.width - water_col_start - wall - corridor_size
+
+        for row in range(water_start_row, water_end_row + 1):
+            if row < water_end_row - 1:
+                self.grid.horz_wall(water_col_start, row,
+                                    length=corridor_base_len - 1,
+                                    obj_type=Water)
+            else:
+                self.grid.horz_wall(water_col_start, row,
+                                    length=corridor_base_len - 1 - 1,
+                                    obj_type=Water)
+
         # generate the horiz. corridor walls
-        horiz_wall_rows = [2, 4, 6]
-        horiz_wall_cols = [range(5, 13), range(5, 12), range(6, 13)]
-        for row, col_range in zip(horiz_wall_rows, horiz_wall_cols):
-            for col in col_range:
-                self.put_obj(Wall(), col, row)
+        water_corridor_bottom_row = (2 * corridor_size) + wall
+
+        middle_wall_length = corridor_base_len - corridor_size - wall
+        bottom_wall_length = corridor_base_len - corridor_size - wall
+
+        top_wall_row = water_corridor_bottom_row - corridor_size
+        middle_wall_row = top_wall_row + corridor_size + wall
+        bottom_wall_row = middle_wall_row + corridor_size + wall
+
+        self.grid.horz_wall(water_col_start, top_wall_row,
+                            length=corridor_base_len - 1)
+        self.grid.horz_wall(water_col_start + wall, middle_wall_row,
+                            length=middle_wall_length - 1)
+        self.grid.horz_wall(water_col_start + corridor_size + wall,
+                            bottom_wall_row,
+                            length=bottom_wall_length - 1)
 
         # generate the vert. corridor walls
-        horiz_wall_cols = [4, 13]
-        horiz_wall_rows = [range(4, 8), range(2, 7)]
-        for col, row_range in zip(horiz_wall_cols, horiz_wall_rows):
-            for row in row_range:
-                self.put_obj(Wall(), col, row)
+        left_vert_wall_col = water_col_start
+        right_vert_wall_col = last_empty_col - corridor_size - wall
+        right_vert_wall_length = bottom_wall_row - top_wall_row + 2 * wall
 
-        # Place a goal square in the bottom-right corner
-        # self.put_obj(Floor(color='green'), *self.goal_pos)
+        self.grid.vert_wall(left_vert_wall_col, middle_wall_row)
+        self.grid.vert_wall(right_vert_wall_col + wall, top_wall_row,
+                            length=right_vert_wall_length - 1)
 
-        # if self.drying_off_task:
-        #     self.put_obj(Floor(color='green'), 8, 1)
-        # else:
-        #     self.put_obj(Floor(color='blue'), 8, 1)
+        # place the carpet square
+        # carpet_col = water_col_start + corridor_base_len - 1
+        # carpet_row = water_end_row
+        carpet_col = water_col_start + corridor_base_len + wall
+        carpet_row = middle_wall_row
+        self.put_obj(Carpet(), carpet_col, carpet_row)
 
-        # # left Lava block
-        # self.put_obj(Lava(), 1, 3)
-        # self.put_obj(Lava(), 1, 4)
-        # self.put_obj(Lava(), 2, 3)
-        # self.put_obj(Lava(), 2, 4)
+        # place a recharge square in the bottom-right corner
+        # goal_col, goal_row = (carpet_col + 2), carpet_row
+        goal_col, goal_row = (carpet_col), water_end_row
+        self.put_obj(Floor(color='green'), goal_col, goal_row)
 
-        # # right Lava block
-        # self.put_obj(Lava(), 7, 3)
-        # self.put_obj(Lava(), 7, 4)
-        # self.put_obj(Lava(), 8, 3)
-        # self.put_obj(Lava(), 8, 4)
+        # lava blocks
+        lava_start_col = first_empty_col + corridor_size
+        lava_end_col = left_vert_wall_col - corridor_size
+        lava_length = right_vert_wall_length - wall
+        lava_start_row = top_wall_row
 
-        # # bottom left Lava blocking goal
-        # self.put_obj(Lava(), 1, 7)
-        # self.put_obj(Lava(), 2, 7)
-        # self.put_obj(Lava(), 2, 8)
+        for col in range(lava_start_col, lava_end_col):
+            self.grid.vert_wall(col, lava_start_row, length=lava_length - 1,
+                                obj_type=Lava)
 
-        # # bottom right Lava blocking goal
-        # self.put_obj(Lava(), 8, 7)
-        # self.put_obj(Lava(), 7, 7)
-        # self.put_obj(Lava(), 7, 8)
+        # blocking the route around the maze if we want to force the agent
+        # through water
+        if self.path_only_through_water:
+            new_lava_start_col = lava_start_col
+            new_lava_end_col = left_vert_wall_col
+            new_lava_start_row = first_empty_row
+            new_lava_end_row = corridor_size
+            new_lava_length = new_lava_end_col - new_lava_start_row + 1
 
-        # # place the water
-        # if self.drying_off_task:
-
-        #     if self.path_only_through_water:
-        #         self.put_obj(Lava(), 3, 3)
-        #         self.put_obj(Lava(), 6, 3)
-
-        #     self.put_obj(Floor(color='blue'), 4, 6)
-        #     self.put_obj(Floor(color='blue'), 4, 5)
-        #     self.put_obj(Floor(color='blue'), 4, 4)
-        #     self.put_obj(Floor(color='blue'), 4, 3)
-        #     self.put_obj(Floor(color='blue'), 5, 6)
-        #     self.put_obj(Floor(color='blue'), 5, 5)
-        #     self.put_obj(Floor(color='blue'), 5, 4)
-        #     self.put_obj(Floor(color='blue'), 5, 3)
-
-        #     # bottom carpet
-        #     self.put_obj(Floor(color='yellow'), 3, 1)
-        #     self.put_obj(Floor(color='yellow'), 4, 1)
-        #     self.put_obj(Floor(color='yellow'), 5, 1)
-        #     self.put_obj(Floor(color='yellow'), 6, 1)
-
-        #     # top carpet
-        #     self.put_obj(Floor(color='yellow'), 3, 8)
-        #     self.put_obj(Floor(color='yellow'), 4, 8)
-        #     self.put_obj(Floor(color='yellow'), 5, 8)
-        #     self.put_obj(Floor(color='yellow'), 6, 8)
+            for row in range(new_lava_start_row, new_lava_end_row + 1):
+                self.grid.horz_wall(new_lava_start_col, row,
+                                    length=new_lava_length - 1, obj_type=Lava)
 
         # Place the agent
         if self.agent_start_pos is not None:
@@ -1370,6 +1419,185 @@ class AlternateLavaComparison(MiniGridEnv):
 
         self.mission = 'get to a green goal squares, don"t touch lava, ' + \
                        'must dry off if you get wet'
+
+
+class MyDistShift(MiniGridEnv):
+    """
+    Customized distributional shift environment.
+    """
+
+    def __init__(
+        self,
+        width=6,
+        height=5,
+        agent_start_pos=(1, 1),
+        agent_start_dir=0,
+        strip2_row=3
+    ):
+        self.agent_start_pos = agent_start_pos
+        self.agent_start_dir = agent_start_dir
+        self.goal_1_pos = (width - 2, 1)
+        self.goal_2_pos = (width - 2, height - 2)
+        self.strip2_row = strip2_row
+
+        self.directionless_agent = False
+
+        super().__init__(
+            width=width,
+            height=height,
+            max_steps=4 * width * height,
+            # Set this to True for maximum speed
+            see_through_walls=True
+        )
+
+    def _gen_grid(self, width, height):
+
+        # create an empty grid with different types of agents
+        if self.directionless_agent:
+            self.grid = NoDirectionAgentGrid(width, height)
+        else:
+            self.grid = Grid(width, height)
+
+        # Generate the surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # Place the two goal squares in the bottom-right corner
+        self.put_obj(Floor(color='green'), *self.goal_1_pos)
+        self.put_obj(Floor(color='purple'), *self.goal_2_pos)
+
+        # Place the lava rows
+        for i in range(self.width - 4):
+            self.grid.set(2 + i, 1, Lava())
+            self.grid.set(2 + i, self.strip2_row, Lava())
+
+        # Place the agent
+        if self.agent_start_pos is not None:
+            self.agent_pos = self.agent_start_pos
+            self.agent_dir = self.agent_start_dir
+        else:
+            self.place_agent()
+
+        self.mission = "get to both the green and purple squares"
+
+
+class WorldObj:
+    """
+    Base class for grid world objects
+    """
+
+    def __init__(self, type, color):
+        assert type in OBJECT_TO_IDX, type
+        assert color in COLOR_TO_IDX, color
+        self.type = type
+        self.color = color
+        self.contains = None
+
+        # Initial position of the object
+        self.init_pos = None
+
+        # Current position of the object
+        self.cur_pos = None
+
+    def can_overlap(self):
+        """Can the agent overlap with this?"""
+        return False
+
+    def can_pickup(self):
+        """Can the agent pick this up?"""
+        return False
+
+    def can_contain(self):
+        """Can this contain another object?"""
+        return False
+
+    def see_behind(self):
+        """Can the agent see behind this object?"""
+        return True
+
+    def toggle(self, env, pos):
+        """Method to trigger/toggle an action this object performs"""
+        return False
+
+    def encode(self):
+        """Encode the a description of this object as a 3-tuple of integers"""
+        return (OBJECT_TO_IDX[self.type], COLOR_TO_IDX[self.color], 0)
+
+    @staticmethod
+    def decode(type_idx, color_idx, state):
+        """Create an object from a 3-tuple state description"""
+
+        obj_type = IDX_TO_OBJECT[type_idx]
+        color = IDX_TO_COLOR[color_idx]
+
+        if obj_type == 'empty' or obj_type == 'unseen':
+            return None
+
+        # State, 0: open, 1: closed, 2: locked
+        is_open = state == 0
+        is_locked = state == 2
+
+        if obj_type == 'wall':
+            v = Wall(color)
+        elif obj_type == 'floor':
+            v = Floor(color)
+        elif obj_type == 'ball':
+            v = Ball(color)
+        elif obj_type == 'key':
+            v = Key(color)
+        elif obj_type == 'box':
+            v = Box(color)
+        elif obj_type == 'door':
+            v = Door(color, is_open, is_locked)
+        elif obj_type == 'goal':
+            v = Goal()
+        elif obj_type == 'lava':
+            v = Lava()
+        elif obj_type == 'carpet':
+            v = Carpet()
+        elif obj_type == 'water':
+            v = Water()
+        else:
+            assert False, "unknown object type in decode '%s'" % obj_type
+
+        return v
+
+    def render(self, r):
+        """Draw this object with the given renderer"""
+        raise NotImplementedError
+
+
+class Carpet(WorldObj):
+    """
+    Yellow carpet (floor) tile the agent can walk over
+    """
+
+    def __init__(self):
+        super().__init__('carpet', color='yellow')
+
+    def can_overlap(self):
+        return True
+
+    def render(self, img):
+        # Give the floor a pale color
+        color = COLORS[self.color] / 2
+        fill_coords(img, point_in_rect(0.031, 1, 0.031, 1), color)
+
+
+class Water(WorldObj):
+    """
+    A floor tile with water on it that the agent can walk over
+    """
+
+    def __init__(self):
+        super().__init__('water', color='blue')
+
+    def can_overlap(self):
+        return True
+
+    def render(self, img):
+        # Give the floor a pale color
+        color = COLORS[self.color] / 3
+        fill_coords(img, point_in_rect(0.031, 1, 0.031, 1), color)
 
 
 class LavaComparison_noDryingOff(LavaComparison):
@@ -1387,14 +1615,24 @@ class LavaComparison_SeshiaOnlyWaterPath(LavaComparison):
         super().__init__(drying_off_task=True, path_only_through_water=True)
 
 
-class AlternateLavaComparison_AllCorridorsOpen(AlternateLavaComparison):
+class AlternateLavaComparison_AllCorridorsOpen_Wide(AlternateLavaComparison):
     def __init__(self):
-        super().__init__(path_only_through_water=False)
+        super().__init__(narrow=False, path_only_through_water=False)
 
 
-class AlternateLavaComparison_OnlyWaterPath(AlternateLavaComparison):
+class AlternateLavaComparison_OnlyWaterPath_Wide(AlternateLavaComparison):
     def __init__(self):
-        super().__init__(path_only_through_water=False)
+        super().__init__(narrow=False, path_only_through_water=True)
+
+
+class AlternateLavaComparison_AllCorridorsOpen_Narrow(AlternateLavaComparison):
+    def __init__(self):
+        super().__init__(narrow=True, path_only_through_water=False)
+
+
+class AlternateLavaComparison_OnlyWaterPath_Narrow(AlternateLavaComparison):
+    def __init__(self):
+        super().__init__(narrow=True, path_only_through_water=True)
 
 
 register(
@@ -1413,11 +1651,26 @@ register(
 )
 
 register(
-    id='MiniGrid-AlternateLavaComparison_OnlyWaterPath-v0',
-    entry_point='wombats.systems.minigrid:AlternateLavaComparison_OnlyWaterPath'
+    id='MiniGrid-AlternateLavaComparison_AllCorridorsOpen_Wide-v0',
+    entry_point='wombats.systems.minigrid:AlternateLavaComparison_AllCorridorsOpen_Wide'
 )
 
 register(
-    id='MiniGrid-AlternateLavaComparison_AllCorridorsOpen-v0',
-    entry_point='wombats.systems.minigrid:AlternateLavaComparison_AllCorridorsOpen'
+    id='MiniGrid-AlternateLavaComparison_OnlyWaterPath_Wide-v0',
+    entry_point='wombats.systems.minigrid:AlternateLavaComparison_OnlyWaterPath_Wide'
+)
+
+register(
+    id='MiniGrid-AlternateLavaComparison_AllCorridorsOpen_Narrow-v0',
+    entry_point='wombats.systems.minigrid:AlternateLavaComparison_AllCorridorsOpen_Narrow'
+)
+
+register(
+    id='MiniGrid-AlternateLavaComparison_OnlyWaterPath_Narrow-v0',
+    entry_point='wombats.systems.minigrid:AlternateLavaComparison_OnlyWaterPath_Narrow'
+)
+
+register(
+    id='MiniGrid-MyDistShift-v0',
+    entry_point='wombats.systems.minigrid:MyDistShift'
 )
