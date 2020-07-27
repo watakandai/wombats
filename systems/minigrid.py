@@ -1376,12 +1376,15 @@ class AlternateLavaComparison(MiniGridEnv):
                             length=right_vert_wall_length - 1)
 
         # place the carpet square
-        carpet_col = water_col_start + corridor_base_len - 1
-        carpet_row = water_end_row
+        # carpet_col = water_col_start + corridor_base_len - 1
+        # carpet_row = water_end_row
+        carpet_col = water_col_start + corridor_base_len + wall
+        carpet_row = middle_wall_row
         self.put_obj(Carpet(), carpet_col, carpet_row)
 
         # place a recharge square in the bottom-right corner
-        goal_col, goal_row = (carpet_col + 2), carpet_row
+        # goal_col, goal_row = (carpet_col + 2), carpet_row
+        goal_col, goal_row = (carpet_col), water_end_row
         self.put_obj(Floor(color='green'), goal_col, goal_row)
 
         # lava blocks

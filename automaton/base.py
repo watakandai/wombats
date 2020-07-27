@@ -321,7 +321,9 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                   colors='r', lw=4)
         plt.show()
 
-    def write_traces_to_file(self, traces: List[Symbols], file: str,
+    @classmethod
+    def write_traces_to_file(cls, traces: List[Symbols], file: str,
+                             alphabet_size: int,
                              base_file_dir: {str, None}=None) -> str:
         """
         Writes trace samples to a file in the abbadingo format for use in
@@ -330,20 +332,19 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      traces:         The traces to write to a file
         :param      file:           The file name to write to. Can be a partial
                                     path.
-        :param      base_file_dir:  Provide this if you want to output the
-                                    file to a different location than
+        :param      alphabet_size:  The alphabet size
+        :param      base_file_dir:  Provide this if you want to output the file
+                                    to a different location than
                                     self.automata_data_dir.
 
         :returns:   the absolute filepath to the traces. Will be:
-                        abs_filepath(self.automata_data_dir/file)
-                    if base_file_dir is None.
-                    Else, will be:
-                        abs_filepath(base_file_dir/file)
+                    abs_filepath(self.automata_data_dir/file) if base_file_dir
+                    is None. Else, will be: abs_filepath(base_file_dir/file)
         """
 
         # make sure the output traces always go to the automaton's data dir
         if base_file_dir is None:
-            base_file_dir = self.automata_data_dir
+            base_file_dir = cls.automata_data_dir
 
         filepath = os.path.join(base_file_dir, file)
         file_dir, _ = os.path.split(filepath)
@@ -357,12 +358,12 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
             # need the header to be:
             # number_of_training_samples size_of_alphabet
-            f.write(str(num_samples) + ' ' + str(self._alphabet_size) + '\n')
+            f.write(str(num_samples) + ' ' + str(alphabet_size) + '\n')
 
             for trace in traces:
                 trace_length = len(trace)
-                f.write(self._get_abbadingo_string(trace, trace_length,
-                                                   is_pos_example=True))
+                f.write(cls._get_abbadingo_string(trace, trace_length,
+                                                  is_pos_example=True))
 
         return os.path.abspath(filepath)
 
@@ -1654,7 +1655,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         return possible_symbols, probabilities
 
-    def _get_abbadingo_string(self, trace: Symbols, trace_length: int,
+    @staticmethod
+    def _get_abbadingo_string(trace: Symbols, trace_length: int,
                               is_pos_example: bool) -> str:
         """
         Returns the Abbadingo (sigh) formatted string given a trace string and
