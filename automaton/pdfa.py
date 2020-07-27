@@ -307,9 +307,7 @@ class PDFA(Automaton):
         for target_prob, trace in zip(actual_trace_probs, traces):
             cross_entropy_sum += target_prob * self.logscore(trace, base)
 
-        N = len(actual_trace_probs)
-
-        return (-1.0 / N) * cross_entropy_sum
+        return -cross_entropy_sum
 
     def perplexity(self, traces: List[Symbols],
                    actual_trace_probs: Probabilities,
