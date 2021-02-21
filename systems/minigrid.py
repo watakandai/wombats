@@ -1170,7 +1170,8 @@ class LavaComparison(MiniGridEnv):
         agent_start_pos=(3, 5),
         agent_start_dir=0,
         drying_off_task=False,
-        path_only_through_water=False
+        path_only_through_water=False,
+        second_goal_task=False,
     ):
         self.agent_start_pos = agent_start_pos
         self.agent_start_dir = agent_start_dir
@@ -1178,6 +1179,7 @@ class LavaComparison(MiniGridEnv):
         self.drying_off_task = drying_off_task
         self.directionless_agent = False
         self.path_only_through_water = path_only_through_water
+        self.second_goal_task = second_goal_task
 
         super().__init__(
             width=width,
@@ -1201,10 +1203,13 @@ class LavaComparison(MiniGridEnv):
         for goal_pos in self.goal_pos:
             self.put_obj(Floor(color='green'), *goal_pos)
 
-        if self.drying_off_task:
-            self.put_obj(Floor(color='green'), 8, 1)
+        if self.second_goal_task:
+            self.put_obj(Floor(color='purple'), 8, 1)
         else:
-            self.put_obj(Water(), 8, 1)
+            if self.drying_off_task:
+                self.put_obj(Floor(color='green'), 8, 1)
+            else:
+                self.put_obj(Water(), 8, 1)
 
         # top left Lava block
         self.put_obj(Lava(), 1, 3)
@@ -1610,6 +1615,12 @@ class LavaComparison_seshia(LavaComparison):
         super().__init__(drying_off_task=True)
 
 
+class LavaComparison_SeshiaSecondGoal(LavaComparison):
+    def __init__(self):
+        super().__init__(drying_off_task=True,
+                         second_goal_task=True)
+
+
 class LavaComparison_SeshiaOnlyWaterPath(LavaComparison):
     def __init__(self):
         super().__init__(drying_off_task=True, path_only_through_water=True)
@@ -1635,6 +1646,67 @@ class AlternateLavaComparison_OnlyWaterPath_Narrow(AlternateLavaComparison):
         super().__init__(narrow=True, path_only_through_water=True)
 
 
+class TwoDifferentPaths(MiniGridEnv):
+    """
+    Customized environment with two different paths.
+    (One has nothing on its way and the other has water on its way)
+    """
+
+    def __init__(
+        self,
+        width=6,
+        height=6,
+        agent_start_pos=(1, 1),
+        agent_start_dir=0,
+        strip2_row=3
+    ):
+        self.agent_start_pos = agent_start_pos
+        self.agent_start_dir = agent_start_dir
+        self.goal_pos = (1, height-2)
+        self.strip2_row = strip2_row
+
+        self.directionless_agent = False
+
+        super().__init__(
+            width=width,
+            height=height,
+            max_steps=4 * width * height,
+            # Set this to True for maximum speed
+            see_through_walls=True
+        )
+
+    def _gen_grid(self, width, height):
+        # create an empty grid with different types of agents
+        if self.directionless_agent:
+            self.grid = NoDirectionAgentGrid(width, height)
+        else:
+            self.grid = Grid(width, height)
+
+        # Generate the surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # Place the two goal squares in the bottom-right corner
+        self.put_obj(Floor(color='green'), *self.goal_pos)
+
+        # Place the lava
+        self.grid.set(2, 2, Lava())
+        self.grid.set(3, 2, Lava())
+        self.grid.set(3, 3, Lava())
+
+        # Place the water
+        self.grid.set(1, 3, Water())
+        self.grid.set(2, 3, Water())
+
+        # Place the agent
+        if self.agent_start_pos is not None:
+            self.agent_pos = self.agent_start_pos
+            self.agent_dir = self.agent_start_dir
+        else:
+            self.place_agent()
+
+        self.mission = "Reach the green floor"
+
+
 register(
     id='MiniGrid-LavaComparison_noDryingOff-v0',
     entry_point='wombats.systems.minigrid:LavaComparison_noDryingOff'
@@ -1643,6 +1715,11 @@ register(
 register(
     id='MiniGrid-LavaComparison_seshia-v0',
     entry_point='wombats.systems.minigrid:LavaComparison_seshia'
+)
+
+register(
+    id='MiniGrid-LavaComparison_SeshiaSecondGoal-v0',
+    entry_point='wombats.systems.minigrid:LavaComparison_SeshiaSecondGoal'
 )
 
 register(
@@ -1673,4 +1750,9 @@ register(
 register(
     id='MiniGrid-MyDistShift-v0',
     entry_point='wombats.systems.minigrid:MyDistShift'
+)
+
+register(
+    id='MiniGrid-TwoDifferentPaths-v0',
+    entry_point='wombats.systems.minigrid:TwoDifferentPaths'
 )

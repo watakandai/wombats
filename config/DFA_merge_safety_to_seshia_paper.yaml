@@ -3,10 +3,10 @@
 beta: 0.90
 
 # number of symbols in pdfa alphabet
-alphabet_size: 3
+alphabet_size: 4
 
 # number of states in pdfa state space
-num_states: 4
+num_states: 2
 
 # symbol to use as the transition to a final state
 final_transition_sym: '$'
@@ -15,84 +15,69 @@ final_transition_sym: '$'
 empty_transition_sym: 'lambda'
 
 # unique start state string label of pdfa
-start_state: 'q2'
+start_state: 's0'
 
 # whether or not to smooth the input sym. transition distributions
 smooth_transitions: False
+
+# whether an edge is expressed as a boolean formula or a set of atomic propositions
+# boolean_formula: True
 
 # define a list of node labels, where each label is a string identifier label
 # for a unique node, and the metadata properties for each node
 nodes:
 
-  'q0':
-    final_probability: 1.00
+  's0':
     trans_distribution: null
-    is_accepting: null
+    is_accepting: False
 
-  'q1':
-    final_probability: 0.00
+  's1':
     trans_distribution: null
-    is_accepting: null
+    is_accepting: False
 
-  'q2':
-    final_probability: 0.00
+  's2':
     trans_distribution: null
-    is_accepting: null
+    is_accepting: False
 
-  'q3':
-    final_probability: 0.00
-    trans_distribution: null
-    is_accepting: null
+  # 's3':
+  #   trans_distribution: null
+  #   is_accepting: False
+
 
 # define the edges of the graph
 edges:
 
-  'q2':
-
-    'q2':
+  's0':
+    's0':
       symbols:
-        - 'empty_red_open'
-      probabilities:
-        - 0.8
-
-    'q1':
+        - '!water_blue_open'
+    's1':
       symbols:
         - 'water_blue_open'
-      probabilities:
-        - 0.15
 
-    'q3':
+  's1':
+    's0':
       symbols:
-        - 'floor_green_open'
-      probabilities:
-        - 0.05
-
-  'q1':
-
-    'q0':
+        - '!floor_green_open & !water_blue_open & carpet_yellow_open'
+    's1':
       symbols:
-        - 'floor_green_open'
-      probabilities:
-        - 0.2
-
-    'q1':
+        - '!floor_green_open & water_blue_open'
+    's2':
       symbols:
-        - 'empty_red_open'
-      probabilities:
-        - 0.8
+        - '!floor_green_open & !water_blue_open & !carpet_yellow_open'
+    # 's3':
+    #   symbols:
+    #     - 'floor_green_open'
 
-  'q3':
-
-    'q3':
+  's2':
+    's0':
       symbols:
-        - 'empty_red_open'
-      probabilities:
-        - 0.8
-
-    'q0':
+        - '!floor_green_open & !water_blue_open'
+    's1':
       symbols:
-        - 'water_blue_open'
-      probabilities:
-        - 0.2
+        - '!floor_green_open & water_blue_open'
+    # 's3':
+    #   symbols:
+    #     - 'floor_green_open'
 
-  'q0':
+  # 's3':

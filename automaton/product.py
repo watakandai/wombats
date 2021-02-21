@@ -14,6 +14,7 @@ from wombats.utils import MaxHeap
 
 from .transition_system import TransitionSystem
 from .pdfa import PDFA
+from .dfa import DFA
 from .base import Automaton
 from .types import (NXNodeList, NXEdgeList, Node, Probability,
                     Observation, Symbol, Symbols, GeneratedTraceData)
@@ -805,6 +806,15 @@ class ProductBuilder(Builder):
             self._instance = self._from_automata(dynamical_system=sys,
                                                  specification=spec,
                                                  **kwargs)
+        elif graph_data_format == 'safety_cosafety_objects':
+            sys = graph_data[0]
+            spec = graph_data[1]
+            safety = graph_data[2]
+            self._instance = self._from_safety_automata(
+                dynamical_system=sys,
+                specification=spec,
+                safety=safety,
+                **kwargs)
         else:
             msg = 'graph_data_format ({}) must be one of: ' + \
                   '"existing_objects"'.format(graph_data_format)
@@ -848,6 +858,69 @@ class ProductBuilder(Builder):
             specification)
         if show_steps:
             augmented_dyn_sys.draw('augment_initial_state')
+
+        config_data = Product._compute_product(augmented_dyn_sys,
+                                               specification)
+
+        config_data['is_normalized'] = \
+            normalize_trans_probabilities
+
+        # saving these so we can just return initialized instances if the
+        # underlying data has not changed
+        self.nodes = config_data['nodes']
+        self.edges = config_data['edges']
+
+        if not self.edges:
+            msg = 'no compatible edges were found, so the product is empty'
+            warnings.warn(msg, RuntimeWarning)
+            self._instance = None
+        else:
+            self._instance = Product(**config_data)
+
+        return self._instance
+
+    def _from_safety_automata(self, dynamical_system: TransitionSystem,
+                              specification: PDFA,
+                              safety: DFA,
+                              normalize_trans_probabilities: bool = False,
+                              show_steps: bool = False) -> Product:
+        """
+        Returns an instance of a Product Automaton from existing automaton
+
+        :param      dynamical_system:               The dynamical system
+                                                    automaton instance
+        :param      specification:                  The specification automaton
+                                                    instance
+        :param      safety:                         The safety automaton
+                                                    instance
+        :param      normalize_trans_probabilities:  whether to renormalize the
+                                                    edge probabilities such
+                                                    that each states has a well
+                                                    defined transition
+                                                    probability distribution.
+                                                    We typically DONT want to
+                                                    modify the probabilities
+                                                    of the product algorithm,
+                                                    except if we would like
+                                                    to be able to easily sample
+                                                    from the automaton.
+        :param      show_steps:                     draw intermediate steps in
+                                                    the product creation
+
+        :returns:   instance of an initialized Product automaton object
+        """
+
+        # don't want to destroy the automaton when we pre-process them
+        internal_dyn_sys = copy.deepcopy(dynamical_system)
+
+        augmented_dyn_sys = Product._augment_initial_state(
+            internal_dyn_sys,
+            specification)
+        if show_steps:
+            augmented_dyn_sys.draw('augment_initial_state')
+
+        # TODO: Implement a function with safety property
+        specification = PDFA._merge_automata(specification, safety)
 
         config_data = Product._compute_product(augmented_dyn_sys,
                                                specification)

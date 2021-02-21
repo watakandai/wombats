@@ -1,0 +1,56 @@
+# defines the final state probability needed for a state to be accepting
+# (DEPRECATED)
+beta: 0.90
+
+# number of symbols in pdfa alphabet
+alphabet_size: 4
+
+# number of states in pdfa state space
+num_states: 2
+
+# symbol to use as the transition to a final state
+final_transition_sym: '$'
+
+# symbol to use as the empty (a.k.a. lambda) symbol
+empty_transition_sym: 'lambda'
+
+# unique start state string label of pdfa
+start_state: 's0'
+
+# whether or not to smooth the input sym. transition distributions
+smooth_transitions: False
+
+# whether an edge is expressed as a boolean formula or a set of atomic propositions
+# boolean_formula: True
+
+# define a list of node labels, where each label is a string identifier label
+# for a unique node, and the metadata properties for each node
+nodes:
+
+  's0':
+    trans_distribution: null
+    is_accepting: False
+
+  's1':
+    trans_distribution: null
+    is_accepting: False
+
+
+# define the edges of the graph
+edges:
+
+  's0':
+    's0':
+      symbols:
+        - '!water_blue_open'
+    's1':
+      symbols:
+        - 'water_blue_open'
+
+  's1':
+    's0':
+      symbols:
+        - '!floor_green_open & !floor_purple_open & !water_blue_open & carpet_yellow_open'
+    's1':
+      symbols:
+        - '!floor_green_open & !floor_purple_open & water_blue_open & !carpet_yellow_open'

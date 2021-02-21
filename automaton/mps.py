@@ -1,6 +1,7 @@
 # 3rd-party packages
 import queue
 import copy
+import heapq
 import warnings
 import bidict
 from tqdm.auto import tqdm
@@ -222,7 +223,8 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
                max_string_length: int,
                num_strings_to_find: int = 1,
                depth_first: bool = False,
-               add_entropy: bool = True) -> MPSReturnData:
+               add_entropy: bool = True,
+               disable_pbar: bool = False) -> MPSReturnData:
     """
     Finds the bounded, most probable string(s) (MPS) in a stochastically
     weighted finite automaton (SWFA).
@@ -308,7 +310,7 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
     search_heap.heappush((p_empty, (string, S)))
     one_vec = np.ones(shape=(d, 1))
 
-    with tqdm(total=num_strings_to_find) as pbar:
+    with tqdm(total=num_strings_to_find, disable=disable_pbar) as pbar:
         while search_heap:
             _, (string, state_probabilities) = search_heap.heappop()
 
@@ -360,7 +362,7 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
         return None, None, None
 
 
-def SWDFA_MPS(states: Set[Node],
+def SWDFA_MPS_(states: Set[Node],
               start_state: Node,
               F: np.ndarray,
               empty_symbol: Symbol,
@@ -434,6 +436,110 @@ def SWDFA_MPS(states: Set[Node],
                     queue_item = (dest_state, new_dest_state, symbol,
                                   trans_prob)
                     search_queue.put(queue_item)
+
+    print(best_state_probs)
+    pbar.close()
+
+    # terminate all of the strings, and then find the best one using a max heap
+    # sort, as we also want to return this heap
+    viable_strings = MaxHeap()
+
+    for idx, term_prob in enumerate(F.flatten()):
+        state = node_index_map.inv[idx]
+        best_state_probs[state] *= term_prob
+        string_prob = best_state_probs[state]
+
+        if string_prob > 0:
+            string = best_symbols[state]
+            viable_strings.heappush((string_prob, string))
+
+    # need to check if we found any non-zero prob. strings
+    if viable_strings:
+        mps_probability, mps = copy.deepcopy(viable_strings[0])
+        return mps, mps_probability, viable_strings
+    else:
+        # no viable string found
+        return None, None, None
+
+
+def SWDFA_MPS(states: Set[Node],
+              start_state: Node,
+              F: np.ndarray,
+              empty_symbol: Symbol,
+              node_index_map: bidict,
+              trans_prob_fcn: Callable,
+              transition_map: Callable) -> MPSReturnData:
+    """
+    Computes the EXACT consensus string (the actual most probable string (MPS))
+    for a stochastically weighted DETERMINISTIC finite automaton (SWDFA).
+
+    :warning THIS MPS CALCULATION IS ONLY VALID FOR A DETERMINISTIC AUTOMATA,
+             as this is a very fast greedy algorithm where the optimal
+             substructure assumption only holds for deterministic automata.
+
+    :param      states:          The states of the automaton
+    :param      start_state:     The start state of the SWDFA
+    :param      F:               a (|states| x 1) vector containing the final
+                                 state probabilities
+    :param      empty_symbol:    The empty symbol
+    :param      node_index_map:  a mapping from node label to it's index in the
+                                 vectorized representation of the automaton
+    :param      trans_prob_fcn:  a function that extracts the transition
+                                 probabilities and associated symbols at the
+                                 current state.
+    :param      transition_map:  a map of start state label and symbol to
+                                 destination state
+
+    :returns:   (most probable word in the SWDFA, it's probability,
+                 ALL viable strings in a max heap container)
+    """
+
+    search_queue = queue.Queue()
+
+    init_state = start_state
+    symbols, trans_probs = trans_prob_fcn(init_state)
+
+    # for symbol, trans_prob in zip(symbols, trans_probs):
+    #     dest_state = transition_map[(init_state, symbol)]
+    #     queue_item = (init_state, dest_state, symbol, trans_prob)
+    #     search_queue.put(queue_item)
+
+    # visited = set()
+    # visited.add(init_state)
+
+    best_symbols = {state: [empty_symbol] for state in states}
+    best_state_probs = {state: 0.0 for state in states}
+    best_state_probs[init_state] = 1.0
+    # best_inverse_transitions = {state: None for state in states}
+
+    maxHeap = []
+
+    # 最初の頂点を追加
+    heapq.heappush(maxHeap, (1.0, init_state))
+
+    with tqdm(total=len(states) - 1) as pbar:
+        while len(maxHeap) != 0:
+            probability, src_state = heapq._heappop_max(maxHeap)
+
+            # check if repetitive visit has larger probability
+            if probability < best_state_probs[src_state]:
+                continue
+
+            symbols, trans_probs = trans_prob_fcn(src_state)
+
+            for symbol, trans_prob in zip(symbols, trans_probs):
+                dest_state = transition_map[(src_state, symbol)]
+                new_dest_prob = probability * trans_prob
+
+                if new_dest_prob > best_state_probs[dest_state]:
+                    best_state_probs[dest_state] = new_dest_prob
+                    heapq.heappush(maxHeap, (new_dest_prob, dest_state))
+                    # best_inverse_transitions[dest_state] = src_state
+                    best_symbols[dest_state] = best_symbols[src_state].copy()
+                    best_symbols[dest_state].append(symbol)
+                    pbar.update(1)
+                else:
+                    pbar.update(0)
 
     pbar.close()
 

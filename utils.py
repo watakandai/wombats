@@ -24,6 +24,8 @@ def get_experiment_paths(EXPERIMENT_NAME: str):
 
     PDFA_MODEL_CONFIG_FILE = os.path.join(LIB_CONFIG_DIR,
                                           'PDFA_' + EXPERIMENT_NAME + '.yaml')
+    DFA_MODEL_CONFIG_FILE = os.path.join(LIB_CONFIG_DIR,
+                                         'DFA_' + EXPERIMENT_NAME + '.yaml')
     TS_MODEL_CONFIG_FILE = os.path.join(LIB_CONFIG_DIR,
                                         'TS_' + EXPERIMENT_NAME + '.yaml')
 
@@ -35,6 +37,7 @@ def get_experiment_paths(EXPERIMENT_NAME: str):
     path_data = {
         'EXPERIMENT_DIR': EXPERIMENT_DIR,
         'PDFA_MODEL_CONFIG_FILE': PDFA_MODEL_CONFIG_FILE,
+        'DFA_MODEL_CONFIG_FILE': DFA_MODEL_CONFIG_FILE,
         'TS_MODEL_CONFIG_FILE': TS_MODEL_CONFIG_FILE,
         'GYM_MONITOR_LOG_DIR': GYM_MONITOR_LOG_DIR,
         'LEARNER_DATA_DIR': LEARNER_DATA_DIR,
