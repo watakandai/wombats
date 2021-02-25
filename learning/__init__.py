@@ -1,11 +1,11 @@
 from .external_tools import FlexfringeInterface
-from .dataload import PDFADataLoader
+from .dataload import Dataset, TracesGenerator
 from .training import (
     DummyEstimator,
     VanillaSL,
-    PostprocessingSL,
-    GreedyEmbeddingSL,
-    PolynomialEmbeddingSL,
+    PostprocessSL,
+    GreedyPreprocessSL,
+    PreprocessSL,
     TargetSpecification,
     BatchEstimator
 )

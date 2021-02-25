@@ -36,16 +36,11 @@ class L1Norm(EvaluationFunction):
             experiment.X_test,
             experiment.y_test, n=1)
 
+
 class Perplexity(EvaluationFunction):
     def __call__(self, experiment, **kwargs):
         if experiment.estimator.pdfa is None:
             return None
-
-        print(len(experiment.X_test), len(experiment.y_test))
-        print(experiment.estimator.__class__.__name__)
-        print(experiment.estimator.pdfa.average_norm(
-            experiment.X_test,
-            experiment.y_test))
 
         n_trace = len(experiment.y_test)
 
@@ -185,7 +180,7 @@ class ComparativeEvaluation(metaclass=ABCMeta):
         """
         return {**experiment.dataset.params, **experiment.parameters}
 
-    def plot(self, x: str, selected_params: Dict = None, filename: str = None, **kwargs):
+    def plot(self, x: str, selected_params: Dict = None, filename: str = None, columns=['clf', 'p'],**kwargs):
         if selected_params:
             query = ' and '.join(
                 [f'{k} == {repr(v)}' for k, v in selected_params.items()])
@@ -193,13 +188,14 @@ class ComparativeEvaluation(metaclass=ABCMeta):
         else:
             df = self._df
 
+        if 'p' in selected_params.keys():
+            columns = ['clf']
+
         for metric in self.eval_func.metrics.keys():
-            if metric == 'L2 Norm of Trace Probabilities':
-                logy = False
-            else:
-                logy = False
-            df_ = df.pivot(index=x, columns='clf', values=metric)
-            df_.plot(title=metric, logy=logy, **kwargs)
+            df_ = df.pivot(index=x, columns=columns, values=metric)
+            ax = df_.plot(**kwargs)
+            ax.set_xlabel('No. of Samples')
+            ax.set_ylabel(metric)
 
     def draw(self, selected_params: Dict, filename: str = None):
         pdfa = self.pdfa(selected_params)

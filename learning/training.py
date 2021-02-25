@@ -1,6 +1,7 @@
 import os
 import copy
 import warnings
+import numpy as np
 from typing import List, Dict, Any, Union
 from networkx.drawing.nx_pydot import read_dot
 from sklearn.base import BaseEstimator, clone
@@ -31,8 +32,8 @@ class BatchEstimator(BaseEstimator):
             # Specify all possible parameter sets
             parameters = [{'clf': [VanillaSL(),
                                    PostprocessSL(),
-                                   GreedyEmbeddingSL(),
-                                   PolynomialEmbeddingSL],
+                                   GreedyPreprocessSL(),
+                                   PreprocessSL],
                            'clf__specification': specification,
                            'clf__safe_specification': safe_specification,
                            'clf__p': [0.6, 1, 2, 5]}]
@@ -111,7 +112,7 @@ class SpecificationLearning(BaseEstimator, metaclass=ABCMeta):
             'b': '1',
             'f': '1',
             'I': '0',
-            't': '0',
+            't': '1',
             'l': '0',
             'q': '0',
             'y': '0',
@@ -225,7 +226,7 @@ class VanillaSL(SpecificationLearning):
         self.elapsed_time = flexfringe.average_elapsed_time
 
 
-class PostprocessingSL(SpecificationLearning):
+class PostprocessSL(SpecificationLearning):
     def fit(self, dataset: Dataset, y=None, n_trial=2, **kwargs) -> None:
         train_data_file = self._preprocess(dataset)
 
@@ -266,7 +267,7 @@ class PostprocessingSL(SpecificationLearning):
         self.elapsed_time = flexfringe.average_elapsed_time
 
 
-class GreedyEmbeddingSL(SpecificationLearning):
+class GreedyPreprocessSL(SpecificationLearning):
     def fit(self, dataset: Dataset, y=None, n_trial=2, **kwargs) -> None:
         train_data_file = self._preprocess(dataset)
 
@@ -303,7 +304,7 @@ class GreedyEmbeddingSL(SpecificationLearning):
         self.elapsed_time = flexfringe.average_elapsed_time
 
 
-class PolynomialEmbeddingSL(SpecificationLearning):
+class PreprocessSL(SpecificationLearning):
     def fit(self, dataset: Dataset, y=None, n_trial=2, **kwargs) -> None:
         train_data_file = self._preprocess(dataset)
 
@@ -375,25 +376,37 @@ class Experiment:
         num_samples = len(self.dataset.X_test)
         N = self.dataset.params['N']
 
-        traces, trace_lengths, _ = self.estimator.pdfa.generate_traces(
-            num_samples, N)
+        if isinstance(self.dataset.X_test, np.ndarray):
+            X_test = self.dataset.X_test.tolist()
+            y_test = self.dataset.y_test.tolist()
+        else:
+            X_test = self.dataset.X_test
+            y_test = self.dataset.y_test
 
-        trace_probs = []
-        failed_traces = []
-        for trace in traces:
-            score = self.dataset.pdfa.score(trace, epsilon=0.0)
-            if score == 0.0:
-                failed_traces.append(trace)
-            trace_probs.append(score)
+        try:
+            traces, trace_lengths, _ = self.estimator.pdfa.generate_traces(
+                num_samples, N)
 
-        # trace_probs = [self.dataset.pdfa.score(trace) for trace in traces]
 
-        print('='*100)
-        print(self.dataset.params)
-        print(self.parameters)
-        print(failed_traces)
-        print(len(failed_traces))
-        print('='*100)
+            trace_probs = []
+            failed_traces = []
+            for trace in traces:
+                score = self.dataset.pdfa.score(trace, epsilon=0.0)
+                if score == 0.0:
+                    failed_traces.append(trace)
+                trace_probs.append(score)
 
-        self.X_test = self.dataset.X_test.tolist() + traces
-        self.y_test = self.dataset.y_test.tolist() + trace_probs
+            print('='*100)
+            print(self.dataset.params)
+            print(self.parameters)
+            print(failed_traces)
+            print(len(failed_traces))
+            print('='*100)
+
+            self.X_test = X_test + traces
+            self.y_test = y_test + trace_probs
+        except Exception as e:
+            self.X_test = X_test
+            self.y_test = y_test
+            print(e)
+            return

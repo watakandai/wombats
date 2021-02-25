@@ -71,7 +71,7 @@ class Dataset:
         return self._pdfa
 
 
-class PDFADataLoader():
+class TracesGenerator():
     """
     This class has 2 possibilities
         1. Data Generation

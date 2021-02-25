@@ -40,6 +40,11 @@ nodes:
     is_accepting: null
 
   'q3':
+    final_probability: 0.00
+    trans_distribution: null
+    is_accepting: null
+
+  'q4':
     final_probability: 1.00
     trans_distribution: null
     is_accepting: null
@@ -112,3 +117,8 @@ edges:
         - 0.05
 
   'q3':
+    'q4':
+      symbols:
+        - 'floor_white_open'
+      probabilities:
+        - 1.00

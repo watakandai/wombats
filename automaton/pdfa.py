@@ -503,8 +503,14 @@ class PDFA(Automaton):
                 for _, edge_data in self[curr_state][next_state].items():
                     if edge_data['symbol'] == symbol:
                         edge_data['probability'] = new_prob_dist
-        for node in self.nodes:
-          self._compute_node_data_properties(node)
+
+        self._initialize_node_edge_properties(
+            initial_weight_key=None,
+            final_weight_key='final_probability',
+            state_observation_key=None,
+            can_have_accepting_nodes=True,
+            edge_weight_key='probability',
+            merge_sinks=False)
 
     def _set_state_acceptance(self, curr_state: Node) -> None:
         """
@@ -1073,7 +1079,7 @@ class PDFABuilder(Builder):
 
         return self._instance
 
-    def _from_yaml(self, graph_data_file: str) -> PDFA:
+    def _from_yaml(self, graph_data_file: str, is_normalized: bool = True) -> PDFA:
         """
         Returns an instance of a PDFA from the .yaml graph_data_file
 
@@ -1117,6 +1123,7 @@ class PDFABuilder(Builder):
             config_data['symbol_display_map'] = symbol_display_map
             config_data['nodes'] = states
             config_data['edges'] = edges
+            config_data['is_normalized'] = is_normalized
 
             # saving these so we can just return initialized instances if the
             # underlying data has not changed

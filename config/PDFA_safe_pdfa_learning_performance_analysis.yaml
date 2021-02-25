@@ -55,21 +55,21 @@ edges:
         - 'carpet_yellow_open'
         - 'water_blue_open'
       probabilities:
-        - 0.8
-        - 0.05
-        - 0.05
+        - 0.56
+        - 0.02
+        - 0.02
 
     'q1':
       symbols:
         - 'floor_green_open'
       probabilities:
-        - 0.05
+        - 0.2
 
     'q2':
       symbols:
         - 'floor_purple_open'
       probabilities:
-        - 0.05
+        - 0.2
 
   'q1':
 
@@ -77,19 +77,17 @@ edges:
       symbols:
         - 'empty_red_open'
         - 'carpet_yellow_open'
-        - 'floor_green_open'
         - 'water_blue_open'
       probabilities:
-        - 0.8
-        - 0.05
-        - 0.05
-        - 0.05
+        - 0.56
+        - 0.02
+        - 0.02
 
     'q3':
       symbols:
         - 'floor_purple_open'
       probabilities:
-        - 0.05
+        - 0.4
 
   'q2':
 
@@ -97,18 +95,51 @@ edges:
       symbols:
         - 'empty_red_open'
         - 'carpet_yellow_open'
-        - 'floor_purple_open'
         - 'water_blue_open'
       probabilities:
-        - 0.8
-        - 0.05
-        - 0.05
-        - 0.05
+        - 0.56
+        - 0.02
+        - 0.02
 
     'q3':
       symbols:
         - 'floor_green_open'
       probabilities:
-        - 0.05
+        - 0.4
 
   'q3':
+
+# nodes:
+
+#   'q0':
+#     final_probability: 0.00
+#     trans_distribution: null
+#     is_accepting: null
+
+#   'q1':
+#     final_probability: 1.00
+#     trans_distribution: null
+#     is_accepting: null
+
+# # define the edges of the graph
+# edges:
+
+#   'q0':
+
+#     'q0':
+#       symbols:
+#         - 'empty_red_open'
+#         - 'water_blue_open'
+#         - 'carpet_yellow_open'
+#       probabilities:
+#         - 0.7
+#         - 0.1
+#         - 0.1
+
+#     'q1':
+#       symbols:
+#         - 'floor_green_open'
+#       probabilities:
+#         - 0.1
+
+#   'q1':

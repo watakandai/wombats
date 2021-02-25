@@ -6,7 +6,7 @@ beta: 0.90
 alphabet_size: 4
 
 # number of states in pdfa state space
-num_states: 2
+num_states: 4
 
 # symbol to use as the transition to a final state
 final_transition_sym: '$'
@@ -35,6 +35,14 @@ nodes:
     trans_distribution: null
     is_accepting: False
 
+  's2':
+    trans_distribution: null
+    is_accepting: False
+
+  's3':
+    trans_distribution: null
+    is_accepting: False
+
 
 # define the edges of the graph
 edges:
@@ -48,9 +56,25 @@ edges:
         - 'water_blue_open'
 
   's1':
-    's0':
-      symbols:
-        - '!floor_green_open & !floor_purple_open & carpet_yellow_open'
     's1':
       symbols:
-        - '!floor_green_open & !floor_purple_open & !carpet_yellow_open'
+        - '!floor_green_open & water_blue_open'
+    's2':
+      symbols:
+        - '!floor_green_open & !water_blue_open'
+    's3':
+      symbols:
+        - 'floor_green_open'
+
+  's2':
+    's0':
+      symbols:
+        - '!floor_green_open & !water_blue_open'
+    's1':
+      symbols:
+        - '!floor_green_open & water_blue_open'
+    's3':
+      symbols:
+        - 'floor_green_open'
+
+  's3':
