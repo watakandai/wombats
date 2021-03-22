@@ -1,6 +1,7 @@
 # 3rd-party packages
 import queue
 import copy
+import heapq
 import warnings
 import bidict
 from tqdm.auto import tqdm
@@ -222,7 +223,8 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
                max_string_length: int,
                num_strings_to_find: int = 1,
                depth_first: bool = False,
-               add_entropy: bool = True) -> MPSReturnData:
+               add_entropy: bool = True,
+               disable_pbar: bool = False) -> MPSReturnData:
     """
     Finds the bounded, most probable string(s) (MPS) in a stochastically
     weighted finite automaton (SWFA).
@@ -277,6 +279,8 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
     :param      add_entropy:          Only keeps a new viable string if it has
                                       a previously unseen probability of being
                                       generated
+    :param      disable_pbar:         Disable pbar for speeding up the
+                                      computation speed.
 
     :returns:   (most probable word in the SWFA, it's probability,
                 num_strings_to_find viable strings in a max heap container)
@@ -308,7 +312,7 @@ def BMPS_exact(symbols: List[int], M: np.ndarray, S: np.ndarray, F: np.ndarray,
     search_heap.heappush((p_empty, (string, S)))
     one_vec = np.ones(shape=(d, 1))
 
-    with tqdm(total=num_strings_to_find) as pbar:
+    with tqdm(total=num_strings_to_find, disable=disable_pbar) as pbar:
         while search_heap:
             _, (string, state_probabilities) = search_heap.heappop()
 
@@ -397,43 +401,38 @@ def SWDFA_MPS(states: Set[Node],
     init_state = start_state
     symbols, trans_probs = trans_prob_fcn(init_state)
 
-    for symbol, trans_prob in zip(symbols, trans_probs):
-        dest_state = transition_map[(init_state, symbol)]
-        queue_item = (init_state, dest_state, symbol, trans_prob)
-        search_queue.put(queue_item)
-
-    visited = set()
-    visited.add(init_state)
-
     best_symbols = {state: [empty_symbol] for state in states}
     best_state_probs = {state: 0.0 for state in states}
     best_state_probs[init_state] = 1.0
 
+    maxHeap = []
+
+    # push the root node
+    heapq.heappush(maxHeap, (1.0, init_state))
+
     with tqdm(total=len(states) - 1) as pbar:
-        while not search_queue.empty():
-            src_state, dest_state, symbol, trans_prob = search_queue.get()
-            visited.add(dest_state)
+        while len(maxHeap) != 0:
+            probability, src_state = heapq._heappop_max(maxHeap)
 
-            new_dest_prob = best_state_probs[src_state] * trans_prob
-            if new_dest_prob > best_state_probs[dest_state]:
-                best_state_probs[dest_state] = new_dest_prob
+            # check if repetitive visit has larger probability
+            if probability < best_state_probs[src_state]:
+                continue
 
-                best_symbols[dest_state] = best_symbols[src_state].copy()
-                best_symbols[dest_state].append(symbol)
-                pbar.update(1)
+            symbols, trans_probs = trans_prob_fcn(src_state)
 
-            else:
-                pbar.update(0)
-
-            # now, we add any new transitions that we have not seen before
-            symbols, trans_probs = trans_prob_fcn(dest_state)
             for symbol, trans_prob in zip(symbols, trans_probs):
-                new_dest_state = transition_map[(dest_state, symbol)]
+                dest_state = transition_map[(src_state, symbol)]
+                new_dest_prob = probability * trans_prob
 
-                if new_dest_state not in visited:
-                    queue_item = (dest_state, new_dest_state, symbol,
-                                  trans_prob)
-                    search_queue.put(queue_item)
+                if new_dest_prob > best_state_probs[dest_state]:
+                    best_state_probs[dest_state] = new_dest_prob
+                    heapq.heappush(maxHeap, (new_dest_prob, dest_state))
+                    # best_inverse_transitions[dest_state] = src_state
+                    best_symbols[dest_state] = best_symbols[src_state].copy()
+                    best_symbols[dest_state].append(symbol)
+                    pbar.update(1)
+                else:
+                    pbar.update(0)
 
     pbar.close()
 
