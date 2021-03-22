@@ -3,10 +3,10 @@
 beta: 0.90
 
 # number of symbols in pdfa alphabet
-alphabet_size: 5
+alphabet_size: 4
 
 # number of states in pdfa state space
-num_states: 4
+num_states: 3
 
 # symbol to use as the transition to a final state
 final_transition_sym: '$'
@@ -30,17 +30,12 @@ nodes:
     is_accepting: null
 
   'q1':
-    final_probability: 0.00
+    final_probability: 1.00
     trans_distribution: null
     is_accepting: null
 
   'q2':
     final_probability: 0.00
-    trans_distribution: null
-    is_accepting: null
-
-  'q3':
-    final_probability: 1.00
     trans_distribution: null
     is_accepting: null
 
@@ -53,93 +48,36 @@ edges:
       symbols:
         - 'empty_red_open'
         - 'carpet_yellow_open'
+      probabilities:
+        - 0.70
+        - 0.20
+
+    'q2':
+      symbols:
         - 'water_blue_open'
       probabilities:
-        - 0.56
-        - 0.02
-        - 0.02
+        - 0.05
 
     'q1':
       symbols:
         - 'floor_green_open'
       probabilities:
-        - 0.2
-
-    'q2':
-      symbols:
-        - 'floor_purple_open'
-      probabilities:
-        - 0.2
-
-  'q1':
-
-    'q1':
-      symbols:
-        - 'empty_red_open'
-        - 'carpet_yellow_open'
-        - 'water_blue_open'
-      probabilities:
-        - 0.56
-        - 0.02
-        - 0.02
-
-    'q3':
-      symbols:
-        - 'floor_purple_open'
-      probabilities:
-        - 0.4
+        - 0.05
 
   'q2':
 
+    'q0':
+      symbols:
+        - 'carpet_yellow_open'
+      probabilities:
+        - 0.2
+
     'q2':
       symbols:
         - 'empty_red_open'
-        - 'carpet_yellow_open'
         - 'water_blue_open'
       probabilities:
-        - 0.56
-        - 0.02
-        - 0.02
+        - 0.75
+        - 0.05
 
-    'q3':
-      symbols:
-        - 'floor_green_open'
-      probabilities:
-        - 0.4
-
-  'q3':
-
-# nodes:
-
-#   'q0':
-#     final_probability: 0.00
-#     trans_distribution: null
-#     is_accepting: null
-
-#   'q1':
-#     final_probability: 1.00
-#     trans_distribution: null
-#     is_accepting: null
-
-# # define the edges of the graph
-# edges:
-
-#   'q0':
-
-#     'q0':
-#       symbols:
-#         - 'empty_red_open'
-#         - 'water_blue_open'
-#         - 'carpet_yellow_open'
-#       probabilities:
-#         - 0.7
-#         - 0.1
-#         - 0.1
-
-#     'q1':
-#       symbols:
-#         - 'floor_green_open'
-#       probabilities:
-#         - 0.1
-
-#   'q1':
+  'q1':

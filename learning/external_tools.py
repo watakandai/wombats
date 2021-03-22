@@ -32,7 +32,7 @@ class FlexfringeInterface():
         self.output_filepath: str
         self.learned_model_filepath: str
         self.initial_model_filepath: str
-        self.average_elapsed_time: float
+        self.average_elapsed_time: float = 0
 
         self._output_filename = 'dfa'
         self._final_output_addon_name = 'final'
@@ -47,7 +47,7 @@ class FlexfringeInterface():
 
     def infer_model(self, training_file: str = None,
                     get_help: bool = False,
-                    record_time: bool = False,
+                    record_time: bool = True,
                     go_fast: bool = False, **kwargs) -> {str, None}:
         """
         calls the flexfringe binary given the data in the training file

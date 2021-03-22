@@ -116,8 +116,7 @@ class SpecificationLearning(BaseEstimator, metaclass=ABCMeta):
             'l': '0',
             'q': '0',
             'y': '0',
-            'N': '0',
-            'T': '1',
+            'T': '0',
             'p': '1'}
 
         for k, v in self.kwargs.items():
@@ -126,6 +125,9 @@ class SpecificationLearning(BaseEstimator, metaclass=ABCMeta):
         # learned object
         self.pdfa = None
         self.fitted = False
+
+        self.X_test = None
+        self.y_test = None
 
         # metrics
         self.elapsed_time = 0.0
@@ -192,7 +194,7 @@ class SpecificationLearning(BaseEstimator, metaclass=ABCMeta):
         return train_data_file
 
 
-class VanillaSL(SpecificationLearning):
+class Vanilla(SpecificationLearning):
     def fit(self, dataset: Dataset, y=None, n_trial=2, **kwargs) -> None:
         train_data_file = self._preprocess(dataset)
 
@@ -226,7 +228,7 @@ class VanillaSL(SpecificationLearning):
         self.elapsed_time = flexfringe.average_elapsed_time
 
 
-class PostprocessSL(SpecificationLearning):
+class Postprocess(SpecificationLearning):
     def fit(self, dataset: Dataset, y=None, n_trial=2, **kwargs) -> None:
         train_data_file = self._preprocess(dataset)
 
@@ -267,7 +269,7 @@ class PostprocessSL(SpecificationLearning):
         self.elapsed_time = flexfringe.average_elapsed_time
 
 
-class GreedyPreprocessSL(SpecificationLearning):
+class GreedyPreprocess(SpecificationLearning):
     def fit(self, dataset: Dataset, y=None, n_trial=2, **kwargs) -> None:
         train_data_file = self._preprocess(dataset)
 
@@ -304,7 +306,7 @@ class GreedyPreprocessSL(SpecificationLearning):
         self.elapsed_time = flexfringe.average_elapsed_time
 
 
-class PreprocessSL(SpecificationLearning):
+class Preprocess(SpecificationLearning):
     def fit(self, dataset: Dataset, y=None, n_trial=2, **kwargs) -> None:
         train_data_file = self._preprocess(dataset)
 
@@ -334,11 +336,10 @@ class PreprocessSL(SpecificationLearning):
                                                     merge_sinks=True)
                 success = True
             except Exception as e:
-                # graph = read_dot(flexfringe.learned_model_filepath)
-                # ff_nodes = graph.nodes(data=True)
                 print(e)
                 msg = f'Cannot train a model properly'
                 warnings.warn(msg)
+                # raise e
                 specification = None
                 i_trial += 1
 
@@ -359,54 +360,32 @@ class Experiment:
         self.dataset = dataset
         self.parameters = parameters
         self.estimator = estimator
-        self.X_test = None
-        self.y_test = None
         self.__double_testdata()
-
-    @property
-    def has_dataset(self):
-        return self.dataset == None
-
-    @property
-    def has_testset(self):
-        return self.has_dataset and \
-               self.dataset.split_train_test
 
     def __double_testdata(self):
         num_samples = len(self.dataset.X_test)
         N = self.dataset.params['N']
-
-        if isinstance(self.dataset.X_test, np.ndarray):
-            X_test = self.dataset.X_test.tolist()
-            y_test = self.dataset.y_test.tolist()
-        else:
-            X_test = self.dataset.X_test
-            y_test = self.dataset.y_test
-
         try:
             traces, trace_lengths, _ = self.estimator.pdfa.generate_traces(
                 num_samples, N)
+            trace_probs = [self.dataset.pdfa.score(t) for t in traces]
 
-
-            trace_probs = []
-            failed_traces = []
-            for trace in traces:
-                score = self.dataset.pdfa.score(trace, epsilon=0.0)
-                if score == 0.0:
-                    failed_traces.append(trace)
-                trace_probs.append(score)
-
-            print('='*100)
-            print(self.dataset.params)
-            print(self.parameters)
-            print(failed_traces)
-            print(len(failed_traces))
-            print('='*100)
-
-            self.X_test = X_test + traces
-            self.y_test = y_test + trace_probs
+            self.estimator.X_test = traces
+            self.estimator.y_test = trace_probs
         except Exception as e:
-            self.X_test = X_test
-            self.y_test = y_test
             print(e)
             return
+
+    @property
+    def X_test(self):
+        X_test = list(self.dataset.X_test)
+        if self.estimator.X_test:
+            return X_test + self.estimator.X_test
+        return X_test
+
+    @property
+    def y_test(self):
+        y_test = list(self.dataset.y_test)
+        if self.estimator.y_test:
+            return y_test + self.estimator.y_test
+        return y_test

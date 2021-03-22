@@ -91,117 +91,117 @@ edges:
   's1':
     's0':
       symbols:
-        - '!floor_green_open & !water_blue_open & carpet_yellow_open'
+        - '!water_blue_open & carpet_yellow_open'
     's1':
       symbols:
-        - '!floor_green_open & water_blue_open'
+        - 'water_blue_open & carpet_yellow_open'
     's2':
       symbols:
-        - '!floor_green_open & !water_blue_open & !carpet_yellow_open'
+        - '!floor_green_open & !carpet_yellow_open'
 
   's2':
     's0':
       symbols:
-        - '!floor_green_open & !water_blue_open & carpet_yellow_open'
+        - '!water_blue_open & carpet_yellow_open'
     's1':
       symbols:
-        - '!floor_green_open & water_blue_open'
+        - 'water_blue_open & carpet_yellow_open'
     's3':
       symbols:
-        - '!floor_green_open & !water_blue_open & !carpet_yellow_open'
+        - '!floor_green_open & !carpet_yellow_open'
 
   's3':
     's0':
       symbols:
-        - '!floor_green_open & !water_blue_open & carpet_yellow_open'
+        - '!water_blue_open & carpet_yellow_open'
     's1':
       symbols:
-        - '!floor_green_open & water_blue_open'
+        - 'water_blue_open & carpet_yellow_open'
     's4':
       symbols:
-        - '!floor_green_open & !water_blue_open & !carpet_yellow_open'
+        - '!floor_green_open & !carpet_yellow_open'
 
   's4':
     's0':
       symbols:
-        - '!floor_green_open & !water_blue_open & carpet_yellow_open'
+        - '!water_blue_open & carpet_yellow_open'
     's1':
       symbols:
-        - '!floor_green_open & water_blue_open'
+        - 'water_blue_open & carpet_yellow_open'
     's5':
       symbols:
-        - '!floor_green_open & !water_blue_open & !carpet_yellow_open'
+        - '!floor_green_open & !carpet_yellow_open'
 
   's5':
     's0':
       symbols:
-        - '!floor_green_open & !water_blue_open & carpet_yellow_open'
+        - '!water_blue_open & carpet_yellow_open'
     's1':
       symbols:
-        - '!floor_green_open & water_blue_open'
+        - 'water_blue_open & carpet_yellow_open'
     's6':
       symbols:
-        - '!floor_green_open & !water_blue_open & !carpet_yellow_open'
+        - '!floor_green_open & !carpet_yellow_open'
 
   's6':
     's0':
       symbols:
-        - '!floor_green_open & !water_blue_open & carpet_yellow_open'
+        - '!water_blue_open & carpet_yellow_open'
     's1':
       symbols:
-        - '!floor_green_open & water_blue_open'
+        - 'water_blue_open & carpet_yellow_open'
     's7':
       symbols:
-        - '!floor_green_open & !water_blue_open & !carpet_yellow_open'
+        - '!floor_green_open & !carpet_yellow_open'
 
   's7':
     's0':
       symbols:
-        - '!floor_green_open & !water_blue_open & carpet_yellow_open'
+        - '!water_blue_open & carpet_yellow_open'
     's1':
       symbols:
-        - '!floor_green_open & water_blue_open'
+        - 'water_blue_open & carpet_yellow_open'
     's8':
       symbols:
-        - '!floor_green_open & !water_blue_open & !carpet_yellow_open'
+        - '!floor_green_open & !carpet_yellow_open'
 
   's8':
     's0':
       symbols:
-        - '!floor_green_open & !water_blue_open & carpet_yellow_open'
+        - '!water_blue_open & carpet_yellow_open'
     's1':
       symbols:
-        - '!floor_green_open & water_blue_open'
+        - 'water_blue_open & carpet_yellow_open'
     's9':
       symbols:
-        - '!floor_green_open & !water_blue_open & !carpet_yellow_open'
+        - '!floor_green_open & !carpet_yellow_open'
 
   's9':
     's0':
       symbols:
-        - '!floor_green_open & !water_blue_open & carpet_yellow_open'
+        - '!water_blue_open & carpet_yellow_open'
     's1':
       symbols:
-        - '!floor_green_open & water_blue_open'
+        - 'water_blue_open & carpet_yellow_open'
     's10':
       symbols:
-        - '!floor_green_open & !water_blue_open & !carpet_yellow_open'
+        - '!floor_green_open & !carpet_yellow_open'
 
   's10':
     's0':
       symbols:
-        - '!floor_green_open & !water_blue_open & carpet_yellow_open'
+        - '!water_blue_open & carpet_yellow_open'
     's1':
       symbols:
-        - '!floor_green_open & water_blue_open'
+        - 'water_blue_open & carpet_yellow_open'
     's11':
       symbols:
-        - '!floor_green_open & !water_blue_open & !carpet_yellow_open'
+        - '!floor_green_open & !carpet_yellow_open'
 
   's11':
     's0':
       symbols:
-        - '!floor_green_open & !water_blue_open & carpet_yellow_open'
+        - '!water_blue_open & carpet_yellow_open'
     's1':
       symbols:
-        - '!floor_green_open & water_blue_open'
+        - 'water_blue_open & carpet_yellow_open'

@@ -2,10 +2,10 @@ from .external_tools import FlexfringeInterface
 from .dataload import Dataset, TracesGenerator
 from .training import (
     DummyEstimator,
-    VanillaSL,
-    PostprocessSL,
-    GreedyPreprocessSL,
-    PreprocessSL,
+    Vanilla,
+    Postprocess,
+    GreedyPreprocess,
+    Preprocess,
     TargetSpecification,
     BatchEstimator
 )

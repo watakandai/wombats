@@ -63,6 +63,7 @@ IDX_TO_OBJECT = dict(zip(OBJECT_TO_IDX.values(), OBJECT_TO_IDX.keys()))
 
 GYM_MONITOR_LOG_DIR_NAME = 'minigrid_env_logs'
 
+WHITE = 230
 
 class ModifyActionsWrapper(gym.core.Wrapper):
     """
@@ -409,7 +410,7 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
 
         self.reset()
 
-    def render_notebook(self) -> None:
+    def render_notebook(self, filename: str = None, dpi: int = 300) -> None:
         """
         Wrapper for the env.render() that works in notebooks
         """
@@ -417,6 +418,8 @@ class StaticMinigridTSWrapper(gym.core.Wrapper):
         plt.imshow(self.env.render(mode='rgb_image', tile_size=64),
                    interpolation='bilinear')
         plt.axis('off')
+        if filename:
+            plt.savefig(filename, dpi=dpi)
         plt.show()
 
     def reset(self, new_monitor_file: bool = False, **kwargs) -> np.ndarray:
@@ -1112,7 +1115,7 @@ class NoDirectionAgentGrid(Grid):
         highlight=False,
         tile_size=TILE_PIXELS,
         subdivs=3,
-        white_background=False
+        white_background=True
     ):
         """
         Render a tile and cache the result
@@ -1127,7 +1130,7 @@ class NoDirectionAgentGrid(Grid):
 
         if white_background:
             img = np.full(shape=(tile_size * subdivs, tile_size * subdivs, 3),
-                          fill_value=255,
+                          fill_value=WHITE,
                           dtype=np.uint8)
         else:
             img = np.zeros(shape=(tile_size * subdivs, tile_size * subdivs, 3),
@@ -1292,7 +1295,8 @@ class AlternateLavaComparison(MiniGridEnv):
     def __init__(
         self,
         narrow=False,
-        path_only_through_water=False
+        path_only_through_water=False,
+        second_goal_task=False,
     ):
 
         self.width = 20
@@ -1310,6 +1314,8 @@ class AlternateLavaComparison(MiniGridEnv):
         self.path_only_through_water = path_only_through_water
 
         self.directionless_agent = False
+
+        self.second_goal_task = second_goal_task
 
         super().__init__(
             width=self.width,
@@ -1384,13 +1390,16 @@ class AlternateLavaComparison(MiniGridEnv):
         # carpet_col = water_col_start + corridor_base_len - 1
         # carpet_row = water_end_row
         carpet_col = water_col_start + corridor_base_len + wall
-        carpet_row = middle_wall_row
+        carpet_row = middle_wall_row + 1
         self.put_obj(Carpet(), carpet_col, carpet_row)
 
         # place a recharge square in the bottom-right corner
         # goal_col, goal_row = (carpet_col + 2), carpet_row
         goal_col, goal_row = (carpet_col), water_end_row
         self.put_obj(Floor(color='green'), goal_col, goal_row)
+
+        if self.second_goal_task:
+            self.put_obj(Floor(color='purple'), int(goal_col/2), 1)
 
         # lava blocks
         lava_start_col = first_empty_col + corridor_size
@@ -1437,12 +1446,16 @@ class MyDistShift(MiniGridEnv):
         height=5,
         agent_start_pos=(1, 1),
         agent_start_dir=0,
-        strip2_row=3
+        strip2_row=3,
+        onewaypath=False,
     ):
         self.agent_start_pos = agent_start_pos
         self.agent_start_dir = agent_start_dir
         self.goal_1_pos = (width - 2, 1)
         self.goal_2_pos = (width - 2, height - 2)
+        if onewaypath:
+            self.goal_1_pos = (width - 3, 2)
+
         self.strip2_row = strip2_row
 
         self.directionless_agent = False
@@ -1483,6 +1496,11 @@ class MyDistShift(MiniGridEnv):
             self.place_agent()
 
         self.mission = "get to both the green and purple squares"
+
+
+class MyDistShiftOneWay(MyDistShift):
+    def __init__(self):
+        super().__init__(onewaypath=True)
 
 
 class WorldObj:
@@ -1584,7 +1602,8 @@ class Carpet(WorldObj):
 
     def render(self, img):
         # Give the floor a pale color
-        color = COLORS[self.color] / 2
+        # color = COLORS[self.color] / 2
+        color = COLORS[self.color]
         fill_coords(img, point_in_rect(0.031, 1, 0.031, 1), color)
 
 
@@ -1601,7 +1620,8 @@ class Water(WorldObj):
 
     def render(self, img):
         # Give the floor a pale color
-        color = COLORS[self.color] / 3
+        # color = COLORS[self.color] / 3
+        color = COLORS[self.color]
         fill_coords(img, point_in_rect(0.031, 1, 0.031, 1), color)
 
 
@@ -1615,7 +1635,7 @@ class LavaComparison_seshia(LavaComparison):
         super().__init__(drying_off_task=True)
 
 
-class LavaComparison_SeshiaSecondGoal(LavaComparison):
+class LavaComparison_SeshiaTwoGoals(LavaComparison):
     def __init__(self):
         super().__init__(drying_off_task=True,
                          second_goal_task=True)
@@ -1631,9 +1651,25 @@ class AlternateLavaComparison_AllCorridorsOpen_Wide(AlternateLavaComparison):
         super().__init__(narrow=False, path_only_through_water=False)
 
 
+class AlternateLavaComparison_TwoGoalsAllCorridorsOpen_Wide(AlternateLavaComparison):
+    def __init__(self):
+        super().__init__(
+            narrow=False,
+            path_only_through_water=False,
+            second_goal_task=True)
+
+
 class AlternateLavaComparison_OnlyWaterPath_Wide(AlternateLavaComparison):
     def __init__(self):
         super().__init__(narrow=False, path_only_through_water=True)
+
+
+class AlternateLavaComparison_TwoGoalsOnlyWaterPath_Wide(AlternateLavaComparison):
+    def __init__(self):
+        super().__init__(
+            narrow=False,
+            path_only_through_water=True,
+            second_goal_task=True)
 
 
 class AlternateLavaComparison_AllCorridorsOpen_Narrow(AlternateLavaComparison):
@@ -1641,9 +1677,26 @@ class AlternateLavaComparison_AllCorridorsOpen_Narrow(AlternateLavaComparison):
         super().__init__(narrow=True, path_only_through_water=False)
 
 
+class AlternateLavaComparison_TwoGoalsAllCorridorsOpen_Narrow(AlternateLavaComparison):
+    def __init__(self):
+        super().__init__(
+            narrow=True,
+            path_only_through_water=False,
+            second_goal_task=True)
+
+
 class AlternateLavaComparison_OnlyWaterPath_Narrow(AlternateLavaComparison):
     def __init__(self):
         super().__init__(narrow=True, path_only_through_water=True)
+
+
+class AlternateLavaComparison_TwoGoalsOnlyWaterPath_Narrow(AlternateLavaComparison):
+    def __init__(self):
+        super().__init__(
+            narrow=True,
+            path_only_through_water=True,
+            second_goal_task=True)
+
 
 
 class TwoDifferentPaths(MiniGridEnv):
@@ -1718,8 +1771,8 @@ register(
 )
 
 register(
-    id='MiniGrid-LavaComparison_SeshiaSecondGoal-v0',
-    entry_point='wombats.systems.minigrid:LavaComparison_SeshiaSecondGoal'
+    id='MiniGrid-LavaComparison_SeshiaTwoGoals-v0',
+    entry_point='wombats.systems.minigrid:LavaComparison_SeshiaTwoGoals'
 )
 
 register(
@@ -1748,8 +1801,33 @@ register(
 )
 
 register(
+    id='MiniGrid-AlternateLavaComparison_TwoGoalsAllCorridorsOpen_Wide-v0',
+    entry_point='wombats.systems.minigrid:AlternateLavaComparison_TwoGoalsAllCorridorsOpen_Wide'
+)
+
+register(
+    id='MiniGrid-AlternateLavaComparison_TwoGoalsOnlyWaterPath_Wide-v0',
+    entry_point='wombats.systems.minigrid:AlternateLavaComparison_TwoGoalsOnlyWaterPath_Wide'
+)
+
+register(
+    id='MiniGrid-AlternateLavaComparison_TwoGoalsAllCorridorsOpen_Narrow-v0',
+    entry_point='wombats.systems.minigrid:AlternateLavaComparison_TwoGoalsAllCorridorsOpen_Narrow'
+)
+
+register(
+    id='MiniGrid-AlternateLavaComparison_TwoGoalsOnlyWaterPath_Narrow-v0',
+    entry_point='wombats.systems.minigrid:AlternateLavaComparison_TwoGoalsOnlyWaterPath_Narrow'
+)
+
+register(
     id='MiniGrid-MyDistShift-v0',
     entry_point='wombats.systems.minigrid:MyDistShift'
+)
+
+register(
+    id='MiniGrid-MyDistShiftOneWay-v0',
+    entry_point='wombats.systems.minigrid:MyDistShiftOneWay'
 )
 
 register(

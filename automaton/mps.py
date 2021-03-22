@@ -514,7 +514,7 @@ def SWDFA_MPS(states: Set[Node],
 
     maxHeap = []
 
-    # 最初の頂点を追加
+    # push the root node
     heapq.heappush(maxHeap, (1.0, init_state))
 
     with tqdm(total=len(states) - 1) as pbar:
