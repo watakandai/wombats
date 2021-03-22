@@ -1320,7 +1320,6 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         if self.is_sampleable:
             if self.is_normalized:
-                # TODO Delete this line
                 if sum(edge_probs) > 0.0:
                     edge_probs = [p / sum(edge_probs) for p in edge_probs]
                 else:
