@@ -2,6 +2,7 @@ import subprocess as sp
 import graphviz
 import os
 import re
+import time
 from IPython.display import Image, display
 from pathlib import Path
 
@@ -31,6 +32,7 @@ class FlexfringeInterface():
         self.output_filepath: str
         self.learned_model_filepath: str
         self.initial_model_filepath: str
+        self.average_elapsed_time: float = 0
 
         self._output_filename = 'dfa'
         self._final_output_addon_name = 'final'
@@ -45,6 +47,7 @@ class FlexfringeInterface():
 
     def infer_model(self, training_file: str = None,
                     get_help: bool = False,
+                    record_time: bool = True,
                     go_fast: bool = False, **kwargs) -> {str, None}:
         """
         calls the flexfringe binary given the data in the training file
@@ -99,11 +102,20 @@ class FlexfringeInterface():
         else:
             stdout = sp.PIPE
 
+        if record_time:
+            start_time = time.time()
+
         completed_process = sp.run(flexfringe_call,
                                    stdout=stdout, stderr=sp.PIPE)
+
         if not go_fast:
             call_string = completed_process.stdout.decode()
             print('%s' % call_string)
+
+        if record_time:
+            elapsed_time = time.time() - start_time
+            n_run = int(kwargs['n']) if 'n' in kwargs else 1
+            self.average_elapsed_time = elapsed_time / n_run
 
         if not go_fast:
             model_data = self._read_model_data(output_file)
