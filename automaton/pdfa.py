@@ -1,3 +1,4 @@
+from __future__ import annotations
 # 3rd-party packages
 import numpy as np
 import os

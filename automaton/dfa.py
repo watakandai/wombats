@@ -8,7 +8,6 @@ from bidict import bidict
 
 # local packages
 from wombats.factory.builder import Builder
-from wombats.automaton.pdfa import PDFA
 from .types import (NXNodeList, NXEdgeList, Node, Symbol, Symbols,
                     Probabilities)
 from .base import Automaton, SMOOTHING_AMOUNT
@@ -73,9 +72,12 @@ class DFA(Automaton):
                  num_states: int,
                  start_state: Node,
                  smooth_transitions: bool,
+                 graph_data_file: str,
                  smoothing_amount: float = SMOOTHING_AMOUNT,
                  final_transition_sym: {Symbol, None}=None,
                  empty_transition_sym: {Symbol, None}=None) -> 'DFA':
+
+        self.graph_data_file = graph_data_file
 
         # need to start with a fully initialized automaton
         super().__init__(nodes, edges, symbol_display_map,
@@ -113,7 +115,7 @@ class SafetyDFA(DFA):
     labeled on each edge.
     """
 
-    def is_safe(self, pdfa: PDFA):
+    def is_safe(self, specification: Automaton):
         """
         Checks if a given pdfa does not 'violate' any safety
         specification
@@ -123,7 +125,7 @@ class SafetyDFA(DFA):
         :returns:   True if safe else False
         """
         # naming to follow written algorithm
-        C = pdfa
+        C = specification
         S = self
 
         symbols = set()
@@ -336,6 +338,7 @@ class SafetyDFABuilder(Builder):
         allowed_exts = ['.yaml', '.yml']
         if file_extension in allowed_exts:
             config_data = self.load_YAML_config_data(graph_data_file)
+            config_data['graph_data_file'] = graph_data_file
         else:
             msg = 'graph_data_file ({}) is not a ({}) file'
             raise ValueError(msg.format(graph_data_file, allowed_exts))
