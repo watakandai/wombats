@@ -113,17 +113,20 @@ class FlexfringeInterface():
                 print('No model output generated')
                 return None
 
-    def draw_IPython(self, dot_file_data: str) -> None:
+    def draw_IPython(self, filename: str) -> None:
         """
         Draws the dot file data in a way compatible with a jupyter / IPython
         notebook
 
         :param      dot_file_data:  The learned model dot file data
         """
+        dot_file_data = self._read_model_data(filename)
+
         if dot_file_data == '':
             pass
         else:
-            output_file = os.path.join(self._output_directory, 'Source.gv')
+            filename = Path(filename).stem
+            output_file = os.path.join(self._output_directory, filename)
             g = graphviz.Source(dot_file_data,
                                 filename=output_file, format='png')
             g.render()
@@ -135,7 +138,7 @@ class FlexfringeInterface():
         """
 
         dot_file = self.initial_model_filepath
-        self.draw_IPython(self._read_model_data(dot_file))
+        self.draw_IPython(dot_file)
 
     def draw_learned_model(self) -> None:
         """
@@ -143,7 +146,7 @@ class FlexfringeInterface():
         """
 
         dot_file = self.learned_model_filepath
-        self.draw_IPython(self._read_model_data(dot_file))
+        self.draw_IPython(dot_file)
 
     @property
     def output_filepath(self) -> str:
