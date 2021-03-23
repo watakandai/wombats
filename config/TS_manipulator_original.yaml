@@ -1,0 +1,150 @@
+alphabet_size: 28
+num_states: 20
+num_obs: 2
+start_state: '0_'
+nodes:
+  '0_':
+    observation: 'P02'
+  '1_':
+    observation: 'P02'
+  '2_':
+    observation: 'P02'
+  '3_':
+    observation: 'P02'
+  '4_':
+    observation: 'P02'
+  '5_':
+    observation: 'P02'
+  '6_':
+    observation: 'P01'
+  '7_':
+    observation: 'P01'
+  '8_':
+    observation: 'P01'
+  '9_':
+    observation: 'P01'
+  '10_':
+    observation: 'P01'
+  '11_':
+    observation: 'P01'
+  '12_':
+    observation: 'P01'
+  '13_':
+    observation: 'P01'
+  '14_':
+    observation: 'P01'
+  '15_':
+    observation: 'P01'
+  '16_':
+    observation: 'P02'
+  '17_':
+    observation: 'P02'
+  '18_':
+    observation: 'P02'
+  '19_':
+    observation: 'P02'
+edges:
+  '0_':
+    '1_':
+      symbols:
+        - 'g_to_h_0_1'
+  '1_':
+    '2_':
+      symbols:
+        - 'h_to_h_1_2'
+    '3_':
+      symbols:
+        - 'h_to_p_1_3'
+  '2_':
+    '4_':
+      symbols:
+        - 'h_to_h_2_4'
+    '1_':
+      symbols:
+        - 'h_to_h_2_1'
+  '3_':
+  '4_':
+    '2_':
+      symbols:
+        - 'h_to_h_4_2'
+    '5_':
+      symbols:
+        - 'h_to_p_4_5'
+  '5_':
+    '6_':
+      symbols:
+        - 'p_to_m_5_6'
+  '6_':
+    '7_':
+      symbols:
+        - 'm_to_m_6_7'
+    '8_':
+      symbols:
+        - 'm_to_g_6_8'
+  '7_':
+    '6_':
+      symbols:
+        - 'm_to_m_7_6'
+    '9_':
+      symbols:
+        - 'm_to_m_7_9'
+  '8_':
+    '10_':
+      symbols:
+        - 'g_to_h_8_10'
+  '9_':
+    '7_':
+      symbols:
+        - 'm_to_m_9_7'
+    '11_':
+      symbols:
+        - 'm_to_g_9_11'
+  '10_':
+    '12_':
+      symbols:
+        - 'h_to_h_10_12'
+    '13_':
+      symbols:
+        - 'h_to_p_10_13'
+  '11_':
+  '12_':
+    '10_':
+      symbols:
+        - 'h_to_h_12_10'
+    '14_':
+      symbols:
+        - 'h_to_h_12_14'
+  '13_':
+  '14_':
+    '12_':
+      symbols:
+        - 'h_to_h_14_12'
+    '15_':
+      symbols:
+        - 'h_to_p_14_15'
+  '15_':
+    '16_':
+      symbols:
+        - 'p_to_m_15_16'
+  '16_':
+    '17_':
+      symbols:
+        - 'm_to_m_16_17'
+    '0_':
+      symbols:
+        - 'm_to_g_16_0'
+  '17_':
+    '18_':
+      symbols:
+        - 'm_to_m_17_18'
+    '16_':
+      symbols:
+        - 'm_to_m_17_16'
+  '18_':
+    '17_':
+      symbols:
+        - 'm_to_m_18_17'
+    '19_':
+      symbols:
+        - 'm_to_g_18_19'
+  '19_':
