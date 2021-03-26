@@ -163,8 +163,8 @@ class FlexfringeInterface():
     @property
     def output_filepath(self) -> str:
         """The output filepath for the results of learning the model"""
-        self._output_base_filepath = os.path.join(self._output_directory,
-                                                  self._output_filename)
+        self._output_base_filepath = os.path.join(
+            self._output_directory, self._output_filename)
 
         return self._output_base_filepath
 
