@@ -192,9 +192,9 @@ class PDFA(Automaton):
         PDFA is a language model (LM) in this case:
             ==> score = P_{PDFA LM}(trace)
 
-        :param      trace:  The trace
+        :param      trace:  A trace
 
-        :returns:   The trace probability.
+        :returns:           A trace probability
         """
 
         curr_state = self.start_state
@@ -217,9 +217,19 @@ class PDFA(Automaton):
 
         return trace_prob
 
+    def scores(self, traces: List[Symbols]) -> List[float]:
+        """
+        Calculates trace probabilities
+
+        :param      trace:  A list of traces
+
+        :returns:   The trace probability.
+        """
+        return [self.score(trace) for trace in traces]
+
     def logscore(self, trace: Symbols, base: float = 2.0) -> float:
         """
-        computes the log of the score (sequence probability) of the given trace
+        Computes the log of the score (sequence probability) of the given trace
         in the language of the PDFA
 
         :param      trace:  The sequence of symbols to compute the log score of
@@ -232,6 +242,17 @@ class PDFA(Automaton):
         score = self.score(trace)
 
         return logx(score, base)
+
+    def logscores(self, traces: List[Symbols], **kwargs) -> List[float]:
+        """
+        Computes traces log probabilities
+
+        :param      traces:     A list of traces
+        :param      base:       The log base.
+
+        :returns:               log of the probability
+        """
+        return [self.logscore(trace, **kwargs) for trace in traces]
 
     def cross_entropy_approx(self, trace: Symbols,
                              base: float = 2.0) -> float:
@@ -300,8 +321,7 @@ class PDFA(Automaton):
 
     def cross_entropy(self, traces: List[Symbols],
                       actual_trace_probs: Probabilities,
-                      base: float = 2.0,
-                      ignore_reject_trace: bool = False) -> float:
+                      base: float = 2.0) -> float:
         """
         computes actual cross-entropy of the given traces in the language of
         the PDFA on the given actual trace probabilities
@@ -323,18 +343,15 @@ class PDFA(Automaton):
 
         cross_entropy_sum = 0.0
 
-        for target_prob, trace in zip(actual_trace_probs, traces):
-            logscore = self.logscore(trace, base)
-            if ignore_reject_trace and logscore == -np.inf:
-                logscore = 0.0
-            cross_entropy_sum += target_prob * logscore
+        for target_p, trace in zip(actual_trace_probs, traces):
+            est_q = self.score(trace)
+            cross_entropy_sum += ylogx(y=target_p, x=est_q)
 
         return -cross_entropy_sum
 
     def perplexity(self, traces: List[Symbols],
                    actual_trace_probs: Probabilities,
-                   base: float = 2.0,
-                   ignore_reject_trace: bool = False) -> float:
+                   base: float = 2.0) -> float:
         """
         computes actual perplexity of the given traces in the language of
         the PDFA on the given actual trace probabilities
@@ -356,8 +373,7 @@ class PDFA(Automaton):
 
         return base ** self.cross_entropy(traces,
                                           actual_trace_probs,
-                                          base,
-                                          ignore_reject_trace)
+                                          base)
 
     def norm(self, traces: List[Symbols],
              actual_trace_probs: Probabilities,
@@ -508,7 +524,7 @@ class PDFA(Automaton):
 
         return score
 
-    def recompute_prob_dist(self, traces: List[Symbols]) -> None:
+    def refit_prob_dist(self, traces: List[Symbols]) -> None:
         transitionCounts = {}
         start_state = self.start_state
 

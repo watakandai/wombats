@@ -133,7 +133,7 @@ class SafetyDFA(DFA):
         for node in S.nodes:
             for dest_state, edges in S[node].items():
                 for edge_key, edge_data in edges.items():
-                    partial_symbols = DFA._extract_symbols_from_formula(
+                    partial_symbols = SafetyDFA._extract_symbols_from_formula(
                         edge_data['symbol'])
                     symbols |= partial_symbols
 
