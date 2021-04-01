@@ -57,7 +57,7 @@ edges:
 
     'q1':
       symbols:
-        - 'water_blue_open'
+        - 'floor_purple_open'
       probabilities:
         - 0.15
 
@@ -91,7 +91,7 @@ edges:
 
     'q0':
       symbols:
-        - 'water_blue_open'
+        - 'floor_purple_open'
       probabilities:
         - 0.2
 

@@ -370,7 +370,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
     def generate_traces(self, num_samples: int, N: int,
                         max_resamples: int = 10,
                         return_whatever_you_got: bool = False,
-                        force_multicore: bool = False) -> GeneratedTraceData:
+                        force_multicore: bool = False,
+                        verbose: int = 50) -> GeneratedTraceData:
         """
         generates num_samples random traces from the automaton
 
@@ -393,6 +394,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                               num_samples. Force this to be
                                               true if the automaton is slow to
                                               sample.
+        :param      verbose:                  verbose for joblib.Parallel
 
         :returns:   list of sampled traces, list of the associated trace
                     lengths, list of the associated trace probabilities
@@ -412,7 +414,7 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                            return_whatever_you_got)
                        for i in iters]
         else:
-            runner = Parallel(n_jobs=NUM_CORES, verbose=50)
+            runner = Parallel(n_jobs=NUM_CORES, verbose=verbose)
             job = delayed(self.generate_trace)
             results = runner(job(start_state, N, max_resamples,
                                  return_whatever_you_got)
@@ -610,7 +612,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                              backwards_search: bool = True,
                              num_strings_to_find: int = 1,
                              depth_first: bool = False,
-                             add_entropy: bool = False) -> MPSReturnData:
+                             add_entropy: bool = False,
+                             disable_pbar: bool = False) -> MPSReturnData:
         """
         Computes the bounded, most probable string in the probabilistic
         language of the automaton.
@@ -664,6 +667,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      add_entropy:             Only keeps a new viable string if
                                              it has a previously unseen
                                              probability of being generated
+        :param      disable_pbar:            Disable pbar for speeding up the
+                                             computation speed.
 
         :returns:   most probable string, probability of producing the most
                     probable string, num_strings_to_find (their probs., viable
@@ -707,7 +712,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                                  backwards_search,
                                                  allow_empty_symbol,
                                                  depth_first,
-                                                 add_entropy)
+                                                 add_entropy,
+                                                 disable_pbar)
             (mps, prob, viable_symbols) = BMPS_exact(**params)
 
         else:
@@ -731,7 +737,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                                backwards_search: bool,
                                allow_empty_symbol: bool,
                                depth_first: bool,
-                               add_entropy: bool) -> dict:
+                               add_entropy: bool,
+                               disable_pbar: bool) -> dict:
         """
         Gets the BMPS_exact algorithm's parameters from the current automaton
         and the algorithm's desired usage.
@@ -770,6 +777,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
         :param      add_entropy:             Only keeps a new viable string if
                                              it has a previously unseen
                                              probability of being generated
+        :param      disable_pbar:            Disable pbar for speeding up the
+                                             computation speed.
 
         :returns:   The BMPS_exact parameters dict.
         """
@@ -825,7 +834,8 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
                   'max_string_length': max_string_length,
                   'num_strings_to_find': num_strings_to_find,
                   'depth_first': depth_first,
-                  'add_entropy': add_entropy}
+                  'add_entropy': add_entropy,
+                  'disable_pbar': disable_pbar}
 
         return params
 
@@ -1310,7 +1320,10 @@ class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
 
         if self.is_sampleable:
             if self.is_normalized:
-                edge_probs = [p / sum(edge_probs) for p in edge_probs]
+                if sum(edge_probs) > 0.0:
+                    edge_probs = [p / sum(edge_probs) for p in edge_probs]
+                else:
+                    edge_probs[-1] = 1.0
 
             next_sym_dist = rv_discrete(name='transition',
                                         values=(edge_symbols, edge_probs))
