@@ -9,7 +9,7 @@ to generate the data.
 
 import os
 import queue
-from tkinter import W
+# from tkinter import W
 import warnings
 import numpy as np
 import networkx as nx
@@ -27,8 +27,8 @@ from .external_tools import FlexfringeInterface
 from wombats.automaton.types import Symbols, Probabilities
 from wombats.learning.dataload import Dataset
 
-import gurobipy as gpy
-from gurobipy import GRB
+# import gurobipy as gpy
+# from gurobipy import GRB
 
 State = List[float]
 Mode = int
@@ -597,55 +597,55 @@ def find_separating_hyperplane(X1, X2, method: str='svm',
         A = np.squeeze(A)
 
     elif method == 'lp':
+        pass
+        # G1 = np.c_[X1, np.ones(n_data1)] # a^T * X1 + b
+        # G2 = np.c_[X2, np.ones(n_data2)] # a^T * X2 + b
+        # G = np.r_[G1, G2]
 
-        G1 = np.c_[X1, np.ones(n_data1)] # a^T * X1 + b
-        G2 = np.c_[X2, np.ones(n_data2)] # a^T * X2 + b
-        G = np.r_[G1, G2]
+        # # Constraint a constraint s.t. A and b to be nonzero
+        # H = np.dot(y, G) # y (a^T * X + b)
 
-        # Constraint a constraint s.t. A and b to be nonzero
-        H = np.dot(y, G) # y (a^T * X + b)
+        # model = gpy.Model('lp')
+        # model.setParam('OutputFlag', False)
+        # # model.setParam('NodefileStart', 0.5)
 
-        model = gpy.Model('lp')
-        model.setParam('OutputFlag', False)
-        # model.setParam('NodefileStart', 0.5)
+        # A = []
+        # variable_names = []
+        # for i in range(n_dim):
+        #     a = model.addVar(lb=-GRB.INFINITY, ub=GRB.INFINITY, vtype=GRB.CONTINUOUS, name=f'a{i}')
+        #     A.append(a)
+        #     variable_names.append(f'a{i}')
+        # b = model.addVar(lb=-GRB.INFINITY, ub=GRB.INFINITY, vtype=GRB.CONTINUOUS, name=f'b')
+        # variable_names.append(f'b')
 
-        A = []
-        variable_names = []
-        for i in range(n_dim):
-            a = model.addVar(lb=-GRB.INFINITY, ub=GRB.INFINITY, vtype=GRB.CONTINUOUS, name=f'a{i}')
-            A.append(a)
-            variable_names.append(f'a{i}')
-        b = model.addVar(lb=-GRB.INFINITY, ub=GRB.INFINITY, vtype=GRB.CONTINUOUS, name=f'b')
-        variable_names.append(f'b')
+        # E = []
+        # for i in range(n_data1 + n_data2):
+        #     e = model.addVar(lb=0.0, ub=GRB.INFINITY, vtype=GRB.CONTINUOUS, name=f'e{i}')
+        #     variable_names.append(f'e{i}')
+        #     E.append(e)
 
-        E = []
-        for i in range(n_data1 + n_data2):
-            e = model.addVar(lb=0.0, ub=GRB.INFINITY, vtype=GRB.CONTINUOUS, name=f'e{i}')
-            variable_names.append(f'e{i}')
-            E.append(e)
+        # for i, g in enumerate(G):
+        #     # y (a^T * x + b) >= 1 - slack
+        #     model.addConstr(y[i] * (g[0]*A[0] + g[1]*A[1] + g[2]*b) >= 1 - E[i])
+        # # \Sigma_i y_i (a^T * x_i + b) should be none zero to avoid a=0, b=0
+        # model.addConstr(H[0]*A[0] + H[1]*A[1] + H[2]*b >= 2)
 
-        for i, g in enumerate(G):
-            # y (a^T * x + b) >= 1 - slack
-            model.addConstr(y[i] * (g[0]*A[0] + g[1]*A[1] + g[2]*b) >= 1 - E[i])
-        # \Sigma_i y_i (a^T * x_i + b) should be none zero to avoid a=0, b=0
-        model.addConstr(H[0]*A[0] + H[1]*A[1] + H[2]*b >= 2)
+        # model.setObjective(sum(E), GRB.MINIMIZE)
+        # model.optimize()
+        # status = model.status
 
-        model.setObjective(sum(E), GRB.MINIMIZE)
-        model.optimize()
-        status = model.status
+        # try:
+        #     variables = [model.getVarByName(v).X for v in variable_names[:n_dim+1]]
+        #     slack_variables = [model.getVarByName(v).X for v in variable_names[n_dim+1:]]
+        # except Exception as e:
+        #     print(e)
 
-        try:
-            variables = [model.getVarByName(v).X for v in variable_names[:n_dim+1]]
-            slack_variables = [model.getVarByName(v).X for v in variable_names[n_dim+1:]]
-        except Exception as e:
-            print(e)
-
-        if status == 2 or status==5:
-            variables = [model.getVarByName(v).X for v in variable_names[:n_dim+1]]
-            slack_variables = [model.getVarByName(v).X for v in variable_names[n_dim+1:]]
-            A, b = np.array(variables[:-1]), variables[-1]
-        else:
-            A, b = None, None
+        # if status == 2 or status==5:
+        #     variables = [model.getVarByName(v).X for v in variable_names[:n_dim+1]]
+        #     slack_variables = [model.getVarByName(v).X for v in variable_names[n_dim+1:]]
+        #     A, b = np.array(variables[:-1]), variables[-1]
+        # else:
+        #     A, b = None, None
     else:
 
         raise Exception(f'No such method: {method}')

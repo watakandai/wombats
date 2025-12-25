@@ -36,6 +36,11 @@ SMOOTHING_AMOUNT = 0.0001
 DEFAULT_FINAL_TRANS_SYMBOL = '$'
 DEFAULT_EMPTY_TRANS_SYMBOL = 'lambda'
 
+def patch_asscalar(a):
+    return a.item()
+
+setattr(np, "asscalar", patch_asscalar)
+
 
 class Automaton(nx.MultiDiGraph, metaclass=ABCMeta):
     """
