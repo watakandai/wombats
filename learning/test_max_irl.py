@@ -86,13 +86,14 @@ def test_compute_experts_feature():
         ['empty_red_open', 'empty_red_open', 'empty_red_open', 'empty_red_open', 'empty_red_open', 'empty_red_open', 'floor_green_open'],
         ['empty_red_open', 'empty_red_open', 'empty_red_open', 'empty_red_open', 'carpet_yellow_open', 'empty_red_open', 'floor_green_open']
     ]
-    n_features = len(set(flatten(trajectories)))
-
-    # Convert cell trajectories to index trajectories
-    trajectories_idx = np.array([grid.to_indices(traj) for traj in trajectories])
+    n_features = len(set([item for traj in trajectories for item in traj]))
+    # Assign unique index number to each string
+    unique_elements = sorted(set(item for traj in trajectories for item in traj))
+    mapping = {val: i for i, val in enumerate(unique_elements)}
+    trajectories = np.array([[mapping[item] for item in traj] for traj in trajectories])
 
     # Under Test
-    normalized_one_hot_trajectories = compute_experts_feature(n_features, trajectories_idx)
+    normalized_one_hot_trajectories = compute_experts_feature(n_features, trajectories)
 
     # Postcondition
     assert normalized_one_hot_trajectories.shape == (n_features, )
