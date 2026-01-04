@@ -53,13 +53,12 @@ class Grid:
         pass
 
 
-def test_compute_experts_feature():
+def test_compute_experts_cell():
     """
     Test whether it can take trajectories of cell states.
     """
     # Precondition
     n_grid = 3
-    # Use 1-based indexing for Grid to match the trajectories data
     grid = Grid(n_grid)
     n_features = grid.n_state
 
@@ -77,9 +76,10 @@ def test_compute_experts_feature():
     # Postcondition
     assert normalized_one_hot_trajectories.shape == (n_features, )
 
-def test_compute_experts_feature():
+
+def test_compute_experts_strings():
     """
-    Test whether it can take trajectories of cell states.
+    Test whether it can take trajectories of strings.
     """
     # Precondition
     trajectories = [
